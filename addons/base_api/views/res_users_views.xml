@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Inherit the res.users form view to add API key field and buttons -->
+        <record id="view_users_form_api_key" model="ir.ui.view">
+            <field name="name">res.users.form.api.key</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//page[@name='access_rights']" position="after">
+                    <page string="API Access" name="api_access">
+                        <group>
+                            <group string="API Authentication">
+                                <field name="api_key" password="True" readonly="1"/>
+                                <div class="oe_button_box" name="api_key_buttons">
+                                    <button name="action_generate_api_key" 
+                                            type="object" 
+                                            string="Generate API Key" 
+                                            class="oe_highlight"
+                                            confirm="This will generate a new API key and invalidate the current one. Are you sure?"/>
+                                    <button name="action_revoke_api_key" 
+                                            type="object" 
+                                            string="Revoke API Key" 
+                                            invisible="api_key == False"
+                                            confirm="This will revoke the current API key. Are you sure?"/>
+                                </div>
+                            </group>
+                            <group string="API Information">
+                                <div class="alert alert-info" role="alert">
+                                    <strong>API Usage Instructions:</strong>
+                                    <ul>
+                                        <li>Include the API key in your HTTP request headers as 'api-key'</li>
+                                        <li>Keep your API key secure and do not share it</li>
+                                        <li>Generate a new key if you suspect it has been compromised</li>
+                                        <li>API keys are unique per user and provide access to that user's permissions</li>
+                                    </ul>
+                                </div>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
