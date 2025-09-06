@@ -517,8 +517,29 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
      "http://localhost:8069/api/v2/search/res.users/2?fields=name,login,email,groups_id"
 ```
 
+### 📧 Getting Message Content
+
+**Problem**: When you get `message_ids: [123, 456]`, you only see IDs, not the actual message content.
+
+**Solution**: Use the message ID to get the actual content!
+
+```bash
+# Step 1: Get CRM lead with message IDs
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,message_ids"
+
+# Step 2: Get specific message content by ID (e.g., ID 123)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.message/123?fields=subject,body,author_id,create_date,message_type,email_from"
+
+# Step 3: Get all messages for a CRM lead at once
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.message?res_model=crm.lead&res_id=5&fields=id,subject,body,author_id,create_date,message_type"
+```
+
 ### Response Format
 
+**Basic Response:**
 ```json
 {
   "success": true,
@@ -537,6 +558,29 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
     "total_fields_available": 127
   },
   "message": "Found record 15 in res.partner"
+}
+```
+
+**Message Content Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "record": {
+      "id": 123,
+      "subject": "Initial Contact",
+      "body": "<p>First contact with the customer about their requirements...</p>",
+      "author_id": [2, "Admin User"],
+      "create_date": "2025-01-04 10:30:00",
+      "message_type": "comment",
+      "email_from": "admin@company.com"
+    },
+    "model": "mail.message",
+    "id": 123,
+    "fields_returned": ["id", "subject", "body", "author_id", "create_date", "message_type", "email_from"],
+    "total_fields_available": 47
+  },
+  "message": "Found record 123 in mail.message"
 }
 ```
 
@@ -709,6 +753,17 @@ if __name__ == "__main__":
     # Get customer with specific fields only
     customer_basic = client.get_record('res.partner', 15, ['name', 'email', 'phone'])
     print("Customer basic info:", customer_basic)
+    
+    # Get CRM lead with message IDs
+    lead = client.get_record('crm.lead', 5, ['name', 'message_ids'])
+    print("Lead:", lead)
+    
+    # Get specific message content by ID
+    if lead['data']['record']['message_ids']:
+        message_id = lead['data']['record']['message_ids'][0]  # Get first message
+        message = client.get_record('mail.message', message_id, 
+                                  ['subject', 'body', 'author_id', 'create_date'])
+        print("Message content:", message)
 ```
 
 ### JavaScript/Node.js Client
