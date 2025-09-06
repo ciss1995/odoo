@@ -84,6 +84,19 @@ curl -X POST "http://localhost:8069/api/v2/auth/logout" \
 - ✅ **Activity tracking** - Last activity timestamp
 - ✅ **Easy logout** - Invalidate sessions cleanly
 
+### Important: Authentication Method Support
+
+**⚠️ Not all endpoints support both authentication methods:**
+
+- **Modern endpoints** (✅ Session Token + ✅ API Key): 
+  - `/api/v2/search/{model}`, `/api/v2/create/{model}`, `/api/v2/auth/me`
+  - All user management endpoints (`/api/v2/users/*`)
+  
+- **Legacy endpoints** (❌ Session Token, ✅ API Key only):
+  - `/api/v2/partners`, `/api/v2/products`, `/api/v2/user/info`, `/api/v2/fields/{model}`
+
+**Recommendation**: Use `/api/v2/search/res.partner` instead of `/api/v2/partners` for session token compatibility.
+
 **Session Refresh Response:**
 ```json
 {
@@ -274,27 +287,36 @@ print('API key revoked')
 
 ### 🧪 Testing & Authentication
 
-| Method | Endpoint | Auth Required | Description |
-|--------|----------|---------------|-------------|
-| `GET` | `/api/v2/test` | ❌ No | Basic API test |
-| `GET` | `/api/v2/auth/test` | ✅ Yes | Test authentication |
-| `GET` | `/api/v2/user/info` | ✅ Yes | Get current user info |
+| Method | Endpoint | Auth Required | Session Token | API Key | Description |
+|--------|----------|---------------|---------------|---------|-------------|
+| `GET` | `/api/v2/test` | ❌ No | N/A | N/A | Basic API test |
+| `GET` | `/api/v2/auth/test` | ✅ Yes | ❌ | ✅ | Test authentication (API key only) |
+| `GET` | `/api/v2/user/info` | ✅ Yes | ❌ | ✅ | Get current user info (API key only) |
+| `GET` | `/api/v2/auth/me` | ✅ Yes | ✅ | ✅ | Get current user info (both auth methods) |
 
 ### 👥 User Management
 
-| Method | Endpoint | Auth Required | Description |
-|--------|----------|---------------|-------------|
-| `GET` | `/api/v2/search/res.users` | ✅ Yes | List/search users |
-| `POST` | `/api/v2/create/res.users` | ✅ Yes | Create new user |
+| Method | Endpoint | Auth Required | Session Token | API Key | Description |
+|--------|----------|---------------|---------------|---------|-------------|
+| `GET` | `/api/v2/search/res.users` | ✅ Yes | ✅ | ✅ | List/search users |
+| `POST` | `/api/v2/create/res.users` | ✅ Yes | ✅ | ✅ | Create new user |
+| `GET` | `/api/v2/users` | ✅ Yes | ✅ | ✅ | List users with pagination |
+| `GET` | `/api/v2/users/{id}` | ✅ Yes | ✅ | ✅ | Get user details |
+| `PUT` | `/api/v2/users/{id}` | ✅ Yes | ✅ | ✅ | Update user |
+| `PUT` | `/api/v2/users/{id}/password` | ✅ Yes | ✅ | ✅ | Change password |
+| `POST` | `/api/v2/users/{id}/reset-password` | ✅ Admin | ✅ | ✅ | Reset password |
+| `POST` | `/api/v2/users/{id}/api-key` | ✅ Yes | ✅ | ✅ | Generate API key |
 
 ### 🏢 Business Data
 
-| Method | Endpoint | Auth Required | Description |
-|--------|----------|---------------|-------------|
-| `GET` | `/api/v2/partners` | ✅ Yes | List customers/partners |
-| `GET` | `/api/v2/products` | ✅ Yes | List products |
-| `GET` | `/api/v2/search/{model}` | ✅ Yes | Search any model |
-| `POST` | `/api/v2/create/{model}` | ✅ Yes | Create record in any model |
+| Method | Endpoint | Auth Required | Session Token | API Key | Description |
+|--------|----------|---------------|---------------|---------|-------------|
+| `GET` | `/api/v2/partners` | ✅ Yes | ❌ | ✅ | List customers/partners (API key only) |
+| `GET` | `/api/v2/products` | ✅ Yes | ❌ | ✅ | List products (API key only) |
+| `GET` | `/api/v2/search/{model}` | ✅ Yes | ✅ | ✅ | Search any model |
+| `POST` | `/api/v2/create/{model}` | ✅ Yes | ✅ | ✅ | Create record in any model |
+| `GET` | `/api/v2/fields/{model}` | ✅ Yes | ❌ | ✅ | Get model fields (API key only) |
+| `GET` | `/api/v2/groups` | ✅ Yes | ✅ | ✅ | List user groups |
 
 ## 🛠️ Complete Examples
 
@@ -308,13 +330,17 @@ curl "http://localhost:8069/api/v2/test"
 curl -H "api-key: YOUR_API_KEY" \
      "http://localhost:8069/api/v2/auth/test"
 
-# 3. List existing customers
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/partners?limit=5"
+# 3. List existing customers (using modern endpoint for session token compatibility)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?limit=5"
 
-# 4. Create new customer
+# Alternative: Use legacy endpoint with API key
+# curl -H "api-key: YOUR_API_KEY" \
+#      "http://localhost:8069/api/v2/partners?limit=5"
+
+# 4. Create new customer (works with session token!)
 curl -X POST "http://localhost:8069/api/v2/create/res.partner" \
-     -H "api-key: YOUR_API_KEY" \
+     -H "session-token: YOUR_SESSION_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{
        "name": "Acme Corporation",
@@ -328,7 +354,7 @@ curl -X POST "http://localhost:8069/api/v2/create/res.partner" \
      }'
 
 # 5. Search for the new customer
-curl -H "api-key: YOUR_API_KEY" \
+curl -H "session-token: YOUR_SESSION_TOKEN" \
      "http://localhost:8069/api/v2/search/res.partner?limit=10"
 ```
 
