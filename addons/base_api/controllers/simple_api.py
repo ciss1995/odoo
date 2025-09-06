@@ -376,9 +376,12 @@ class SimpleApiController(http.Controller):
     @http.route('/api/v2/fields/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
     def get_model_fields(self, model):
         """Get all fields for a specific model."""
-        is_valid, result = self._authenticate()
+        # Try session authentication first, then API key
+        is_valid, user = self._authenticate_session()
         if not is_valid:
-            return result
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
 
         try:
             # Validate model exists
