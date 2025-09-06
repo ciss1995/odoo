@@ -349,24 +349,79 @@ curl -H "api-key: YOUR_API_KEY" \
 
 By default, the API only returns basic fields (`id`, `name`, `display_name`). To get more detailed information, you have several options:
 
-### Method 1: Field Discovery (Find Available Fields)
+### Method 1: Field Discovery (Recommended)
+
+**Use the dedicated fields endpoint for best results:**
 
 ```bash
-# First, discover what fields are available for a model
-curl -H "api-key: YOUR_KEY" \
-     "http://localhost:8069/api/v2/search/ir.model.fields" \
-     -G -d "model=crm.lead" -d "limit=50"
+# Get all fields for a specific model (API key required)
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/fields/crm.lead"
+
+# Returns structured field information:
+# - Field name, type, description
+# - Whether field is required, readonly, stored
+# - Relationship information for relational fields
 ```
 
-### Method 2: Request Specific Fields (Requires API Enhancement)
+**Example Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "model": "crm.lead",
+    "count": 118,
+    "fields": [
+      {
+        "name": "active",
+        "description": "Active", 
+        "type": "boolean",
+        "required": false,
+        "readonly": false,
+        "help": "",
+        "relation": "",
+        "store": true
+      },
+      {
+        "name": "partner_name",
+        "description": "Organization / Contact Name",
+        "type": "char", 
+        "required": false,
+        "readonly": false,
+        "help": "The name of the future partner company that will be created while converting the lead into opportunity",
+        "relation": "",
+        "store": true
+      }
+    ]
+  }
+}
+```
 
-**Note**: The current API implementation is limited to basic fields. For detailed field access, you can:
+### Method 2: Search Field Records (Alternative)
 
-1. **Use Odoo Web Interface** for detailed field inspection
-2. **Use Odoo XML-RPC** for full field access
-3. **Enhance the base_api module** (see enhancement section below)
+**Note**: The search approach is more complex and was returning incorrect results. Use Method 1 instead.
 
-### Method 3: XML-RPC Alternative (Full Field Access)
+```bash
+# Alternative: Search ir.model.fields with filtering (fixed in latest version)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/ir.model.fields?model=crm.lead&limit=50&fields=id,name,model,ttype"
+```
+
+### Method 3: Request Specific Fields in Search Results
+
+**Get specific fields when searching records:**
+
+```bash
+# Example: Get specific fields when searching CRM leads
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead?fields=id,name,partner_name,email_from,phone,expected_revenue&limit=10"
+
+# Example: Get partner contact information
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?fields=id,name,email,phone,website,is_company&limit=5"
+```
+
+### Method 4: XML-RPC Alternative (Full Field Access)
 
 ```python
 import xmlrpc.client

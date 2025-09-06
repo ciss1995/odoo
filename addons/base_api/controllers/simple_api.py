@@ -311,6 +311,7 @@ class SimpleApiController(http.Controller):
             
             model_obj = request.env[model]
             
+            
             # Get parameters
             limit = int(request.httprequest.args.get('limit', 10))
             offset = int(request.httprequest.args.get('offset', 0))
@@ -333,7 +334,22 @@ class SimpleApiController(http.Controller):
             
             # Basic domain
             domain = []
-            if 'active' in model_obj._fields:
+            
+            # Handle additional filtering parameters from URL first
+            has_custom_filters = False
+            for param_key, param_value in request.httprequest.args.items():
+                # Skip special parameters
+                if param_key in ['limit', 'offset', 'fields']:
+                    continue
+                
+                # Add domain filter for other parameters
+                if param_key in model_obj._fields:
+                    domain.append((param_key, '=', param_value))
+                    has_custom_filters = True
+            
+            # Only add active filter if no custom filters and active field exists
+            # This prevents filtering out inactive records when specifically searching
+            if not has_custom_filters and 'active' in model_obj._fields:
                 domain.append(('active', '=', True))
             
             # Search records
