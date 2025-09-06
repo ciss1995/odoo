@@ -373,6 +373,80 @@ class SimpleApiController(http.Controller):
             _logger.error("Error searching %s: %s", model, str(e))
             return self._error_response("Error searching records", 500, "SEARCH_ERROR")
 
+    @http.route('/api/v2/search/<string:model>/<int:record_id>', type='http', auth='none', methods=['GET'], csrf=False)
+    def get_record_by_id(self, model, record_id):
+        """Get a specific record by ID with all its fields."""
+        # Try session authentication first, then API key
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            # Validate model
+            if model not in request.env:
+                return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
+            
+            # Check user access to model
+            if not self._check_model_access(model, 'read'):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+            
+            model_obj = request.env[model]
+            
+            # Get the record by ID
+            record = model_obj.browse(record_id)
+            
+            # Check if record exists
+            if not record.exists():
+                return self._error_response(f"Record with ID {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
+            
+            # Get all fields from the model
+            all_fields = list(model_obj._fields.keys())
+            
+            # Get fields parameter to allow field filtering
+            fields_param = request.httprequest.args.get('fields', '')
+            if fields_param:
+                requested_fields = [f.strip() for f in fields_param.split(',')]
+                # Add 'id' if not present (always needed)
+                if 'id' not in requested_fields:
+                    requested_fields.insert(0, 'id')
+                # Validate fields exist in model
+                available_fields = [f for f in requested_fields if f in model_obj._fields]
+                if not available_fields:
+                    return self._error_response("No valid fields specified", 400, "INVALID_FIELDS")
+            else:
+                # Use all available fields by default
+                available_fields = all_fields
+            
+            # Read the record with specified fields
+            try:
+                record_data = record.read(available_fields)[0]
+            except Exception as e:
+                # If reading all fields fails, try with safe basic fields
+                basic_fields = ['id', 'name', 'display_name', 'create_date', 'write_date', 'create_uid', 'write_uid']
+                safe_fields = [f for f in basic_fields if f in model_obj._fields]
+                if not safe_fields:
+                    safe_fields = ['id']  # Fallback to just ID
+                record_data = record.read(safe_fields)[0]
+                available_fields = safe_fields
+                _logger.warning("Could not read all fields for %s ID %s, using basic fields: %s", model, record_id, str(e))
+            
+            return self._json_response(
+                data={
+                    'record': record_data,
+                    'model': model,
+                    'id': record_id,
+                    'fields_returned': available_fields,
+                    'total_fields_available': len(all_fields)
+                },
+                message=f"Found record {record_id} in {model}"
+            )
+            
+        except Exception as e:
+            _logger.error("Error getting record %s from %s: %s", record_id, model, str(e))
+            return self._error_response("Error retrieving record", 500, "GET_RECORD_ERROR")
+
     @http.route('/api/v2/fields/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
     def get_model_fields(self, model):
         """Get all fields for a specific model."""

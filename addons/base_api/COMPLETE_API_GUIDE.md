@@ -314,8 +314,9 @@ print('API key revoked')
 | `GET` | `/api/v2/partners` | ✅ Yes | ❌ | ✅ | List customers/partners (API key only) |
 | `GET` | `/api/v2/products` | ✅ Yes | ❌ | ✅ | List products (API key only) |
 | `GET` | `/api/v2/search/{model}` | ✅ Yes | ✅ | ✅ | Search any model |
+| `GET` | `/api/v2/search/{model}/{id}` | ✅ Yes | ✅ | ✅ | Get specific record by ID |
 | `POST` | `/api/v2/create/{model}` | ✅ Yes | ✅ | ✅ | Create record in any model |
-| `GET` | `/api/v2/fields/{model}` | ✅ Yes | ❌ | ✅ | Get model fields (API key only) |
+| `GET` | `/api/v2/fields/{model}` | ✅ Yes | ✅ | ✅ | Get model fields |
 | `GET` | `/api/v2/groups` | ✅ Yes | ✅ | ✅ | List user groups |
 
 ## 🛠️ Complete Examples
@@ -356,6 +357,14 @@ curl -X POST "http://localhost:8069/api/v2/create/res.partner" \
 # 5. Search for the new customer
 curl -H "session-token: YOUR_SESSION_TOKEN" \
      "http://localhost:8069/api/v2/search/res.partner?limit=10"
+
+# 6. Get specific customer by ID (e.g., ID 15)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/15"
+
+# 7. Get specific customer with only certain fields
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/15?fields=name,email,phone,city"
 ```
 
 ### Example 2: Product Catalog Management
@@ -474,6 +483,93 @@ curl -H "api-key: YOUR_API_KEY" \
      "http://localhost:8069/api/v2/search/ir.model?limit=20"
 ```
 
+## 📊 Get Record by ID Examples
+
+### Basic Usage
+
+```bash
+# Get a specific partner by ID
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/15"
+
+# Get a specific product by ID
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/product.template/23"
+
+# Get a specific user by ID
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users/2"
+```
+
+### Field Filtering
+
+```bash
+# Get only specific fields from a partner
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/15?fields=name,email,phone,city,country_id"
+
+# Get basic fields from a product
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/product.template/23?fields=name,list_price,default_code,sale_ok"
+
+# Get user information with groups
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users/2?fields=name,login,email,groups_id"
+```
+
+### Response Format
+
+```json
+{
+  "success": true,
+  "data": {
+    "record": {
+      "id": 15,
+      "name": "Acme Corporation",
+      "email": "contact@acme.com",
+      "phone": "+1-555-0123",
+      "city": "Business City",
+      "country_id": [235, "United States"]
+    },
+    "model": "res.partner",
+    "id": 15,
+    "fields_returned": ["id", "name", "email", "phone", "city", "country_id"],
+    "total_fields_available": 127
+  },
+  "message": "Found record 15 in res.partner"
+}
+```
+
+### Error Handling
+
+```bash
+# Record not found (404 error)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/99999"
+
+# Response:
+# {
+#   "success": false,
+#   "error": {
+#     "message": "Record with ID 99999 not found in res.partner",
+#     "code": "RECORD_NOT_FOUND"
+#   }
+# }
+
+# Invalid model (404 error)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/invalid.model/1"
+
+# Response:
+# {
+#   "success": false,
+#   "error": {
+#     "message": "Model 'invalid.model' not found",
+#     "code": "MODEL_NOT_FOUND"
+#   }
+# }
+```
+
 ## 📝 URL Parameters
 
 ### Common Parameters
@@ -536,6 +632,18 @@ class OdooAPIClient:
         )
         return response.json()
     
+    def get_record(self, model, record_id, fields=None):
+        """Get a specific record by ID"""
+        params = {}
+        if fields:
+            params['fields'] = ','.join(fields) if isinstance(fields, list) else fields
+        response = requests.get(
+            f"{self.base_url}/search/{model}/{record_id}",
+            headers=self.headers,
+            params=params
+        )
+        return response.json()
+    
     def create_record(self, model, data):
         """Create a record in any model"""
         response = requests.post(
@@ -593,6 +701,14 @@ if __name__ == "__main__":
         'customer_rank': 1
     })
     print("New customer:", new_customer)
+    
+    # Get specific customer by ID
+    customer_detail = client.get_record('res.partner', 15)
+    print("Customer detail:", customer_detail)
+    
+    # Get customer with specific fields only
+    customer_basic = client.get_record('res.partner', 15, ['name', 'email', 'phone'])
+    print("Customer basic info:", customer_basic)
 ```
 
 ### JavaScript/Node.js Client
