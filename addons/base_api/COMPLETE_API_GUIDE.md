@@ -450,6 +450,18 @@ curl -X POST "http://localhost:8069/api/v2/create/crm.lead" \
        "phone": "+1-555-0199",
        "expected_revenue": 5000.00
      }'
+
+# Get lead with activities and messages
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,activity_ids,message_ids"
+
+# Get activity details for the lead
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&res_id=5&fields=summary,date_deadline,user_id,state"
+
+# Get overdue activities across all leads
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&state=overdue&fields=summary,date_deadline,res_id"
 ```
 
 ## 🔧 Available Models
@@ -470,6 +482,9 @@ curl -X POST "http://localhost:8069/api/v2/create/crm.lead" \
 | `hr.employee` | Employees | HR management |
 | `hr.department` | Departments | HR organization |
 | `crm.lead` | CRM Leads/Opportunities | Sales pipeline |
+| `mail.activity` | Activities/Tasks | Follow-ups, calls, meetings |
+| `mail.activity.type` | Activity Types | Call, Email, Meeting types |
+| `mail.message` | Messages/Communications | Email history, notes |
 | `project.project` | Projects | Project management |
 | `project.task` | Tasks | Task management |
 | `stock.picking` | Deliveries/Receipts | Inventory movements |
@@ -535,6 +550,80 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
 # Step 3: Get all messages for a CRM lead at once
 curl -H "session-token: YOUR_SESSION_TOKEN" \
      "http://localhost:8069/api/v2/search/mail.message?res_model=crm.lead&res_id=5&fields=id,subject,body,author_id,create_date,message_type"
+```
+
+### 📋 Getting Activity Details
+
+**Problem**: When you get `activity_ids: [456, 789]` from CRM leads, you only see IDs, not the activity details.
+
+**Solution**: Activities contain tasks, calls, meetings, and follow-ups scheduled for leads!
+
+```bash
+# Step 1: Get CRM lead with activity IDs
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,activity_ids"
+
+# Step 2: Get specific activity details by ID (e.g., ID 456)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity/456?fields=summary,note,date_deadline,user_id,activity_type_id,state"
+
+# Step 3: Get all activities for a CRM lead at once
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&res_id=5&fields=id,summary,note,date_deadline,user_id,activity_type_id,state"
+```
+
+**Key Activity Fields:**
+- `summary` - Activity title/summary
+- `note` - Detailed description (HTML)
+- `date_deadline` - Due date
+- `date_done` - Completion date
+- `user_id` - Person assigned to the activity
+- `activity_type_id` - Type of activity (call, meeting, email, etc.)
+- `state` - Current status (overdue, today, planned, done)
+- `request_partner_id` - Who requested the activity
+- `attachment_ids` - Any attached files
+
+**Activity Response Example:**
+```json
+{
+  "success": true,
+  "data": {
+    "record": {
+      "id": 456,
+      "summary": "Follow-up call with client",
+      "note": "<p>Discuss contract terms and pricing options. Client mentioned budget concerns.</p>",
+      "date_deadline": "2025-01-10",
+      "date_done": false,
+      "user_id": [3, "Sales Manager"],
+      "activity_type_id": [2, "Call"],
+      "state": "planned",
+      "request_partner_id": [15, "Acme Corporation"],
+      "attachment_ids": [67, 68]
+    },
+    "model": "mail.activity",
+    "id": 456
+  },
+  "message": "Found record 456 in mail.activity"
+}
+```
+
+**Common Activity Queries:**
+```bash
+# Get overdue activities
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?state=overdue&fields=summary,date_deadline,res_model,res_id,user_id"
+
+# Get today's activities
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?state=today&fields=summary,note,user_id,activity_type_id"
+
+# Get all activities for CRM leads
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,date_deadline,res_id,user_id,state"
+
+# Get activity type details (Call, Email, Meeting, etc.)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity.type/2?fields=name,summary,icon,category"
 ```
 
 ### Response Format
@@ -764,6 +853,23 @@ if __name__ == "__main__":
         message = client.get_record('mail.message', message_id, 
                                   ['subject', 'body', 'author_id', 'create_date'])
         print("Message content:", message)
+    
+    # Get CRM lead with activity IDs
+    lead_with_activities = client.get_record('crm.lead', 5, ['name', 'activity_ids'])
+    print("Lead with activities:", lead_with_activities['data']['record']['name'])
+    
+    # Get each activity's details
+    if lead_with_activities['data']['record']['activity_ids']:
+        for activity_id in lead_with_activities['data']['record']['activity_ids']:
+            activity = client.get_record('mail.activity', activity_id, 
+                                       ['summary', 'note', 'date_deadline', 'user_id', 'activity_type_id', 'state'])
+            activity_data = activity['data']['record']
+            print(f"Activity: {activity_data['summary']}")
+            print(f"Due: {activity_data['date_deadline']}")
+            print(f"Assigned to: {activity_data['user_id'][1] if activity_data['user_id'] else 'Unassigned'}")
+            print(f"Type: {activity_data['activity_type_id'][1] if activity_data['activity_type_id'] else 'Unknown'}")
+            print(f"Status: {activity_data['state']}")
+            print("---")
 ```
 
 ### JavaScript/Node.js Client
