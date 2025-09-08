@@ -1761,3 +1761,432 @@ print(f'New API key: {api_key}')
 3. **Start building your integration!**
 
 **Your separate API can now access the complete Odoo backend with full functionality! 🎉**
+
+---
+
+# 🌍 Localization (l10n) Integration Guide
+
+The base_api provides powerful access to Odoo's extensive localization modules, giving you instant access to country-specific business rules, tax systems, and compliance requirements through simple REST API calls.
+
+## 📍 Supported African Countries
+
+Odoo includes comprehensive localization support for the following African countries:
+
+### **🇿🇦 Major African Markets**
+- **South Africa (ZA)** - `l10n_za` - SARS VAT Ready Structure, generic chart of accounts
+- **Nigeria (NG)** - `l10n_ng` - Withholding VAT, tax reports, local compliance
+- **Egypt (EG)** - `l10n_eg` + `l10n_eg_edi_eta` - Full ETA e-invoicing, VAT returns, withholding tax
+- **Kenya (KE)** - `l10n_ke` + `l10n_ke_edi_tremol` - ETR integration, item codes, tax reports
+- **Morocco (MA)** - `l10n_ma` - Local chart of accounts, tax structure
+
+### **🌍 East Africa**
+- **Tanzania (TZ)** - `l10n_tz_account` - Chart of accounts, taxes, fiscal positions
+- **Rwanda (RW)** - `l10n_rw` - COA, taxes, tax reports, fiscal positions
+- **Ethiopia (ET)** - `l10n_et` - Basic accounting structure
+
+### **🌍 West Africa**
+- **Senegal (SN)** - `l10n_sn` - SYSCOHADA compatible
+- **Burkina Faso (BF)** - `l10n_bf` - SYSCOHADA structure
+- **Mali (ML)** - `l10n_ml` - West African accounting standards
+- **Niger (NE)** - `l10n_ne` - SYSCOHADA compliant
+- **Benin (BJ)** - `l10n_bj` - Local accounting framework
+- **Ivory Coast (CI)** - `l10n_ci` - SYSCOHADA structure
+- **Togo (TG)** - `l10n_tg` - Regional compliance
+- **Guinea (GN)** - `l10n_gn` - Basic localization
+- **Equatorial Guinea (GQ)** - `l10n_gq` - Local requirements
+
+### **🌍 Central Africa**
+- **Cameroon (CM)** - `l10n_cm` - CEMAC compliant
+- **Chad (TD)** - `l10n_td` - Central African standards
+- **Central African Republic (CF)** - `l10n_cf` - Regional structure
+- **Republic of the Congo (CG)** - `l10n_cg` - CEMAC framework
+- **Democratic Republic of Congo (CD)** - `l10n_cd` - Local accounting
+- **Gabon (GA)** - `l10n_ga` - CEMAC structure
+
+### **🌍 Southern Africa**
+- **Zambia (ZM)** - `l10n_zm_account` - Chart of accounts, taxes, fiscal positions
+
+### **🌍 North Africa**
+- **Algeria (DZ)** - `l10n_dz` - Full accounting structure, tax reports
+- **Tunisia (TN)** - `l10n_tn` - Local tax system, fiscal positions
+
+## 🔧 Accessing Localization Data via API
+
+### **Basic Localization Queries**
+
+#### **1. Get Tax Information by Country**
+```bash
+# Get all taxes for South Africa
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,country_id,description&country_id=197"
+
+# Get VAT rates for Egypt  
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use&country_id=65"
+
+# Get withholding taxes for Nigeria
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,tag_ids&country_id=156"
+```
+
+#### **2. Access Chart of Accounts by Country**
+```bash
+# Get Kenyan chart of accounts
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.account?fields=code,name,user_type_id,country_id&country_id=115"
+
+# Get Moroccan account structure
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.account?fields=code,name,account_type&country_id=149"
+```
+
+#### **3. Get Fiscal Positions (International Trade Rules)**
+```bash
+# Get fiscal positions for Tanzania
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,auto_apply,sequence&country_id=215"
+
+# Get all African fiscal positions
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,auto_apply&country_id=in=[65,115,149,156,197,209,215,246]"
+```
+
+#### **4. Access Country-Specific Partner Fields**
+```bash
+# Get Moroccan partners with local fields
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/res.partner?fields=name,vat,country_id,l10n_ma_ice,l10n_ma_rc&country_id=149"
+
+# Get Egyptian partners with tax registration
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/res.partner?fields=name,vat,country_id,l10n_eg_tax_registration&country_id=65"
+```
+
+## 💼 Business Use Cases
+
+### **🌍 Multi-Country E-commerce**
+```bash
+# Automatic tax calculation for African customers
+def get_customer_taxes(customer_country_code):
+    # Get applicable taxes for customer's country
+    taxes_response = client.search_model('account.tax', 
+        params={
+            'fields': 'name,amount,type_tax_use,price_include',
+            'country_id': get_country_id(customer_country_code),
+            'type_tax_use': 'sale'
+        })
+    return taxes_response['data']['records']
+
+# Example for South African customer
+za_taxes = get_customer_taxes('ZA')
+print(f"VAT rate for ZA: {za_taxes[0]['amount']}%")
+```
+
+### **🏢 International Invoicing**
+```bash
+# Get country-specific invoice requirements
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.move?fields=name,partner_id,country_code,l10n_*"
+
+# Access Egyptian ETA e-invoicing data
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.move?fields=name,l10n_eg_eta_uuid,l10n_eg_eta_status&country_code=EG"
+```
+
+### **📊 Tax Compliance Dashboard**
+```bash
+# Monitor VAT across African countries
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,country_id,active&country_id=in=[65,115,149,156,197,215,246]"
+
+# Get tax reports by country
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax.report?fields=name,country_id&country_id=197"
+```
+
+### **🔄 Cross-Border Trade API**
+```bash
+# Determine applicable fiscal position for international sales
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,country_group_id,auto_apply&auto_apply=true"
+
+# Get SYSCOHADA countries (West/Central Africa)
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/res.country?fields=name,code&code=in=[SN,BF,ML,NE,BJ,CI,TG,CM,TD,CF,CG,GA]"
+```
+
+## 🚀 Advanced Integration Examples
+
+### **📍 Country Detection & Auto-Configuration**
+```python
+def setup_company_for_country(company_id, country_code):
+    """Automatically configure company for specific African country"""
+    
+    # Get country-specific chart of accounts
+    coa_response = client.search_model('account.account',
+        params={
+            'fields': 'code,name,account_type',
+            'country_id': get_country_id(country_code)
+        })
+    
+    # Get country-specific taxes
+    tax_response = client.search_model('account.tax',
+        params={
+            'fields': 'name,amount,type_tax_use',
+            'country_id': get_country_id(country_code)
+        })
+    
+    # Configure fiscal positions
+    fiscal_response = client.search_model('account.fiscal.position',
+        params={
+            'fields': 'name,auto_apply,sequence',
+            'country_id': get_country_id(country_code)
+        })
+    
+    return {
+        'chart_of_accounts': coa_response['data']['records'],
+        'taxes': tax_response['data']['records'],
+        'fiscal_positions': fiscal_response['data']['records']
+    }
+```
+
+### **💱 Multi-Currency African Operations**
+```bash
+# Get currencies used in African countries
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/res.currency?fields=name,symbol,position,active"
+
+# Access country-specific currency rates
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/res.currency.rate?fields=name,rate,currency_id,company_id"
+```
+
+### **📈 Regional Analytics API**
+```python
+def get_african_market_analysis():
+    """Analyze business metrics across African markets"""
+    
+    african_countries = ['ZA', 'NG', 'EG', 'KE', 'MA', 'TZ', 'RW', 'ET']
+    market_data = {}
+    
+    for country in african_countries:
+        # Get country-specific invoices
+        invoices = client.search_model('account.move',
+            params={
+                'fields': 'amount_total,currency_id,state,country_code',
+                'country_code': country,
+                'state': 'posted'
+            })
+        
+        # Get tax collection data
+        taxes = client.search_model('account.tax',
+            params={
+                'fields': 'amount,type_tax_use',
+                'country_id': get_country_id(country)
+            })
+        
+        market_data[country] = {
+            'invoices': invoices['data']['records'],
+            'tax_rates': taxes['data']['records']
+        }
+    
+    return market_data
+```
+
+## 🛠️ Country-Specific Features
+
+### **🇪🇬 Egypt - Advanced E-Invoicing**
+```bash
+# Access ETA (Egyptian Tax Authority) integration
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.move?fields=l10n_eg_eta_uuid,l10n_eg_eta_status,l10n_eg_eta_signed_document"
+
+# Get ETA activity types
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/l10n.eg.edi.activity.type?fields=name,code,description"
+```
+
+### **🇰🇪 Kenya - ETR Integration**
+```bash
+# Access Kenyan item codes for tax reporting
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/l10n.ke.item.code?fields=name,code,description"
+
+# Get ETR-ready invoice data
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.move?fields=name,l10n_ke_cu_serial_number,l10n_ke_cu_invoice_number"
+```
+
+### **🇿🇦 South Africa - SARS Compliance**
+```bash
+# Get SARS VAT-ready tax structure
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,tag_ids,description&country_id=197"
+
+# Access South African account tags
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.account.tag?fields=name,applicability"
+```
+
+### **🇳🇬 Nigeria - Withholding Tax**
+```bash
+# Get Nigerian withholding tax configuration
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,tag_ids&country_id=156&type_tax_use=purchase"
+
+# Access withholding VAT reports
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax.report?fields=name,country_id&country_id=156"
+```
+
+## 🌐 Regional Standards
+
+### **SYSCOHADA Countries (West/Central Africa)**
+Countries using the SYSCOHADA accounting standard:
+- Senegal (SN), Burkina Faso (BF), Mali (ML), Niger (NE)
+- Benin (BJ), Ivory Coast (CI), Togo (TG)
+
+```bash
+# Get SYSCOHADA-compatible chart of accounts
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.account?fields=code,name,account_type&country_id=in=[198,37,143,156]"
+```
+
+### **CEMAC Countries (Central Africa)**
+Countries using CEMAC standards:
+- Cameroon (CM), Chad (TD), Central African Republic (CF)
+- Republic of the Congo (CG), Gabon (GA)
+
+```bash
+# Get CEMAC fiscal positions
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id&country_id=in=[47,212,49,53,78]"
+```
+
+## 📝 Implementation Best Practices
+
+### **1. Country Detection**
+```python
+def detect_customer_country(customer_data):
+    """Automatically detect customer country and apply localization"""
+    country_code = customer_data.get('country_code')
+    
+    # Get country-specific configuration
+    config = client.search_model('res.country',
+        params={'fields': 'name,code,currency_id', 'code': country_code})
+    
+    return config['data']['records'][0] if config['data']['records'] else None
+```
+
+### **2. Tax Calculation**
+```python
+def calculate_taxes(product_price, customer_country, product_type='service'):
+    """Calculate applicable taxes based on customer location"""
+    
+    # Get applicable taxes
+    taxes = client.search_model('account.tax',
+        params={
+            'fields': 'amount,price_include,type_tax_use',
+            'country_id': get_country_id(customer_country),
+            'type_tax_use': 'sale'
+        })
+    
+    total_tax = 0
+    for tax in taxes['data']['records']:
+        total_tax += (product_price * tax['amount'] / 100)
+    
+    return total_tax
+```
+
+### **3. Compliance Reporting**
+```python
+def generate_country_tax_report(country_code, start_date, end_date):
+    """Generate tax compliance report for specific country"""
+    
+    # Get country-specific tax reports
+    reports = client.search_model('account.tax.report',
+        params={
+            'fields': 'name,country_id,line_ids',
+            'country_id': get_country_id(country_code)
+        })
+    
+    return reports['data']['records']
+```
+
+## 🎯 Quick Start Examples
+
+### **Test African Localization**
+```bash
+# Test South African taxes
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=197"
+
+# Test Nigerian withholding
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=156"
+
+# Test Egyptian VAT
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=65"
+
+# Test Kenyan structure
+curl -H "api-key: YOUR_API_KEY" \
+     "http://localhost:8069/api/v2/search/account.account?limit=5&country_id=115"
+```
+
+## 🔗 Country Code Reference
+
+| Country | Code | Primary Module | Features |
+|---------|------|----------------|----------|
+| 🇩🇿 Algeria | DZ | l10n_dz | Chart of accounts, taxes, fiscal positions |
+| 🇧🇯 Benin | BJ | l10n_bj | SYSCOHADA compliant |
+| 🇧🇫 Burkina Faso | BF | l10n_bf | SYSCOHADA structure |
+| 🇨🇲 Cameroon | CM | l10n_cm | CEMAC compliant |
+| 🇹🇩 Chad | TD | l10n_td | Central African standards |
+| 🇨🇩 DR Congo | CD | l10n_cd | Local accounting |
+| 🇨🇬 Rep. Congo | CG | l10n_cg | CEMAC framework |
+| 🇨🇮 Ivory Coast | CI | l10n_ci | SYSCOHADA structure |
+| 🇪🇬 Egypt | EG | l10n_eg, l10n_eg_edi_eta | Full ETA e-invoicing |
+| 🇪🇹 Ethiopia | ET | l10n_et | Basic structure |
+| 🇬🇦 Gabon | GA | l10n_ga | CEMAC structure |
+| 🇬🇭 Ghana | GH | - | *Coming soon* |
+| 🇬🇳 Guinea | GN | l10n_gn | Basic localization |
+| 🇰🇪 Kenya | KE | l10n_ke, l10n_ke_edi_tremol | ETR integration |
+| 🇲🇦 Morocco | MA | l10n_ma | Local chart, tax structure |
+| 🇲🇱 Mali | ML | l10n_ml | SYSCOHADA compatible |
+| 🇳🇪 Niger | NE | l10n_ne | SYSCOHADA compliant |
+| 🇳🇬 Nigeria | NG | l10n_ng | Withholding VAT |
+| 🇷🇼 Rwanda | RW | l10n_rw | COA, taxes, reports |
+| 🇸🇳 Senegal | SN | l10n_sn | SYSCOHADA compatible |
+| 🇿🇦 South Africa | ZA | l10n_za | SARS VAT ready |
+| 🇹🇿 Tanzania | TZ | l10n_tz_account | Full localization |
+| 🇹🇬 Togo | TG | l10n_tg | Regional compliance |
+| 🇹🇳 Tunisia | TN | l10n_tn | Tax system, fiscal positions |
+| 🇿🇲 Zambia | ZM | l10n_zm_account | Chart, taxes, fiscal positions |
+
+## 💡 Benefits of Using l10n with API
+
+### **🚀 Instant Compliance**
+- Pre-built tax structures for 25+ African countries
+- Government-approved chart of accounts
+- Automatic fiscal position detection
+
+### **⚡ Rapid Development**
+- No custom tax engine development needed
+- Proven localization logic from Odoo community
+- Real-time compliance updates
+
+### **🌍 Scalable International Operations**
+- Add new African markets instantly
+- Consistent API across all countries
+- Unified data structure for analytics
+
+### **🔧 Advanced Features**
+- E-invoicing integration (Egypt ETA, Kenya ETR)
+- Withholding tax automation
+- Multi-currency support
+- Regional accounting standards (SYSCOHADA, CEMAC)
+
+---
+
+**Your API now has access to comprehensive African business localization! 🌍🚀**
