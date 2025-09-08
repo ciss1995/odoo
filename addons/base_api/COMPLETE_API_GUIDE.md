@@ -626,6 +626,374 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
      "http://localhost:8069/api/v2/search/mail.activity.type/2?fields=name,summary,icon,category"
 ```
 
+## 🔗 Getting Related Record Data Efficiently
+
+### Problem: Multiple API Calls for Related Data
+
+When you fetch `mail.activity` records, you get `res_id` but need to make additional API calls to get the actual record details:
+
+```bash
+# Step 1: Get activities (you get res_id but not the actual record data)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,res_model,res_id,date_deadline"
+
+# Response: res_id: 25, res_model: "crm.lead" (but no lead details)
+
+# Step 2: Additional API call needed for each related record
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead/25?fields=name,partner_id,expected_revenue"
+```
+
+### 💡 Solution 1: Relational Fields Return Names Automatically
+
+**Good news!** Many relational fields automatically return both ID and name:
+
+```bash
+# Get activities with expanded relational fields
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id"
+```
+
+**Response includes expanded data:**
+```json
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "id": 456,
+        "summary": "Follow-up call",
+        "date_deadline": "2025-01-15",
+        "user_id": [3, "Sales Manager"],           // ✅ Name included!
+        "activity_type_id": [2, "Call"],          // ✅ Name included!
+        "request_partner_id": [15, "Acme Corp"],  // ✅ Name included!
+        "res_model": "crm.lead",
+        "res_id": 25                              // ❌ Only ID
+      }
+    ]
+  }
+}
+```
+
+## 🔧 Customizing Relational Field Expansion
+
+### Problem: Default `[id, "name"]` Format Limitation
+
+By default, Odoo returns relational fields as `[id, "name"]`, but sometimes you need more information like email, phone, or other details from the related record.
+
+### 💡 Solution 1: Fetch Related Records with Specific Fields
+
+Instead of relying on automatic expansion, fetch the related records separately with exactly the fields you need:
+
+```bash
+# Step 1: Get activities (with standard relational fields)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,user_id,request_partner_id,res_id,res_model"
+
+# Step 2: Get detailed user information  
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users/3?fields=id,name,email,phone,department_id,company_id"
+
+# Step 3: Get detailed partner information
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner/15?fields=id,name,email,phone,city,country_id,customer_rank"
+```
+
+**Result: Rich relational data**
+```json
+{
+  "user": {
+    "id": 3,
+    "name": "Sales Manager", 
+    "email": "sales@company.com",
+    "phone": "+1-555-0199",
+    "department_id": [5, "Sales Department"],
+    "company_id": [1, "Your Company"]
+  },
+  "partner": {
+    "id": 15,
+    "name": "Acme Corp",
+    "email": "contact@acme.com", 
+    "phone": "+1-555-0123",
+    "city": "Business City",
+    "country_id": [235, "United States"],
+    "customer_rank": 2
+  }
+}
+```
+
+### 💡 Solution 2: Strategic Batch Queries
+
+Get all related records at once, then enrich your data:
+
+```bash
+# Step 1: Get activities and collect all user IDs
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?limit=50&fields=id,summary,user_id,request_partner_id"
+
+# Step 2: Get all users with rich details (based on collected user_ids)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users?limit=100&fields=id,name,email,phone,department_id,image_1920"
+
+# Step 3: Get all partners with rich details (based on collected partner_ids)  
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?limit=100&fields=id,name,email,phone,city,industry_id,website"
+
+# Then match and enrich in your application
+```
+
+### 💡 Solution 3: Query from Target Model with Rich Context
+
+Query the model that has the richest context first:
+
+```bash
+# Instead of: activity → user details
+# Do: user → activities with user context
+
+# Get users with their activity information
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users?active=true&fields=id,name,email,phone,department_id,activity_ids,login_date"
+
+# Get partners with their activity context
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?is_company=true&fields=id,name,email,phone,city,website,activity_ids,activity_state"
+```
+
+### 💡 Solution 4: Combine Multiple Field Types
+
+Mix different approaches for maximum information:
+
+```bash
+# Get activities with mixed expansion strategies
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid,write_uid"
+```
+
+**This gives you:**
+- `user_id: [3, "Sales Manager"]` - Assigned user
+- `activity_type_id: [2, "Call"]` - Activity type  
+- `request_partner_id: [15, "Acme Corp"]` - Requesting partner
+- `create_uid: [2, "Admin"]` - Who created the activity
+- `write_uid: [3, "Sales Manager"]` - Who last modified it
+
+### 🔄 Practical Workflow: Rich Activity Dashboard
+
+Here's a complete workflow for getting rich relational data:
+
+```bash
+# 1. Get my activities with all available relational context
+ACTIVITIES=$(curl -s -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid")
+
+# 2. Extract unique user IDs from activities (create_uid, user_id, etc.)
+# Parse JSON and collect: [3, 2, 5, 7] 
+
+# 3. Get rich user details for all involved users
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users?limit=100&fields=id,name,email,phone,mobile,department_id,job_title,company_id,image_1920,login_date"
+
+# 4. Extract unique partner IDs and get rich partner details  
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?limit=100&fields=id,name,email,phone,mobile,street,city,state_id,country_id,website,industry_id,customer_rank,supplier_rank"
+
+# 5. Get activity type details
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity.type?fields=id,name,summary,icon,category,decoration_type,delay_count"
+
+# 6. Combine all data in your application for rich display
+```
+
+**Final enriched result:**
+```json
+{
+  "activity": {
+    "id": 456,
+    "summary": "Follow-up call with client",
+    "note": "Discuss pricing options and contract terms",
+    "date_deadline": "2025-01-15",
+    "res_model": "crm.lead",
+    "res_id": 25
+  },
+  "assigned_user": {
+    "id": 3,
+    "name": "Sales Manager",
+    "email": "sales@company.com", 
+    "phone": "+1-555-0199",
+    "department": "Sales Department",
+    "job_title": "Senior Sales Rep",
+    "image_url": "/web/image/res.users/3/image_1920"
+  },
+  "requesting_partner": {
+    "id": 15, 
+    "name": "Acme Corporation",
+    "email": "contact@acme.com",
+    "phone": "+1-555-0123",
+    "address": "123 Business Ave, Business City, CA",
+    "website": "https://acme.com",
+    "industry": "Technology"
+  },
+  "activity_type": {
+    "id": 2,
+    "name": "Call", 
+    "icon": "fa-phone",
+    "category": "phonecall",
+    "decoration_type": "info"
+  }
+}
+```
+
+### 💡 Solution 2: Batch Related Record Fetching
+
+Get multiple related records in one call by filtering:
+
+```bash
+# Step 1: Get activities for CRM leads
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,res_id,user_id,date_deadline"
+
+# Step 2: Get ALL lead details at once (more efficient than individual calls)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead?limit=100&fields=id,name,partner_id,expected_revenue,stage_id"
+
+# Then match res_id to lead.id in your application
+```
+
+### 💡 Solution 3: Strategic Field Selection
+
+Choose fields that give you maximum information in one call:
+
+```bash
+# Get activities with rich context
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_date"
+```
+
+**This gives you:**
+- ✅ **User name** via `user_id: [3, "Sales Manager"]`
+- ✅ **Activity type** via `activity_type_id: [2, "Call"]`
+- ✅ **Requesting partner** via `request_partner_id: [15, "Acme Corp"]`
+- ❌ **Target record details** still need separate call
+
+### 💡 Solution 4: Model-Specific Queries
+
+Query the target model directly with more context:
+
+```bash
+# Instead of: Get activities then fetch leads
+# Do: Get leads with their activity info
+
+# Get CRM leads with activity context
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead?fields=id,name,partner_id,activity_ids,activity_state,activity_summary,activity_date_deadline"
+
+# Get sales orders with activity info
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/sale.order?fields=id,name,partner_id,amount_total,activity_ids,activity_state"
+```
+
+### 📊 Efficient Workflow Examples
+
+#### Example 1: My Activities Dashboard
+
+```bash
+# Get my activities with maximum context in one call
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=id,summary,note,date_deadline,activity_type_id,request_partner_id,res_model,res_id,state,create_date"
+
+# Response gives you:
+# - Activity details (summary, note, deadline)
+# - Who requested it (request_partner_id: [15, "Acme Corp"])
+# - What type (activity_type_id: [2, "Call"])
+# - Which record (res_model: "crm.lead", res_id: 25)
+```
+
+#### Example 2: Lead Activities Overview
+
+```bash
+# Get lead with its activities in one enriched call
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead/25?fields=id,name,partner_id,expected_revenue,stage_id,activity_ids,activity_state,activity_summary,activity_date_deadline,user_id"
+```
+
+#### Example 3: Partner Activities Summary
+
+```bash
+# Get partner's activities across all models
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?request_partner_id=15&fields=summary,date_deadline,res_model,res_id,activity_type_id,state"
+```
+
+### 🚀 Pro Tips for Related Data
+
+1. **Use rich relational fields** - Many fields return `[id, "name"]` format
+2. **Batch queries** - Get multiple related records in one call, then match IDs
+3. **Query from the target model** - Often more efficient than activity → record
+4. **Strategic field selection** - Include context fields that reduce additional calls
+5. **Cache common lookups** - User names, activity types, partners don't change often
+
+### When You Still Need Multiple Calls
+
+Sometimes separate calls are unavoidable, but you can optimize:
+
+```bash
+# ✅ Good: Batch multiple related records
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/crm.lead?id=in&ids=25,30,45&fields=name,partner_id,expected_revenue"
+
+# ❌ Avoid: Individual calls for each record  
+# curl .../crm.lead/25
+# curl .../crm.lead/30  
+# curl .../crm.lead/45
+```
+
+**Note:** The batch query syntax (`id=in&ids=25,30,45`) is not currently supported but would be a valuable future enhancement!
+
+## 📋 Quick Reference: Filtering & Related Data
+
+### ⚡ Quick Filtering Examples
+
+```bash
+# Filter by user
+curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?user_id=3"
+
+# Filter by state  
+curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?state=overdue"
+
+# Multiple filters
+curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/sale.order?partner_id=15&state=sale"
+
+# With specific fields
+curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,activity_type_id"
+```
+
+### ⚡ Quick Related Data Solutions
+
+| Problem | Solution | Example |
+|---------|----------|---------|
+| Get user names | Use `user_id` field | Returns `[3, "Sales Manager"]` |
+| Get activity types | Use `activity_type_id` field | Returns `[2, "Call"]` |
+| Get partner names | Use `partner_id` field | Returns `[15, "Acme Corp"]` |
+| Get target records | Query target model directly | Use `/search/crm.lead` instead |
+| Batch related records | Get all at once, match IDs | Get all leads, match `res_id` |
+
+### ⚡ Relational Field Expansion Options
+
+| Need | Standard Format | Custom Solution | API Calls |
+|------|----------------|-----------------|-----------|
+| **Basic info** | `user_id: [3, "Sales Manager"]` | ✅ Automatic | 1 call |
+| **Email + Phone** | `user_id: [3, "Sales Manager"]` | Get `/search/res.users/3?fields=id,name,email,phone` | 2 calls |
+| **Rich details** | `user_id: [3, "Sales Manager"]` | Get `/search/res.users?fields=id,name,email,phone,department_id,image_1920` | 2 calls |
+| **Multiple users** | Various `[id, "name"]` | Batch: `/search/res.users?limit=100&fields=...` | 2 calls |
+| **Full context** | Standard format | Strategic workflow with multiple models | 3-5 calls |
+
+### ⚡ Best Practices
+
+1. **🎯 Use filtering** - `?user_id=3&state=overdue` instead of getting all records
+2. **📝 Select specific fields** - `&fields=summary,date_deadline,user_id` for faster responses  
+3. **🔗 Leverage relational fields** - Many return `[id, "name"]` automatically
+4. **📊 Query from target model** - Often more efficient than activity → record
+5. **⚡ Batch when possible** - Get multiple records in one call, match in app
+
 ### Response Format
 
 **Basic Response:**
@@ -703,7 +1071,7 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
 # }
 ```
 
-## 📝 URL Parameters
+## 📝 URL Parameters & Filtering
 
 ### Common Parameters
 
@@ -711,6 +1079,89 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
 |-----------|-------------|---------|---------|
 | `limit` | Max records to return | `?limit=10` | 10 |
 | `offset` | Records to skip | `?offset=20` | 0 |
+| `fields` | Specific fields to return | `?fields=name,email,phone` | Basic fields |
+
+### 🔍 Dynamic Filtering
+
+**The API supports filtering by any field in the model using URL parameters!**
+
+**Basic Syntax:** `?field_name=value`
+
+#### Common Filtering Examples
+
+```bash
+# Filter mail.activity by user
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,state"
+
+# Filter by activity state
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?state=overdue&fields=summary,res_model,res_id,user_id"
+
+# Filter by specific model activities
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,res_id,date_deadline"
+
+# Filter by exact date
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?date_deadline=2025-01-15&fields=summary,user_id,res_id"
+
+# Multiple filters
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&state=planned&res_model=crm.lead"
+```
+
+#### Sales Order Filtering
+
+```bash
+# Filter by partner (customer)
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/sale.order?partner_id=15&fields=name,amount_total,state"
+
+# Filter by order state
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/sale.order?state=sale&fields=name,partner_id,amount_total,date_order"
+
+# Filter by salesperson
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/sale.order?user_id=5&fields=name,partner_id,amount_total"
+```
+
+#### User & Partner Filtering
+
+```bash
+# Filter active users only
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.users?active=true&fields=name,login,email"
+
+# Filter partners by country
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?country_id=235&fields=name,email,city"
+
+# Filter customers only
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/res.partner?is_company=true&fields=name,email,phone"
+```
+
+#### **⚠️ Current Limitations**
+
+- **Only exact matches supported** (`field = value`)
+- **No range queries** (`date > 2025-01-01` not supported yet)
+- **No text search** (`name ilike '%company%'` not supported yet)
+
+#### **💡 Workarounds for Complex Filtering**
+
+For advanced filtering needs:
+
+```bash
+# Use state fields instead of date comparisons
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/mail.activity?state=overdue"  # Instead of date_deadline < today
+
+# Get broader results and filter in your application
+curl -H "session-token: YOUR_SESSION_TOKEN" \
+     "http://localhost:8069/api/v2/search/sale.order?limit=100&fields=date_order,amount_total,state"
+```
 
 ### Partner-Specific Parameters
 
@@ -870,6 +1321,209 @@ if __name__ == "__main__":
             print(f"Type: {activity_data['activity_type_id'][1] if activity_data['activity_type_id'] else 'Unknown'}")
             print(f"Status: {activity_data['state']}")
             print("---")
+    
+    # ===== FILTERING AND RELATED DATA EXAMPLES =====
+    
+    # Example: Get my activities with rich context (minimal API calls)
+    print("\n=== My Activities Dashboard ===")
+    my_activities = client.search_model('mail.activity', 
+        limit=10, 
+        params={'user_id': 3, 'fields': 'id,summary,date_deadline,activity_type_id,request_partner_id,res_model,res_id,state'})
+    
+    if my_activities['success']:
+        for activity in my_activities['data']['records']:
+            print(f"📋 {activity['summary']}")
+            print(f"   📅 Due: {activity['date_deadline']}")
+            print(f"   👤 Requested by: {activity['request_partner_id'][1] if activity['request_partner_id'] else 'N/A'}")
+            print(f"   📝 Type: {activity['activity_type_id'][1] if activity['activity_type_id'] else 'Unknown'}")
+            print(f"   📊 Related: {activity['res_model']} #{activity['res_id']}")
+            print(f"   🎯 Status: {activity['state']}")
+            print()
+    
+    # Example: Get overdue activities across all models
+    print("\n=== Overdue Activities ===")
+    overdue = client.search_model('mail.activity',
+        limit=5,
+        params={'state': 'overdue', 'fields': 'summary,date_deadline,user_id,res_model,res_id'})
+    
+    if overdue['success']:
+        for activity in overdue['data']['records']:
+            print(f"⚠️  {activity['summary']} (Due: {activity['date_deadline']})")
+            print(f"    Assigned to: {activity['user_id'][1] if activity['user_id'] else 'Unassigned'}")
+            print(f"    Related to: {activity['res_model']} #{activity['res_id']}")
+    
+    # Example: Efficient lead activities (query from target model)
+    print("\n=== Lead Activities (Efficient Method) ===")
+    leads_with_activities = client.search_model('crm.lead',
+        limit=3,
+        params={'fields': 'id,name,partner_id,activity_ids,activity_state,user_id'})
+    
+    if leads_with_activities['success']:
+        for lead in leads_with_activities['data']['records']:
+            print(f"🎯 Lead: {lead['name']}")
+            print(f"   Customer: {lead['partner_id'][1] if lead['partner_id'] else 'No customer'}")
+            print(f"   Owner: {lead['user_id'][1] if lead['user_id'] else 'Unassigned'}")
+            print(f"   Activity Status: {lead.get('activity_state', 'No activities')}")
+            print(f"   Activity IDs: {lead.get('activity_ids', [])}")
+            print()
+    
+    # Enhanced search_model method to support parameters
+    def search_model_with_params(self, model, limit=10, offset=0, params=None):
+        """Enhanced search with parameter support for filtering."""
+        url_params = {'limit': limit, 'offset': offset}
+        if params:
+            url_params.update(params)
+        
+        response = requests.get(
+            f"{self.base_url}/search/{model}", 
+            headers=self.headers, 
+            params=url_params
+        )
+        return response.json()
+    
+    # Add the enhanced method to the class
+    client.search_model_with_params = search_model_with_params.__get__(client, OdooAPIClient)
+    
+    # ===== CUSTOM RELATIONAL FIELD EXPANSION =====
+    
+    print("\n=== Custom Relational Field Expansion ===")
+    
+    def get_enriched_activities(client, user_id=None, limit=10):
+        """Get activities with enriched relational field data."""
+        
+        # Step 1: Get activities with basic relational fields
+        params = {'fields': 'id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid'}
+        if user_id:
+            params['user_id'] = user_id
+        
+        activities_response = client.search_model('mail.activity', limit=limit, params=params)
+        
+        if not activities_response['success']:
+            return activities_response
+        
+        activities = activities_response['data']['records']
+        
+        # Step 2: Collect all unique user IDs and partner IDs
+        user_ids = set()
+        partner_ids = set()
+        
+        for activity in activities:
+            if activity.get('user_id') and isinstance(activity['user_id'], list):
+                user_ids.add(activity['user_id'][0])
+            if activity.get('create_uid') and isinstance(activity['create_uid'], list):
+                user_ids.add(activity['create_uid'][0])
+            if activity.get('request_partner_id') and isinstance(activity['request_partner_id'], list):
+                partner_ids.add(activity['request_partner_id'][0])
+        
+        # Step 3: Batch fetch rich user details
+        users_map = {}
+        if user_ids:
+            users_response = client.search_model('res.users', 
+                limit=100, 
+                params={'fields': 'id,name,email,phone,department_id,job_title,image_1920'})
+            
+            if users_response['success']:
+                for user in users_response['data']['records']:
+                    users_map[user['id']] = user
+        
+        # Step 4: Batch fetch rich partner details
+        partners_map = {}
+        if partner_ids:
+            partners_response = client.search_model('res.partner',
+                limit=100,
+                params={'fields': 'id,name,email,phone,city,website,industry_id,customer_rank'})
+            
+            if partners_response['success']:
+                for partner in partners_response['data']['records']:
+                    partners_map[partner['id']] = partner
+        
+        # Step 5: Enrich activities with detailed relational data
+        enriched_activities = []
+        for activity in activities:
+            enriched_activity = activity.copy()
+            
+            # Enrich user_id
+            if activity.get('user_id') and isinstance(activity['user_id'], list):
+                user_id = activity['user_id'][0]
+                if user_id in users_map:
+                    enriched_activity['assigned_user'] = users_map[user_id]
+            
+            # Enrich create_uid
+            if activity.get('create_uid') and isinstance(activity['create_uid'], list):
+                creator_id = activity['create_uid'][0]
+                if creator_id in users_map:
+                    enriched_activity['created_by'] = users_map[creator_id]
+            
+            # Enrich request_partner_id
+            if activity.get('request_partner_id') and isinstance(activity['request_partner_id'], list):
+                partner_id = activity['request_partner_id'][0]
+                if partner_id in partners_map:
+                    enriched_activity['requesting_partner'] = partners_map[partner_id]
+            
+            enriched_activities.append(enriched_activity)
+        
+        return {
+            'success': True,
+            'data': {
+                'enriched_activities': enriched_activities,
+                'api_calls_made': 3,  # activities + users + partners
+                'users_fetched': len(users_map),
+                'partners_fetched': len(partners_map)
+            }
+        }
+    
+    # Example usage
+    enriched_result = get_enriched_activities(client, user_id=3, limit=5)
+    
+    if enriched_result['success']:
+        print(f"📊 Fetched {len(enriched_result['data']['enriched_activities'])} activities")
+        print(f"📞 API calls made: {enriched_result['data']['api_calls_made']}")
+        print(f"👥 Users enriched: {enriched_result['data']['users_fetched']}")
+        print(f"🏢 Partners enriched: {enriched_result['data']['partners_fetched']}")
+        print()
+        
+        for activity in enriched_result['data']['enriched_activities']:
+            print(f"📋 Activity: {activity['summary']}")
+            print(f"📅 Due: {activity['date_deadline']}")
+            
+            # Rich user information
+            if 'assigned_user' in activity:
+                user = activity['assigned_user']
+                print(f"👤 Assigned to: {user['name']} ({user.get('email', 'No email')})")
+                if user.get('phone'):
+                    print(f"📞 Phone: {user['phone']}")
+                if user.get('department_id'):
+                    print(f"🏢 Department: {user['department_id'][1]}")
+            
+            # Rich partner information  
+            if 'requesting_partner' in activity:
+                partner = activity['requesting_partner']
+                print(f"🤝 Requested by: {partner['name']} ({partner.get('email', 'No email')})")
+                if partner.get('city'):
+                    print(f"📍 Location: {partner['city']}")
+                if partner.get('website'):
+                    print(f"🌐 Website: {partner['website']}")
+            
+            print(f"📊 Related to: {activity['res_model']} #{activity['res_id']}")
+            print("---")
+    
+    # Alternative: Simple field expansion helper
+    def expand_relational_field(client, model, record_id, fields):
+        """Helper to get rich details for a relational field."""
+        response = client.get_record(model, record_id, fields)
+        if response['success']:
+            return response['data']['record']
+        return None
+    
+    # Example: Expand a single user field on demand
+    print("\n=== On-Demand Field Expansion ===")
+    user_details = expand_relational_field(client, 'res.users', 3, 
+                                         ['id', 'name', 'email', 'phone', 'department_id', 'signature'])
+    if user_details:
+        print(f"👤 User: {user_details['name']}")
+        print(f"📧 Email: {user_details.get('email', 'N/A')}")
+        print(f"📞 Phone: {user_details.get('phone', 'N/A')}")
+        print(f"🏢 Department: {user_details.get('department_id', ['', 'N/A'])[1]}")
 ```
 
 ### JavaScript/Node.js Client
