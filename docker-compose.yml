@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${ODOO_DB:-odoo19_db}
+      POSTGRES_USER: ${ODOO_DB_USER:-odoo}
+      POSTGRES_PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data/pgdata
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${ODOO_DB_USER:-odoo} -d ${ODOO_DB:-odoo19_db}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8069:8069"
+      - "8072:8072"
+    volumes:
+      - odoo-filestore:/var/lib/odoo/filestore
+      - odoo-logs:/var/log/odoo
+    environment:
+      HOST: db
+      USER: ${ODOO_DB_USER:-odoo}
+      PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
+    command:
+      [
+        "-c",
+        "/etc/odoo/odoo.conf",
+        "-d",
+        "${ODOO_DB:-odoo19_db}",
+        "--db_user",
+        "${ODOO_DB_USER:-odoo}",
+        "--db_password",
+        "${ODOO_DB_PASSWORD:-odoo}",
+      ]
+
+volumes:
+  odoo-db-data:
+  odoo-filestore:
+  odoo-logs:
