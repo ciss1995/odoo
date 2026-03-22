@@ -1,16 +1,319 @@
-# Odoo Installation Guide for macOS
+# Odoo Installation Guide
 
-This guide follows the official Odoo installation documentation for setting up a development environment on macOS.
+This guide covers setting up an Odoo 19 development environment. Choose between **Docker** (recommended for quick setup) or a **native macOS** installation.
 
-## System Requirements
+---
+
+## Option A: Docker Installation (Recommended)
+
+The fastest way to get Odoo running. Requires only Docker — no need to install Python, PostgreSQL, or Node.js on your host machine.
+
+### Prerequisites
+
+- **Docker Desktop**: [Install Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+Verify Docker is installed:
+
+```bash
+docker --version
+docker compose version
+```
+
+### Quick Start
+
+From the project root:
+
+```bash
+# Optional: customize database settings
+cp .env.example .env
+# Edit .env if needed (e.g. ODOO_DB, ODOO_INIT_MODULES)
+
+# Build and start Odoo + PostgreSQL
+docker compose up -d
+
+# Initialize database and install modules (required on first run)
+# Uses ODOO_INIT_MODULES from .env (see "Module Presets" below)
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} \
+  -i ${ODOO_INIT_MODULES:-base,base_api} --stop-after-init
+
+# Restart Odoo to pick up the initialized database
+docker compose restart odoo
+```
+
+That's it. Open **http://localhost:8069** and log in:
+- **Email**: `admin`
+- **Password**: `admin`
+
+### Module Presets
+
+Set `ODOO_INIT_MODULES` in your `.env` file to control which modules are installed on first init.
+
+**Minimal** — just the API, nothing else:
+```
+ODOO_INIT_MODULES=base,base_api
+```
+
+**Standard** — core business apps + API:
+```
+ODOO_INIT_MODULES=base,base_api,sale,crm,hr,purchase,stock,account
+```
+
+**Full** (default — matches local dev environment, 64 modules):
+```
+ODOO_INIT_MODULES=base,base_api,api_doc,account,account_add_gln,account_edi_ubl_cii,account_payment,analytic,auth_passkey,auth_passkey_portal,auth_signup,auth_totp,auth_totp_mail,auth_totp_portal,base_import,base_import_module,base_install_request,base_setup,bus,calendar,certificate,contacts,crm,digest,google_gmail,hr,hr_calendar,hr_homeworking,hr_homeworking_calendar,hr_org_chart,hr_skills,html_editor,http_routing,l10n_fr,l10n_us,mail,mail_bot,mail_bot_hr,microsoft_outlook,onboarding,payment,phone_validation,portal,privacy_lookup,product,resource,resource_mail,rpc,sale,sale_crm,sale_edi_ubl,sale_management,sale_pdf_quote_builder,sales_team,spreadsheet,spreadsheet_account,spreadsheet_dashboard,spreadsheet_dashboard_account,spreadsheet_dashboard_sale,uom,utm,web,web_hierarchy,web_tour,web_unsplash
+```
+
+#### Adding More Modules
+
+To install additional modules on an already-running Docker instance:
+
+```bash
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} -i module1,module2 --stop-after-init
+docker compose restart odoo
+```
+
+#### Available Modules by Category
+
+Below are the most useful uninstalled modules you can add. Use the module name in `-i`.
+
+**Inventory & Logistics**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `stock` | Inventory | Warehouse management |
+| `purchase` | Purchase | Purchase orders & procurement |
+| `delivery` | Delivery Costs | Shipping cost management |
+| `stock_picking_batch` | Batch Transfer | Bulk warehouse operations |
+| `stock_landed_costs` | Landed Costs | Additional cost tracking |
+
+**Website & eCommerce**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `website` | Website | Website builder |
+| `website_sale` | eCommerce | Online store |
+| `website_blog` | Blog | Blog engine |
+| `website_event` | Events | Online event management |
+| `website_forum` | Forum | Community forum |
+| `website_slides` | eLearning | Online courses |
+| `website_crm` | Contact Form | CRM web forms |
+| `website_hr_recruitment` | Online Jobs | Job posting portal |
+
+**HR & People**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `hr_holidays` | Time Off | Leave management |
+| `hr_expense` | Expenses | Expense reporting |
+| `hr_attendance` | Attendances | Clock in/out tracking |
+| `hr_recruitment` | Recruitment | Hiring pipeline |
+| `hr_timesheet` | Task Logs | Time tracking |
+| `hr_fleet` | Fleet History | Vehicle management |
+| `hr_work_entry` | Work Entries | Payroll work entries |
+
+**Project & Services**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `project` | Project | Project & task management |
+| `hr_timesheet` | Timesheets | Time tracking on tasks |
+
+**Marketing & Communication**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `mass_mailing` | Email Marketing | Bulk email campaigns |
+| `mass_mailing_sms` | SMS Marketing | Bulk SMS campaigns |
+| `im_livechat` | Live Chat | Real-time chat support |
+| `crm_sms` | CRM SMS | SMS from CRM |
+| `survey` | Surveys | Online surveys & forms |
+
+**Manufacturing**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `mrp` | Manufacturing | Bill of materials & work orders |
+| `mrp_subcontracting` | Subcontracting | Outsourced manufacturing |
+| `maintenance` | Maintenance | Equipment maintenance |
+
+**Accounting Extras**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `account_check_printing` | Check Printing | Print checks |
+| `account_debit_note` | Debit Notes | Create debit notes |
+| `account_tax_python` | Tax Python | Taxes as Python code |
+| `base_vat` | VAT Validation | VAT number validation |
+| `base_iban` | IBAN | IBAN bank account support |
+
+**Authentication & Security**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `auth_oauth` | OAuth2 | OAuth2 login (Google, etc.) |
+| `auth_ldap` | LDAP | LDAP authentication |
+| `auth_password_policy` | Password Policy | Password strength rules |
+
+**Other Useful Modules**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `base_automation` | Automation Rules | Automated actions |
+| `board` | Dashboards | Custom dashboards |
+| `fleet` | Fleet | Vehicle management |
+| `gamification` | Gamification | Goals & badges |
+| `data_recycle` | Data Recycle | Clean up old records |
+
+#### Example: Install Website + eCommerce
+
+```bash
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} -i website,website_sale --stop-after-init
+docker compose restart odoo
+```
+
+### Migrating Data from Local to Docker
+
+If you have an existing local PostgreSQL database you want to bring into Docker:
+
+```bash
+# 1. Dump local database (plain SQL — works across PG versions)
+pg_dump --format=plain --no-owner --no-privileges odoo19_db | gzip > /tmp/odoo19_db.sql.gz
+
+# 2. Stop Odoo (keep DB container running)
+docker compose stop odoo
+
+# 3. Copy dump into the DB container
+docker cp /tmp/odoo19_db.sql.gz odoo-db-1:/tmp/odoo19_db.sql.gz
+
+# 4. Drop old Docker DB, recreate, and restore
+docker compose exec db bash -c "\
+  dropdb -U odoo --if-exists odoo19_db && \
+  createdb -U odoo -O odoo odoo19_db && \
+  gunzip -c /tmp/odoo19_db.sql.gz | psql -U odoo -d odoo19_db -q"
+
+# 5. Start Odoo
+docker compose start odoo
+```
+
+> **Note**: Use plain-text SQL dumps (`--format=plain`) when local and Docker PostgreSQL major versions differ. Binary dumps (`-Fc`) only work when `pg_restore` version >= the dump version.
+
+### What Docker Compose Starts
+
+| Service      | Image         | Port (host) | Description                     |
+|-------------|---------------|-------------|---------------------------------|
+| `db`        | postgres:18   | 5433        | PostgreSQL database             |
+| `odoo`      | built locally | 8069        | Odoo web server                 |
+
+### Common Docker Commands
+
+```bash
+# Start the stack
+docker compose up -d
+
+# Stop the stack
+docker compose down
+
+# View live Odoo logs
+docker compose exec odoo tail -f /var/log/odoo/odoo.log
+
+# Check container status
+docker compose ps
+
+# Rebuild after code changes
+docker compose up -d --build
+
+# Install a module
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} -i module_name --stop-after-init
+docker compose restart odoo
+
+# Update a module
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} -u module_name --stop-after-init
+docker compose restart odoo
+
+# Open a shell inside the Odoo container
+docker compose exec odoo bash
+
+# Connect to the PostgreSQL database
+docker compose exec db psql -U ${ODOO_DB_USER:-odoo} -d ${ODOO_DB:-odoo19_db}
+
+# Reset everything (removes all data)
+docker compose down -v
+```
+
+### Docker Configuration
+
+The Docker setup uses these files:
+
+| File                    | Purpose                                          |
+|------------------------|--------------------------------------------------|
+| `Dockerfile`           | Builds the Odoo image from source                |
+| `docker-compose.yml`   | Orchestrates Odoo + PostgreSQL services           |
+| `docker/odoo.conf`     | Odoo server configuration for Docker              |
+| `.dockerignore`        | Excludes unnecessary files from the Docker build  |
+| `.env`                 | Optional overrides (database, users, init modules) |
+
+To change Odoo settings (port, log level, worker count, etc.), edit `docker/odoo.conf` and rebuild:
+
+```bash
+docker compose up -d --build
+```
+
+### Docker Volumes
+
+Data persists across restarts via named volumes:
+
+| Volume             | Mounted at (container)                    | Content           |
+|-------------------|-------------------------------------------|--------------------|
+| `odoo-db-data`    | `/var/lib/postgresql/data/pgdata`         | PostgreSQL data    |
+| `odoo-filestore`  | `/var/lib/odoo/filestore`                 | Odoo file uploads  |
+| `odoo-logs`       | `/var/log/odoo`                           | Odoo log files     |
+
+### Docker Troubleshooting
+
+**Port 8069 already in use:**
+```bash
+# Check what's using the port
+lsof -i :8069
+
+# Or change the host port in docker-compose.yml
+# e.g., "8070:8069" to use port 8070 on the host
+```
+
+**Database not initialized (500 error on first visit):**
+```bash
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} \
+  -i ${ODOO_INIT_MODULES:-base,base_api} --stop-after-init
+docker compose restart odoo
+```
+
+**Rebuild from scratch:**
+```bash
+docker compose down -v
+docker compose up -d --build
+# Then re-initialize the database (see Quick Start)
+```
+
+---
+
+## Option B: Native macOS Installation
+
+This section follows the official Odoo installation documentation for setting up a development environment directly on macOS.
+
+### System Requirements
 
 - **Python**: 3.10 to 3.13 (required by Odoo 19)
 - **PostgreSQL**: 13 or above (required by Odoo 19)
 - **Node.js**: Required for rtlcss package
 
-## Step 1: Install Python
+### Step 1: Install Python
 
-### Using Package Manager (Recommended)
+#### Using Package Manager (Recommended)
 
 Use Homebrew or MacPorts to install Python 3:
 
@@ -22,7 +325,7 @@ Use Homebrew or MacPorts to install Python 3:
 brew install python3
 ```
 
-### Verify Python Installation
+#### Verify Python Installation
 
 Check that Python 3.10 or later is installed:
 
@@ -32,7 +335,7 @@ python3 --version
 
 **Expected output**: `Python 3.10.x` or higher
 
-### Verify pip Installation
+#### Verify pip Installation
 
 Ensure pip is available for this Python version:
 
@@ -42,9 +345,9 @@ pip3 --version
 
 > **Note**: If Python 3 is already installed, make sure that the version is 3.10 or above, as previous versions are not compatible with Odoo.
 
-## Step 2: Install PostgreSQL
+### Step 2: Install PostgreSQL
 
-### Install via Homebrew
+#### Install via Homebrew
 
 ```bash
 # Install PostgreSQL (version 16 recommended)
@@ -54,7 +357,7 @@ brew install postgresql@16
 brew services start postgresql@16
 ```
 
-### Verify PostgreSQL is Running
+#### Verify PostgreSQL is Running
 
 ```bash
 # Check service status
@@ -64,7 +367,7 @@ brew services list | grep postgresql
 psql -l
 ```
 
-### Create PostgreSQL User (if needed)
+#### Create PostgreSQL User (if needed)
 
 Homebrew's PostgreSQL installation creates a superuser role matching your macOS username, so you can typically connect without extra setup. If you need a separate user:
 
@@ -78,16 +381,16 @@ createdb $USER
 
 > **Note**: With Homebrew PostgreSQL, the current macOS user can connect without a password by default (peer authentication).
 
-## Step 3: Install Dependencies
+### Step 3: Install Dependencies
 
-### Navigate to Odoo Directory
+#### Navigate to Odoo Directory
 
 ```bash
 # Navigate to your Odoo Community installation path
 cd /Users/projects/odoo
 ```
 
-### Install Python Dependencies
+#### Install Python Dependencies
 
 Odoo dependencies are listed in the `requirements.txt` file located at the root of the Odoo Community directory.
 
@@ -108,7 +411,7 @@ pip3 install -r requirements.txt
 > pip3 install -r requirements.txt
 > ```
 
-### Install Non-Python Dependencies
+#### Install Non-Python Dependencies
 
 Install Command Line Tools:
 
@@ -116,7 +419,7 @@ Install Command Line Tools:
 xcode-select --install
 ```
 
-### Install Node.js and rtlcss
+#### Install Node.js and rtlcss
 
 For languages using a right-to-left interface (such as Arabic or Hebrew), the rtlcss package is required.
 
@@ -130,7 +433,7 @@ sudo npm install -g rtlcss
 
 > **Warning**: Non-Python dependencies must be installed with a package manager (Homebrew, MacPorts).
 
-### Optional: Install wkhtmltopdf
+#### Optional: Install wkhtmltopdf
 
 > **Warning**: wkhtmltopdf is not installed through pip and must be installed manually in version 0.12.6 for it to support headers and footers. Check out the [wkhtmltopdf wiki](https://wkhtmltopdf.org/) for more details on the various versions.
 
@@ -139,11 +442,11 @@ sudo npm install -g rtlcss
 brew install wkhtmltopdf
 ```
 
-## Step 4: Running Odoo
+### Step 4: Running Odoo
 
 Once all dependencies are set up, Odoo can be launched by running `odoo-bin`, the command-line interface of the server. It is located at the root of the Odoo Community directory.
 
-### Basic Start Command
+#### Basic Start Command
 
 ```bash
 # Navigate to Odoo Community path
@@ -157,7 +460,7 @@ Where:
 - `/Users/projects/odoo` is the path of the Odoo Community installation
 - `mydb` is the name of the PostgreSQL database
 
-### Common Configuration Options
+#### Common Configuration Options
 
 To configure the server, you can specify command-line arguments or use a configuration file.
 
@@ -165,7 +468,7 @@ To configure the server, you can specify command-line arguments or use a configu
 - PostgreSQL user and password
 - Custom addon paths beyond the defaults to load custom modules
 
-### Enterprise Edition
+#### Enterprise Edition
 
 > **Tip**: For the Enterprise edition, add the path to the enterprise add-ons to the `addons-path` argument. Note that it must come before the other paths in `addons-path` for add-ons to be loaded correctly.
 
@@ -173,7 +476,7 @@ To configure the server, you can specify command-line arguments or use a configu
 python3 odoo-bin --addons-path=enterprise,addons -d mydb
 ```
 
-## Step 5: Access Odoo
+### Step 5: Access Odoo
 
 1. After the server has started (look for the log message: `INFO odoo.modules.loading: Modules loaded.`)
 2. Open your web browser
@@ -184,39 +487,39 @@ python3 odoo-bin --addons-path=enterprise,addons -d mydb
 
 > **Tip**: From there, create and manage new users. The user account used to log into Odoo's web interface differs from the `--db_user` CLI argument.
 
-## Common Start Commands
+### Common Start Commands
 
-### Development Mode
+#### Development Mode
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb --dev=all
 ```
 
-### Custom Database Configuration
+#### Custom Database Configuration
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb --db-host=localhost --db-port=5432 --db-user=$USER
 ```
 
-### Install Specific Module
+#### Install Specific Module
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb -i module_name
 ```
 
-### Update Specific Module
+#### Update Specific Module
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb -u module_name
 ```
 
-### Custom Port
+#### Custom Port
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb --xmlrpc-port=8070
 ```
 
-### With Logging
+#### With Logging
 ```bash
 python3 odoo-bin --addons-path=addons -d mydb --log-level=debug
 ```
 
-## Configuration File (Optional)
+### Configuration File (Optional)
 
 You can create a configuration file instead of using command-line arguments:
 
@@ -244,7 +547,7 @@ Then start Odoo with:
 python3 odoo-bin -c odoo.conf -d mydb
 ```
 
-## Multi-Company Setup: Running 2 Databases for 2 Companies
+### Multi-Company Setup: Running 2 Databases for 2 Companies
 
 This section provides a complete example of setting up two separate Odoo databases for two different companies, each running on different ports.
 
@@ -647,6 +950,8 @@ You now have a complete multi-company Odoo setup with:
 - **RetailPlus**: http://localhost:8070
 
 Use `./manage_companies.sh start` to begin working with both companies!
+
+---
 
 ## Troubleshooting
 

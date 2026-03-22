@@ -93,7 +93,7 @@ curl -X POST "http://localhost:8069/api/v2/auth/logout" \
   - All user management endpoints (`/api/v2/users/*`)
   
 - **Legacy endpoints** (❌ Session Token, ✅ API Key only):
-  - `/api/v2/partners`, `/api/v2/products`, `/api/v2/user/info`, `/api/v2/fields/{model}`
+  - `/api/v2/partners`, `/api/v2/products`, `/api/v2/user/info`, `/api/v2/auth/test`
 
 **Recommendation**: Use `/api/v2/search/res.partner` instead of `/api/v2/partners` for session token compatibility.
 
@@ -134,37 +134,7 @@ curl -X POST "http://localhost:8069/api/v2/users/2/api-key" \
     -H "session-token: $SESSION_TOKEN"
 ```
 
-### Method 2: Via Database (Advanced)
-
-**Generate API key via direct database access:**
-```bash
-python3 -c "
-import psycopg2
-import secrets
-import string
-
-# Generate secure API key
-alphabet = string.ascii_letters + string.digits + '-_'
-api_key = ''.join(secrets.choice(alphabet) for _ in range(48))
-
-# Insert into res_users_apikeys table (replace database and user details)
-conn = psycopg2.connect(
-    host='localhost', port=5432, database='mydb', 
-    user='$(whoami)', password=''
-)
-cur = conn.cursor()
-cur.execute(\"\"\"
-    INSERT INTO res_users_apikeys (name, user_id, key, create_date)
-    VALUES ('Generated API Key', (SELECT id FROM res_users WHERE login = 'admin'), %s, NOW())
-\"\"\", (api_key,))
-conn.commit()
-print(f'API Key for admin: {api_key}')
-cur.close()
-conn.close()
-"
-```
-
-### Method 3: Via Odoo Web Interface
+### Method 2: Via Odoo Web Interface
 
 1. **Access Odoo Web Interface:** `http://localhost:8069`
 2. **Login as admin:** username: `admin`, password: `admin`
@@ -174,7 +144,7 @@ conn.close()
 6. **Click "Generate API Key"** button
 7. **Copy the generated key**
 
-### Method 4: Programmatically via API
+### Method 3: Programmatically via API
 
 First get an API key for an admin user, then use it to manage other users:
 
@@ -233,11 +203,17 @@ curl -H "api-key: YOUR_API_KEY" \
 ### Deactivate/Activate Users
 
 ```bash
-# Update user status (deactivate)
-curl -X POST "http://localhost:8069/api/v2/create/res.users" \
-     -H "api-key: YOUR_API_KEY" \
+# Deactivate a user (admin only, replace USER_ID)
+curl -X PUT "http://localhost:8069/api/v2/users/USER_ID" \
+     -H "api-key: YOUR_ADMIN_API_KEY" \
      -H "Content-Type: application/json" \
      -d '{"active": false}'
+
+# Re-activate a user
+curl -X PUT "http://localhost:8069/api/v2/users/USER_ID" \
+     -H "api-key: YOUR_ADMIN_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"active": true}'
 ```
 
 ## 🔐 Authentication Examples
@@ -270,18 +246,7 @@ curl -H "api-key: YOUR_API_KEY" \
 - API key is revoked (deleted from database)
 - User permissions are changed
 
-To "sign out" programmatically, you can:
-```bash
-# Remove API key from user
-python3 -c "
-import psycopg2
-conn = psycopg2.connect(host='localhost', port=5432, database='mydb', user='$(whoami)')
-cur = conn.cursor()
-cur.execute(\"UPDATE res_users SET api_key = NULL WHERE login = 'username'\")
-conn.commit()
-print('API key revoked')
-"
-```
+To revoke an API key, use the Odoo Web Interface (Settings → Users → API Access tab) or generate a new key to replace the old one via the API.
 
 ## 📋 Complete API Reference
 
@@ -316,8 +281,11 @@ print('API key revoked')
 | `GET` | `/api/v2/search/{model}` | ✅ Yes | ✅ | ✅ | Search any model |
 | `GET` | `/api/v2/search/{model}/{id}` | ✅ Yes | ✅ | ✅ | Get specific record by ID |
 | `POST` | `/api/v2/create/{model}` | ✅ Yes | ✅ | ✅ | Create record in any model |
+| `PUT` | `/api/v2/update/{model}/{id}` | ✅ Yes | ✅ | ✅ | Update record in any model |
+| `DELETE` | `/api/v2/delete/{model}/{id}` | ✅ Yes | ✅ | ✅ | Delete record from any model |
 | `GET` | `/api/v2/fields/{model}` | ✅ Yes | ✅ | ✅ | Get model fields |
-| `GET` | `/api/v2/groups` | ✅ Yes | ✅ | ✅ | List user groups |
+| `GET` | `/api/v2/models` | ✅ Yes | ✅ | ✅ | List accessible models |
+| `GET` | `/api/v2/groups` | ✅ Admin | ✅ | ✅ | List user groups (admin/user-manager only) |
 
 ## 🛠️ Complete Examples
 
@@ -936,17 +904,12 @@ curl -H "session-token: YOUR_SESSION_TOKEN" \
 Sometimes separate calls are unavoidable, but you can optimize:
 
 ```bash
-# ✅ Good: Batch multiple related records
+# Get broader results and filter in your application
 curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead?id=in&ids=25,30,45&fields=name,partner_id,expected_revenue"
+     "http://localhost:8069/api/v2/search/crm.lead?limit=100&fields=name,partner_id,expected_revenue"
 
-# ❌ Avoid: Individual calls for each record  
-# curl .../crm.lead/25
-# curl .../crm.lead/30  
-# curl .../crm.lead/45
+# Then match the IDs you need client-side
 ```
-
-**Note:** The batch query syntax (`id=in&ids=25,30,45`) is not currently supported but would be a valuable future enhancement!
 
 ## 📋 Quick Reference: Filtering & Related Data
 
@@ -1661,11 +1624,10 @@ echo "Auth test: " . json_encode($authTest) . "\n";
 Run the comprehensive test script:
 
 ```bash
-cd /Users/projects/odoo_o
-python3 test_complete_api.py
+bash scripts/test_all_endpoints.sh
 ```
 
-This script tests all endpoints and confirms everything is working.
+This script runs 244 tests covering all endpoints, role-based access control, session auth, and error handling.
 
 ## 🔒 Security & Production
 

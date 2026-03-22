@@ -7,9 +7,19 @@ import string
 from datetime import datetime, timedelta
 from odoo import http
 from odoo.http import request
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, MissingError, ValidationError
 
 _logger = logging.getLogger(__name__)
+
+BLOCKED_MODELS = frozenset({
+    'api.session',
+    'ir.cron',
+    'ir.rule',
+    'ir.model.access',
+    'res.users.apikeys',
+    'ir.attachment',
+    'base.module.update',
+})
 
 
 class SimpleApiController(http.Controller):
@@ -30,6 +40,25 @@ class SimpleApiController(http.Controller):
         response.status_code = status_code
         return response
 
+    def _json_response_sensitive(self, data=None, success=True, message=None, status_code=200):
+        """JSON response with no-cache headers for credential-bearing responses."""
+        response_data = {
+            'success': success,
+            'data': data,
+            'message': message
+        }
+
+        response = request.make_response(
+            json.dumps(response_data, default=str),
+            headers=[
+                ('Content-Type', 'application/json'),
+                ('Cache-Control', 'no-store, no-cache, must-revalidate'),
+                ('Pragma', 'no-cache'),
+            ]
+        )
+        response.status_code = status_code
+        return response
+
     def _error_response(self, message, status_code=400, error_code=None):
         """Create a standardized error response."""
         error_data = {
@@ -46,6 +75,10 @@ class SimpleApiController(http.Controller):
         )
         response.status_code = status_code
         return response
+
+    def _is_model_blocked(self, model_name):
+        """Check if a model is blocked from generic API access."""
+        return model_name in BLOCKED_MODELS
 
     def _authenticate(self):
         """Authenticate via API key using Odoo 19's hashed key verification."""
@@ -70,14 +103,15 @@ class SimpleApiController(http.Controller):
             return False, self._error_response("Authentication error", 500, "AUTH_ERROR")
 
     def _authenticate_session(self):
-        """Authenticate user with session token."""
+        """Authenticate user with session token (compared via hash)."""
         session_token = request.httprequest.headers.get('session-token')
         if not session_token:
             return False, self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
         
         try:
+            token_hash = request.env['api.session']._hash_token(session_token)
             session = request.env['api.session'].sudo().search([
-                ('token', '=', session_token),
+                ('token', '=', token_hash),
                 ('active', '=', True),
                 ('expires_at', '>', datetime.now())
             ], limit=1)
@@ -97,18 +131,9 @@ class SimpleApiController(http.Controller):
         """Check if current user has access to the model and operation."""
         try:
             model = request.env[model_name]
-            if operation == 'read':
-                model.check_access_rights('read')
-            elif operation == 'create':
-                model.check_access_rights('create')
-            elif operation == 'write':
-                model.check_access_rights('write')
-            elif operation == 'unlink':
-                model.check_access_rights('unlink')
+            model.check_access_rights(operation)
             return True
         except AccessError:
-            return False
-        except Exception:
             return False
 
     # ===== WORKING ENDPOINTS =====
@@ -275,7 +300,10 @@ class SimpleApiController(http.Controller):
             # Validate model
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
-            
+
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
             # Check user access to model
             if not self._check_model_access(model, 'read'):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
@@ -319,7 +347,6 @@ class SimpleApiController(http.Controller):
                     has_custom_filters = True
             
             # Only add active filter if no custom filters and active field exists
-            # This prevents filtering out inactive records when specifically searching
             if not has_custom_filters and 'active' in model_obj._fields:
                 domain.append(('active', '=', True))
             
@@ -339,7 +366,11 @@ class SimpleApiController(http.Controller):
                 },
                 message=f"Found {len(records_data)} records in {model}"
             )
-            
+
+        except AccessError as e:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "SEARCH_ERROR")
         except Exception as e:
             _logger.error("Error searching %s: %s", model, str(e))
             return self._error_response("Error searching records", 500, "SEARCH_ERROR")
@@ -358,7 +389,10 @@ class SimpleApiController(http.Controller):
             # Validate model
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
-            
+
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
             # Check user access to model
             if not self._check_model_access(model, 'read'):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
@@ -379,29 +413,25 @@ class SimpleApiController(http.Controller):
             fields_param = request.httprequest.args.get('fields', '')
             if fields_param:
                 requested_fields = [f.strip() for f in fields_param.split(',')]
-                # Add 'id' if not present (always needed)
                 if 'id' not in requested_fields:
                     requested_fields.insert(0, 'id')
-                # Validate fields exist in model
                 available_fields = [f for f in requested_fields if f in model_obj._fields]
                 if not available_fields:
                     return self._error_response("No valid fields specified", 400, "INVALID_FIELDS")
             else:
-                # Use all available fields by default
                 available_fields = all_fields
             
             # Read the record with specified fields
             try:
                 record_data = record.read(available_fields)[0]
-            except Exception as e:
-                # If reading all fields fails, try with safe basic fields
+            except AccessError:
                 basic_fields = ['id', 'name', 'display_name', 'create_date', 'write_date', 'create_uid', 'write_uid']
                 safe_fields = [f for f in basic_fields if f in model_obj._fields]
                 if not safe_fields:
-                    safe_fields = ['id']  # Fallback to just ID
+                    safe_fields = ['id']
                 record_data = record.read(safe_fields)[0]
                 available_fields = safe_fields
-                _logger.warning("Could not read all fields for %s ID %s, using basic fields: %s", model, record_id, str(e))
+                _logger.warning("Access restricted for some fields on %s ID %s, using basic fields", model, record_id)
             
             return self._json_response(
                 data={
@@ -413,7 +443,11 @@ class SimpleApiController(http.Controller):
                 },
                 message=f"Found record {record_id} in {model}"
             )
-            
+
+        except AccessError:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "GET_RECORD_ERROR")
         except Exception as e:
             _logger.error("Error getting record %s from %s: %s", record_id, model, str(e))
             return self._error_response("Error retrieving record", 500, "GET_RECORD_ERROR")
@@ -504,18 +538,19 @@ class SimpleApiController(http.Controller):
                     return self._error_response("User account inactive", 403, "INACTIVE_USER")
                 
                 session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(48))
+                token_hash = request.env['api.session']._hash_token(session_token)
                 expires_at = datetime.now() + timedelta(hours=24)
                 
                 request.env['api.session'].sudo().create({
                     'user_id': user.id,
-                    'token': session_token,
+                    'token': token_hash,
                     'expires_at': expires_at,
                     'created_at': datetime.now(),
                     'last_activity': datetime.now(),
                     'active': True
                 })
                 
-                return self._json_response(
+                return self._json_response_sensitive(
                     data={
                         'session_token': session_token,
                         'expires_at': expires_at.isoformat(),
@@ -546,32 +581,31 @@ class SimpleApiController(http.Controller):
             return self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
         
         try:
+            token_hash = request.env['api.session']._hash_token(session_token)
             grace_period = datetime.now() - timedelta(hours=1)
             
             session = request.env['api.session'].sudo().search([
-                ('token', '=', session_token),
+                ('token', '=', token_hash),
                 ('active', '=', True),
-                ('expires_at', '>', grace_period)  # Still within grace period
+                ('expires_at', '>', grace_period)
             ], limit=1)
             
             if not session:
                 return self._error_response("Session not found or expired beyond refresh period", 401, "SESSION_NOT_REFRESHABLE")
             
-            # Generate new session token
             new_session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(48))
-            new_expires_at = datetime.now() + timedelta(hours=24)  # 24 hour sessions
+            new_token_hash = request.env['api.session']._hash_token(new_session_token)
+            new_expires_at = datetime.now() + timedelta(hours=24)
             
-            # Update session with new token and expiration
             session.sudo().write({
-                'token': new_session_token,
+                'token': new_token_hash,
                 'expires_at': new_expires_at,
                 'last_activity': datetime.now()
             })
             
-            # Get user info
             user = session.user_id
             
-            return self._json_response(
+            return self._json_response_sensitive(
                 data={
                     'session_token': new_session_token,
                     'expires_at': new_expires_at.isoformat(),
@@ -598,7 +632,8 @@ class SimpleApiController(http.Controller):
         
         try:
             session_token = request.httprequest.headers.get('session-token')
-            session = request.env['api.session'].sudo().search([('token', '=', session_token)], limit=1)
+            token_hash = request.env['api.session']._hash_token(session_token)
+            session = request.env['api.session'].sudo().search([('token', '=', token_hash)], limit=1)
             if session:
                 session.sudo().write({'active': False})
             
@@ -722,7 +757,10 @@ class SimpleApiController(http.Controller):
             # Validate model
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
-            
+
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
             # Check user access to model
             if not self._check_model_access(model, 'create'):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
@@ -744,7 +782,11 @@ class SimpleApiController(http.Controller):
                 message=f"Record created in {model}",
                 status_code=201
             )
-            
+
+        except AccessError as e:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "CREATE_ERROR")
         except Exception as e:
             _logger.error("Error creating %s: %s", model, str(e))
             return self._error_response("Error creating record", 500, "CREATE_ERROR")
@@ -815,9 +857,15 @@ class SimpleApiController(http.Controller):
                     response_data['credentials'] = credentials
                     response_data['credentials']['note'] = "Store these credentials securely - they won't be shown again"
             
+            if auto_generate_credentials:
+                return self._json_response_sensitive(
+                    data=response_data,
+                    message="User created successfully with credentials",
+                    status_code=201
+                )
             return self._json_response(
                 data=response_data,
-                message="User created successfully with credentials" if auto_generate_credentials else "User created successfully",
+                message="User created successfully",
                 status_code=201
             )
             
@@ -1074,7 +1122,7 @@ class SimpleApiController(http.Controller):
             # Reset password
             target_user.sudo().password = temp_password
             
-            return self._json_response(
+            return self._json_response_sensitive(
                 data={
                     'user_id': user_id,
                     'temporary_password': temp_password,
@@ -1194,7 +1242,7 @@ class SimpleApiController(http.Controller):
                     expiration_date=None,
                 )
                 
-                return self._json_response(
+                return self._json_response_sensitive(
                     data={
                         'user_id': user_id,
                         'user_name': target_user.name,
@@ -1238,6 +1286,9 @@ class SimpleApiController(http.Controller):
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
 
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
             if not self._check_model_access(model, 'write'):
                 return self._error_response(f"Write access denied for model '{model}'", 403, "ACCESS_DENIED")
 
@@ -1258,6 +1309,10 @@ class SimpleApiController(http.Controller):
                 message=f"Record {record_id} updated in {model}"
             )
 
+        except AccessError:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "UPDATE_ERROR")
         except Exception as e:
             _logger.error("Error updating %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error updating record", 500, "UPDATE_ERROR")
@@ -1277,6 +1332,9 @@ class SimpleApiController(http.Controller):
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
 
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
             if not self._check_model_access(model, 'unlink'):
                 return self._error_response(f"Delete access denied for model '{model}'", 403, "ACCESS_DENIED")
 
@@ -1291,6 +1349,10 @@ class SimpleApiController(http.Controller):
                 message=f"Record {record_id} deleted from {model}"
             )
 
+        except AccessError:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "DELETE_ERROR")
         except Exception as e:
             _logger.error("Error deleting %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error deleting record", 500, "DELETE_ERROR")
@@ -1321,7 +1383,7 @@ class SimpleApiController(http.Controller):
             models_data = []
             for m in ir_models:
                 try:
-                    if m.model in request.env and self._check_model_access(m.model, 'read'):
+                    if m.model in request.env and not self._is_model_blocked(m.model) and self._check_model_access(m.model, 'read'):
                         models_data.append({
                             'model': m.model,
                             'name': m.name,

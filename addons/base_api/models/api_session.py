@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import hashlib
 from odoo import models, fields, api
 from datetime import datetime, timedelta
 
@@ -10,7 +11,7 @@ class ApiSession(models.Model):
     _order = 'created_at desc'
 
     user_id = fields.Many2one('res.users', string='User', required=True, ondelete='cascade')
-    token = fields.Char(string='Session Token', required=True, index=True)
+    token = fields.Char(string='Token Hash', required=True, index=True)
     created_at = fields.Datetime(string='Created At', default=fields.Datetime.now, required=True)
     expires_at = fields.Datetime(string='Expires At', required=True)
     last_activity = fields.Datetime(string='Last Activity', default=fields.Datetime.now)
@@ -19,6 +20,11 @@ class ApiSession(models.Model):
     user_agent = fields.Text(string='User Agent')
 
     _token_unique = models.Constraint('UNIQUE(token)', 'Session token must be unique')
+
+    @staticmethod
+    def _hash_token(raw_token):
+        """Hash a raw session token for secure storage."""
+        return hashlib.sha256(raw_token.encode()).hexdigest()
 
     @api.model
     def cleanup_expired_sessions(self):
