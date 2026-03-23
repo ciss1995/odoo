@@ -1,109 +1,217 @@
-# 🚀 Complete Odoo API v2 Guide
+# Odoo REST API v2 — Complete Documentation
 
-## Overview
+**Version:** 2.0  
+**Base URL:** `http://<host>:8069/api/v2`  
+**Content-Type:** `application/json`  
+**Module:** `base_api` (must be installed per database)
 
-**There is only ONE API version: v2.** The previous v1 API has been completely removed and replaced with a clean, working solution.
+---
 
-- ✅ **ONLY `/api/v2/` endpoints** - Clean, unified structure
-- ✅ **Dual authentication support** - Session-based & API key authentication
-- ✅ **Complete CRUD operations** - Works with any Odoo model
-- ✅ **User management** - Create, manage users and API keys
-- ✅ **Comprehensive examples** - All tested and working
-- ✅ **Production ready** - Used in live systems
+## Table of Contents
 
-## ⚠️ Prerequisites: Module Installation
+1. [Conventions](#1-conventions)
+2. [Authentication](#2-authentication)
+3. [Session Management](#3-session-management)
+4. [User Management](#4-user-management)
+5. [Generic CRUD](#5-generic-crud)
+6. [Model & Field Discovery](#6-model--field-discovery)
+7. [Partners & Contacts](#7-partners--contacts)
+8. [Products](#8-products)
+9. [Sales](#9-sales)
+10. [CRM](#10-crm)
+11. [HR & Employees](#11-hr--employees)
+12. [Notifications & Messaging](#12-notifications--messaging)
+13. [Settings & Configuration](#13-settings--configuration)
+14. [Localization](#14-localization)
+15. [Error Handling](#15-error-handling)
+16. [Security & Permissions](#16-security--permissions)
+17. [Appendix: Blocked Models](#17-appendix-blocked-models)
+18. [Appendix: Common Odoo Models](#18-appendix-common-odoo-models)
 
-**CRITICAL: The `base_api` module must be installed in each database:**
+---
 
-```bash
-# Install base_api module for your database
-python3 odoo-bin --addons-path=addons -d YOUR_DATABASE_NAME -i base_api
+## 1. Conventions
 
-# Common error without installation:
-# "relation 'api_session' does not exist"
+### Standard Success Response
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Human-readable description"
+}
 ```
 
-**Why:** Each Odoo database is independent. Modules installed in one database don't affect others.
+### Standard Error Response
 
-## 🔐 Authentication Methods
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Human-readable error description",
+    "code": "ERROR_CODE"
+  }
+}
+```
 
-### Method 1: Session-Based Authentication (Recommended)
+### Pagination
 
-**Login with username/password to get a session token:**
+Most list endpoints accept these query parameters:
 
-```bash
-# 1. Login to get session token
-curl -X POST "http://localhost:8069/api/v2/auth/login" \
-     -H "Content-Type: application/json" \
-     -d '{"username": "admin", "password": "admin"}'
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `10` | Maximum records to return |
+| `offset` | integer | `0` | Number of records to skip |
+
+### Field Selection
+
+Use the `fields` query parameter on `/search` and `/search/{model}/{id}` endpoints to request specific fields:
+
+```
+?fields=name,email,phone
+```
+
+If omitted, search returns `id`, `name`, `display_name`. Get-by-ID returns all fields.
+
+### Dynamic Filtering
+
+Any model field name can be used as a query parameter for exact-match filtering:
+
+```
+?partner_id=15&state=sale
+```
+
+When custom filter parameters are present, the default `active=true` filter is **not** applied. Only exact-match (`=`) filtering is supported; range and `ilike` queries are not available.
+
+### Relational Field Format
+
+Many-to-one fields are returned as `[id, "display_name"]`:
+
+```json
+"partner_id": [15, "Acme Corporation"],
+"country_id": [235, "United States"]
+```
+
+### Authentication Headers
+
+| Header | Used By | Description |
+|--------|---------|-------------|
+| `session-token` | Session auth | Token received from `/auth/login` |
+| `api-key` | API key auth | Odoo native API key |
+
+Endpoints that support both methods try session auth first, then fall back to API key.
+
+---
+
+## 2. Authentication
+
+The API supports two authentication methods. **Session-based auth is recommended for frontend applications.**
+
+### 2.1 Session-Based Authentication (Recommended)
+
+Login with username/password to receive a session token. The token expires after 24 hours and can be refreshed.
+
+**Flow:**  
+`POST /auth/login` → receive `session_token` → include as `session-token` header → `POST /auth/refresh` to extend → `POST /auth/logout` to invalidate
+
+### 2.2 API Key Authentication
+
+Use an Odoo-native API key passed in the `api-key` header. API keys do not expire but can be revoked. Best suited for server-to-server integrations.
+
+### 2.3 Endpoint Auth Support
+
+| Auth Support | Endpoints |
+|-------------|-----------|
+| Session + API Key | `/search/*`, `/create/*`, `/update/*`, `/delete/*`, `/auth/me`, `/users/*`, `/groups`, `/models`, `/fields/*` |
+| API Key only | `/partners`, `/products`, `/user/info`, `/auth/test` |
+| No auth required | `/test` |
+
+---
+
+## 3. Session Management
+
+### 3.1 Health Check
+
+Check that the API module is installed and reachable. No authentication required.
+
+```
+GET /test
 ```
 
 **Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "message": "API v2 is working!",
+    "version": "2.0"
+  },
+  "message": "Basic test successful"
+}
+```
+
+---
+
+### 3.2 Login
+
+Authenticate with username and password. Returns a session token and user profile.
+
+```
+POST /auth/login
+```
+
+**Request Body:**
+
+```json
+{
+  "username": "admin",
+  "password": "admin"
+}
+```
+
+**Response `200`:**
+
 ```json
 {
   "success": true,
   "data": {
     "session_token": "KTBXTNIvcLS6bpoQ4t8cDEu1BzGh03b1VxrFQRO5ON5FUVJg",
-    "expires_at": "2025-09-05T15:56:46.326592",
+    "expires_at": "2026-03-23T15:56:46.326592",
     "user": {
       "id": 2,
       "name": "Mitchell Admin",
       "login": "admin",
       "email": "admin@yourcompany.example.com",
-      "groups": ["Administrator", "Settings", ...]
+      "groups": ["Administrator", "Settings"]
     }
   },
   "message": "Login successful"
 }
 ```
 
-**Use session token for API calls:**
-```bash
-# 2. Use session token (replace with your actual token)
-curl "http://localhost:8069/api/v2/auth/me" \
-     -H "session-token: KTBXTNIvcLS6bpoQ4t8cDEu1BzGh03b1VxrFQRO5ON5FUVJg"
+**Error codes:** `INVALID_CONTENT_TYPE`, `NO_DATA`, `INVALID_JSON`, `MISSING_CREDENTIALS`, `INVALID_CREDENTIALS`, `INACTIVE_USER`, `AUTH_FAILED`, `LOGIN_ERROR`
 
-# 3. Access protected resources
-curl "http://localhost:8069/api/v2/users" \
-     -H "session-token: YOUR_SESSION_TOKEN"
+---
 
-# 4. Refresh session token when needed (extends expiration by 24 hours)
-curl -X POST "http://localhost:8069/api/v2/auth/refresh" \
-     -H "session-token: YOUR_SESSION_TOKEN"
+### 3.3 Refresh Session
 
-# 5. Logout when done
-curl -X POST "http://localhost:8069/api/v2/auth/logout" \
-     -H "session-token: YOUR_SESSION_TOKEN"
+Extend the session by 24 hours. Returns a **new** token (the old one is replaced). Can be called up to 1 hour after expiry (grace period).
+
+```
+POST /auth/refresh
 ```
 
-**Session Features:**
-- ✅ **Secure** - No permanent credentials stored
-- ✅ **Expires automatically** - 24-hour default expiration
-- ✅ **Refreshable** - Extend sessions without re-login
-- ✅ **Grace period** - Can refresh up to 1 hour after expiry
-- ✅ **Activity tracking** - Last activity timestamp
-- ✅ **Easy logout** - Invalidate sessions cleanly
+**Headers:** `session-token: <current_token>`
 
-### Important: Authentication Method Support
+**Response `200`:**
 
-**⚠️ Not all endpoints support both authentication methods:**
-
-- **Modern endpoints** (✅ Session Token + ✅ API Key): 
-  - `/api/v2/search/{model}`, `/api/v2/create/{model}`, `/api/v2/auth/me`
-  - All user management endpoints (`/api/v2/users/*`)
-  
-- **Legacy endpoints** (❌ Session Token, ✅ API Key only):
-  - `/api/v2/partners`, `/api/v2/products`, `/api/v2/user/info`, `/api/v2/auth/test`
-
-**Recommendation**: Use `/api/v2/search/res.partner` instead of `/api/v2/partners` for session token compatibility.
-
-**Session Refresh Response:**
 ```json
 {
   "success": true,
   "data": {
     "session_token": "01WlpyLnbArHHiP5vO0KuW12v1NHTfM50nou04PqavY42e4b",
-    "expires_at": "2025-09-05T16:11:59.947229",
+    "expires_at": "2026-03-24T16:11:59.947229",
     "user": {
       "id": 2,
       "name": "Mitchell Admin",
@@ -115,851 +223,659 @@ curl -X POST "http://localhost:8069/api/v2/auth/logout" \
 }
 ```
 
-### Method 2: API Key Authentication
+**Error codes:** `MISSING_SESSION_TOKEN`, `SESSION_NOT_REFRESHABLE`, `REFRESH_ERROR`
 
-## 🔑 API Key Management
+---
 
-### Method 1: Using the API (Recommended)
+### 3.4 Logout
 
-**Generate API key via session authentication:**
-```bash
-# First login to get session token
-SESSION_TOKEN=$(curl -s -X POST "http://localhost:8069/api/v2/auth/login" \
-    -H "Content-Type: application/json" \
-    -d '{"username": "admin", "password": "admin"}' | \
-    jq -r '.data.session_token')
+Invalidate the current session.
 
-# Generate API key for current user
-curl -X POST "http://localhost:8069/api/v2/users/2/api-key" \
-    -H "session-token: $SESSION_TOKEN"
+```
+POST /auth/logout
 ```
 
-### Method 2: Via Odoo Web Interface
+**Headers:** `session-token: <token>`
 
-1. **Access Odoo Web Interface:** `http://localhost:8069`
-2. **Login as admin:** username: `admin`, password: `admin`
-3. **Go to Settings → Users & Companies → Users**
-4. **Click on a user** (e.g., "Mitchell Admin")
-5. **API Access tab** will show API key management
-6. **Click "Generate API Key"** button
-7. **Copy the generated key**
+**Response `200`:**
 
-### Method 3: Programmatically via API
-
-First get an API key for an admin user, then use it to manage other users:
-
-```bash
-# Create a new user with API access
-curl -X POST "http://localhost:8069/api/v2/create/res.users" \
-     -H "api-key: YOUR_ADMIN_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "API User",
-       "login": "apiuser", 
-       "email": "apiuser@company.com",
-       "password": "secure_password",
-       "active": true,
-       "groups_id": [[6, 0, [1, 9]]]
-     }'
+```json
+{
+  "success": true,
+  "data": null,
+  "message": "Logout successful"
+}
 ```
 
-## 👤 User Management
+---
 
-### Creating New Users
+### 3.5 Current User
 
-```bash
-# Create a new user
-curl -X POST "http://localhost:8069/api/v2/create/res.users" \
-     -H "api-key: YOUR_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "John Smith",
-       "login": "jsmith",
-       "email": "john.smith@company.com", 
-       "active": true,
-       "groups_id": [[6, 0, [1]]]
-     }'
+Get the authenticated user's profile, groups, permission flags, and module access. Supports both session and API key auth.
+
+The `module_access` map tells the frontend which navigation items to show/hide.
+
+```
+GET /auth/me
 ```
 
-### Search Users
+**Response `200`:**
 
-```bash
-# List all users
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.users?limit=10"
-
-# Search specific user
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.users?limit=1&offset=0"
-```
-
-### Get Current User Info
-
-```bash
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/user/info"
-```
-
-### Deactivate/Activate Users
-
-```bash
-# Deactivate a user (admin only, replace USER_ID)
-curl -X PUT "http://localhost:8069/api/v2/users/USER_ID" \
-     -H "api-key: YOUR_ADMIN_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"active": false}'
-
-# Re-activate a user
-curl -X PUT "http://localhost:8069/api/v2/users/USER_ID" \
-     -H "api-key: YOUR_ADMIN_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"active": true}'
-```
-
-## 🔐 Authentication Examples
-
-### Sign In Process
-
-**Step 1: Test API is working**
-```bash
-curl "http://localhost:8069/api/v2/test"
-```
-
-**Step 2: Get API key** (use one of the methods above)
-
-**Step 3: Test authentication**
-```bash
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/auth/test"
-```
-
-**Step 4: Get user information**
-```bash
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/user/info"
-```
-
-### Sign Out Process
-
-**API keys don't require sign-out** - they remain valid until:
-- User is deactivated
-- API key is revoked (deleted from database)
-- User permissions are changed
-
-To revoke an API key, use the Odoo Web Interface (Settings → Users → API Access tab) or generate a new key to replace the old one via the API.
-
-## 📋 Complete API Reference
-
-### 🧪 Testing & Authentication
-
-| Method | Endpoint | Auth Required | Session Token | API Key | Description |
-|--------|----------|---------------|---------------|---------|-------------|
-| `GET` | `/api/v2/test` | ❌ No | N/A | N/A | Basic API test |
-| `GET` | `/api/v2/auth/test` | ✅ Yes | ❌ | ✅ | Test authentication (API key only) |
-| `GET` | `/api/v2/user/info` | ✅ Yes | ❌ | ✅ | Get current user info (API key only) |
-| `GET` | `/api/v2/auth/me` | ✅ Yes | ✅ | ✅ | Get current user info (both auth methods) |
-
-### 👥 User Management
-
-| Method | Endpoint | Auth Required | Session Token | API Key | Description |
-|--------|----------|---------------|---------------|---------|-------------|
-| `GET` | `/api/v2/search/res.users` | ✅ Yes | ✅ | ✅ | List/search users |
-| `POST` | `/api/v2/create/res.users` | ✅ Yes | ✅ | ✅ | Create new user |
-| `GET` | `/api/v2/users` | ✅ Yes | ✅ | ✅ | List users with pagination |
-| `GET` | `/api/v2/users/{id}` | ✅ Yes | ✅ | ✅ | Get user details |
-| `PUT` | `/api/v2/users/{id}` | ✅ Yes | ✅ | ✅ | Update user |
-| `PUT` | `/api/v2/users/{id}/password` | ✅ Yes | ✅ | ✅ | Change password |
-| `POST` | `/api/v2/users/{id}/reset-password` | ✅ Admin | ✅ | ✅ | Reset password |
-| `POST` | `/api/v2/users/{id}/api-key` | ✅ Yes | ✅ | ✅ | Generate API key |
-
-### 🏢 Business Data
-
-| Method | Endpoint | Auth Required | Session Token | API Key | Description |
-|--------|----------|---------------|---------------|---------|-------------|
-| `GET` | `/api/v2/partners` | ✅ Yes | ❌ | ✅ | List customers/partners (API key only) |
-| `GET` | `/api/v2/products` | ✅ Yes | ❌ | ✅ | List products (API key only) |
-| `GET` | `/api/v2/search/{model}` | ✅ Yes | ✅ | ✅ | Search any model |
-| `GET` | `/api/v2/search/{model}/{id}` | ✅ Yes | ✅ | ✅ | Get specific record by ID |
-| `POST` | `/api/v2/create/{model}` | ✅ Yes | ✅ | ✅ | Create record in any model |
-| `PUT` | `/api/v2/update/{model}/{id}` | ✅ Yes | ✅ | ✅ | Update record in any model |
-| `DELETE` | `/api/v2/delete/{model}/{id}` | ✅ Yes | ✅ | ✅ | Delete record from any model |
-| `GET` | `/api/v2/fields/{model}` | ✅ Yes | ✅ | ✅ | Get model fields |
-| `GET` | `/api/v2/models` | ✅ Yes | ✅ | ✅ | List accessible models |
-| `GET` | `/api/v2/groups` | ✅ Admin | ✅ | ✅ | List user groups (admin/user-manager only) |
-
-## 🛠️ Complete Examples
-
-### Example 1: Complete Customer Management
-
-```bash
-# 1. Test API
-curl "http://localhost:8069/api/v2/test"
-
-# 2. Test authentication
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/auth/test"
-
-# 3. List existing customers (using modern endpoint for session token compatibility)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?limit=5"
-
-# Alternative: Use legacy endpoint with API key
-# curl -H "api-key: YOUR_API_KEY" \
-#      "http://localhost:8069/api/v2/partners?limit=5"
-
-# 4. Create new customer (works with session token!)
-curl -X POST "http://localhost:8069/api/v2/create/res.partner" \
-     -H "session-token: YOUR_SESSION_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "Acme Corporation",
-       "email": "contact@acme.com",
-       "phone": "+1-555-0123",
-       "is_company": true,
-       "customer_rank": 1,
-       "street": "123 Business Ave",
-       "city": "Business City",
-       "zip": "12345"
-     }'
-
-# 5. Search for the new customer
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?limit=10"
-
-# 6. Get specific customer by ID (e.g., ID 15)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/15"
-
-# 7. Get specific customer with only certain fields
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/15?fields=name,email,phone,city"
-```
-
-### Example 2: Product Catalog Management
-
-```bash
-# List products for sale
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/products?limit=10"
-
-# Create new product
-curl -X POST "http://localhost:8069/api/v2/create/product.template" \
-     -H "api-key: YOUR_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "API Product",
-       "list_price": 99.99,
-       "default_code": "API001",
-       "sale_ok": true,
-       "purchase_ok": true,
-       "type": "consu"
-     }'
-
-# Search product categories
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/product.category?limit=5"
-```
-
-### Example 3: Sales Order Management
-
-```bash
-# List sale orders
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/sale.order?limit=5"
-
-# Create sales order (advanced)
-curl -X POST "http://localhost:8069/api/v2/create/sale.order" \
-     -H "api-key: YOUR_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "partner_id": 15,
-       "order_line": [[0, 0, {
-         "product_id": 23,
-         "product_uom_qty": 2,
-         "price_unit": 295.00
-       }]]
-     }'
-```
-
-### Example 4: HR Management
-
-```bash
-# List employees
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/hr.employee?limit=5"
-
-# Create employee
-curl -X POST "http://localhost:8069/api/v2/create/hr.employee" \
-     -H "api-key: YOUR_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "Jane Doe",
-       "work_email": "jane.doe@company.com",
-       "department_id": 1,
-       "job_id": 1
-     }'
-```
-
-### Example 5: CRM Management
-
-```bash
-# List leads/opportunities
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/crm.lead?limit=5"
-
-# Create new lead
-curl -X POST "http://localhost:8069/api/v2/create/crm.lead" \
-     -H "api-key: YOUR_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "API Generated Lead",
-       "partner_name": "Potential Customer",
-       "email_from": "potential@customer.com",
-       "phone": "+1-555-0199",
-       "expected_revenue": 5000.00
-     }'
-
-# Get lead with activities and messages
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,activity_ids,message_ids"
-
-# Get activity details for the lead
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&res_id=5&fields=summary,date_deadline,user_id,state"
-
-# Get overdue activities across all leads
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&state=overdue&fields=summary,date_deadline,res_id"
-```
-
-## 🔧 Available Models
-
-### Core Business Models
-
-| Model | Description | Example Usage |
-|-------|-------------|---------------|
-| `res.partner` | Customers, Suppliers, Contacts | Customer management |
-| `res.users` | System users | User management |
-| `product.template` | Product Templates | Product catalog |
-| `product.product` | Product Variants | Inventory items |
-| `sale.order` | Sales Orders | Sales management |
-| `sale.order.line` | Sales Order Lines | Order details |
-| `purchase.order` | Purchase Orders | Procurement |
-| `account.move` | Invoices/Bills | Accounting |
-| `account.move.line` | Invoice/Bill Lines | Accounting details |
-| `hr.employee` | Employees | HR management |
-| `hr.department` | Departments | HR organization |
-| `crm.lead` | CRM Leads/Opportunities | Sales pipeline |
-| `mail.activity` | Activities/Tasks | Follow-ups, calls, meetings |
-| `mail.activity.type` | Activity Types | Call, Email, Meeting types |
-| `mail.message` | Messages/Communications | Email history, notes |
-| `project.project` | Projects | Project management |
-| `project.task` | Tasks | Task management |
-| `stock.picking` | Deliveries/Receipts | Inventory movements |
-| `res.company` | Companies | Multi-company setup |
-
-### Finding Available Models
-
-```bash
-# Search for models (this lists model metadata)
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/ir.model?limit=20"
-```
-
-## 📊 Get Record by ID Examples
-
-### Basic Usage
-
-```bash
-# Get a specific partner by ID
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/15"
-
-# Get a specific product by ID
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/product.template/23"
-
-# Get a specific user by ID
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users/2"
-```
-
-### Field Filtering
-
-```bash
-# Get only specific fields from a partner
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/15?fields=name,email,phone,city,country_id"
-
-# Get basic fields from a product
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/product.template/23?fields=name,list_price,default_code,sale_ok"
-
-# Get user information with groups
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users/2?fields=name,login,email,groups_id"
-```
-
-### 📧 Getting Message Content
-
-**Problem**: When you get `message_ids: [123, 456]`, you only see IDs, not the actual message content.
-
-**Solution**: Use the message ID to get the actual content!
-
-```bash
-# Step 1: Get CRM lead with message IDs
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,message_ids"
-
-# Step 2: Get specific message content by ID (e.g., ID 123)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.message/123?fields=subject,body,author_id,create_date,message_type,email_from"
-
-# Step 3: Get all messages for a CRM lead at once
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.message?res_model=crm.lead&res_id=5&fields=id,subject,body,author_id,create_date,message_type"
-```
-
-### 📋 Getting Activity Details
-
-**Problem**: When you get `activity_ids: [456, 789]` from CRM leads, you only see IDs, not the activity details.
-
-**Solution**: Activities contain tasks, calls, meetings, and follow-ups scheduled for leads!
-
-```bash
-# Step 1: Get CRM lead with activity IDs
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead/5?fields=name,activity_ids"
-
-# Step 2: Get specific activity details by ID (e.g., ID 456)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity/456?fields=summary,note,date_deadline,user_id,activity_type_id,state"
-
-# Step 3: Get all activities for a CRM lead at once
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&res_id=5&fields=id,summary,note,date_deadline,user_id,activity_type_id,state"
-```
-
-**Key Activity Fields:**
-- `summary` - Activity title/summary
-- `note` - Detailed description (HTML)
-- `date_deadline` - Due date
-- `date_done` - Completion date
-- `user_id` - Person assigned to the activity
-- `activity_type_id` - Type of activity (call, meeting, email, etc.)
-- `state` - Current status (overdue, today, planned, done)
-- `request_partner_id` - Who requested the activity
-- `attachment_ids` - Any attached files
-
-**Activity Response Example:**
 ```json
 {
   "success": true,
   "data": {
-    "record": {
-      "id": 456,
-      "summary": "Follow-up call with client",
-      "note": "<p>Discuss contract terms and pricing options. Client mentioned budget concerns.</p>",
-      "date_deadline": "2025-01-10",
-      "date_done": false,
-      "user_id": [3, "Sales Manager"],
-      "activity_type_id": [2, "Call"],
-      "state": "planned",
-      "request_partner_id": [15, "Acme Corporation"],
-      "attachment_ids": [67, 68]
-    },
-    "model": "mail.activity",
-    "id": 456
+    "user": {
+      "id": 2,
+      "name": "Administrator",
+      "login": "admin",
+      "email": "admin@company.com",
+      "active": true,
+      "company_id": [1, "My Company"],
+      "groups": [
+        { "id": 24, "name": "Administrator" },
+        { "id": 4, "name": "Role / Administrator" }
+      ],
+      "permissions": {
+        "is_admin": true,
+        "is_user": true,
+        "can_manage_users": false
+      },
+      "module_access": {
+        "crm":        { "accessible": true,  "label": "CRM",        "model": "crm.lead" },
+        "sales":      { "accessible": true,  "label": "Sales",      "model": "sale.order" },
+        "hr":         { "accessible": true,  "label": "Employees",  "model": "hr.employee" },
+        "accounting": { "accessible": true,  "label": "Accounting", "model": "account.move" },
+        "inventory":  { "accessible": true,  "label": "Inventory",  "model": "stock.picking" },
+        "purchase":   { "accessible": true,  "label": "Purchase",   "model": "purchase.order" },
+        "contacts":   { "accessible": true,  "label": "Contacts",   "model": "res.partner" },
+        "products":   { "accessible": true,  "label": "Products",   "model": "product.template" },
+        "project":    { "accessible": true,  "label": "Project",    "model": "project.project" },
+        "calendar":   { "accessible": true,  "label": "Calendar",   "model": "calendar.event" }
+      }
+    }
   },
-  "message": "Found record 456 in mail.activity"
+  "message": "User information retrieved"
 }
 ```
 
-**Common Activity Queries:**
-```bash
-# Get overdue activities
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?state=overdue&fields=summary,date_deadline,res_model,res_id,user_id"
+**Example for a Sales-only user** (key differences):
 
-# Get today's activities
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?state=today&fields=summary,note,user_id,activity_type_id"
-
-# Get all activities for CRM leads
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,date_deadline,res_id,user_id,state"
-
-# Get activity type details (Call, Email, Meeting, etc.)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity.type/2?fields=name,summary,icon,category"
+```json
+"module_access": {
+  "crm":        { "accessible": true,  "label": "CRM",        "model": "crm.lead" },
+  "sales":      { "accessible": true,  "label": "Sales",      "model": "sale.order" },
+  "hr":         { "accessible": false, "label": "Employees",  "model": "hr.employee" },
+  "accounting": { "accessible": true,  "label": "Accounting", "model": "account.move" },
+  "inventory":  { "accessible": true,  "label": "Inventory",  "model": "stock.picking" },
+  "purchase":   { "accessible": false, "label": "Purchase",   "model": "purchase.order" },
+  "contacts":   { "accessible": true,  "label": "Contacts",   "model": "res.partner" },
+  "products":   { "accessible": true,  "label": "Products",   "model": "product.template" },
+  "project":    { "accessible": false, "label": "Project",    "model": "project.project" },
+  "calendar":   { "accessible": true,  "label": "Calendar",   "model": "calendar.event" }
+}
 ```
 
-## 🔗 Getting Related Record Data Efficiently
+---
 
-### Problem: Multiple API Calls for Related Data
+### 3.6 Module Access Check
 
-When you fetch `mail.activity` records, you get `res_id` but need to make additional API calls to get the actual record details:
+Dedicated endpoint to check which functional modules the current user can access. Use this to show/hide navigation items, sidebar links, or dashboard tiles.
 
-```bash
-# Step 1: Get activities (you get res_id but not the actual record data)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,res_model,res_id,date_deadline"
-
-# Response: res_id: 25, res_model: "crm.lead" (but no lead details)
-
-# Step 2: Additional API call needed for each related record
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead/25?fields=name,partner_id,expected_revenue"
+```
+GET /modules/access
 ```
 
-### 💡 Solution 1: Relational Fields Return Names Automatically
+**Response `200`:**
 
-**Good news!** Many relational fields automatically return both ID and name:
-
-```bash
-# Get activities with expanded relational fields
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id"
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 7,
+    "module_access": {
+      "crm":        { "accessible": true,  "label": "CRM",        "model": "crm.lead" },
+      "sales":      { "accessible": true,  "label": "Sales",      "model": "sale.order" },
+      "hr":         { "accessible": false, "label": "Employees",  "model": "hr.employee" },
+      "accounting": { "accessible": true,  "label": "Accounting", "model": "account.move" },
+      "inventory":  { "accessible": true,  "label": "Inventory",  "model": "stock.picking" },
+      "purchase":   { "accessible": false, "label": "Purchase",   "model": "purchase.order" },
+      "contacts":   { "accessible": true,  "label": "Contacts",   "model": "res.partner" },
+      "products":   { "accessible": true,  "label": "Products",   "model": "product.template" },
+      "project":    { "accessible": false, "label": "Project",    "model": "project.project" },
+      "calendar":   { "accessible": true,  "label": "Calendar",   "model": "calendar.event" }
+    }
+  },
+  "message": "Module access retrieved"
+}
 ```
 
-**Response includes expanded data:**
+**Frontend usage pattern:**
+
+```typescript
+const { data } = await api.get('/modules/access');
+const modules = data.module_access;
+
+// Show/hide navigation items
+const navItems = Object.entries(modules)
+  .filter(([_, info]) => info.accessible)
+  .map(([key, info]) => ({ key, label: info.label }));
+```
+
+**Module keys and what they check:**
+
+| Key | Label | Checks Read Access To |
+|-----|-------|-----------------------|
+| `crm` | CRM | `crm.lead` |
+| `sales` | Sales | `sale.order` |
+| `hr` | Employees | `hr.employee` |
+| `accounting` | Accounting | `account.move` |
+| `inventory` | Inventory | `stock.picking` |
+| `purchase` | Purchase | `purchase.order` |
+| `contacts` | Contacts | `res.partner` |
+| `products` | Products | `product.template` |
+| `project` | Project | `project.project` |
+| `calendar` | Calendar | `calendar.event` |
+
+---
+
+### 3.8 Test Auth (API Key Only)
+
+Quick authentication validation. API key only.
+
+```
+GET /auth/test
+```
+
+**Headers:** `api-key: <key>`
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 2,
+    "user_name": "Mitchell Admin",
+    "user_login": "admin",
+    "authenticated": true
+  },
+  "message": "Authentication test successful"
+}
+```
+
+---
+
+### 3.9 User Info (API Key Only)
+
+Get current user info and API metadata. API key only.
+
+```
+GET /user/info
+```
+
+**Headers:** `api-key: <key>`
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 2,
+      "name": "Administrator",
+      "login": "admin",
+      "email": "admin@company.com",
+      "active": true,
+      "company_id": [1, "My Company"]
+    },
+    "api_version": "2.0",
+    "database": "odoo19_db"
+  },
+  "message": "User information retrieved successfully"
+}
+```
+
+---
+
+## 4. User Management
+
+All user management endpoints support both session and API key authentication. Permission levels vary by role.
+
+### 4.1 List Users
+
+```
+GET /users
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `10` | Max records |
+| `offset` | integer | `0` | Skip count |
+| `search` | string | `""` | Search by name, login, or email |
+| `active_only` | boolean | `true` | Only active users |
+
+**Admin Response `200`** (includes groups, company, login_date):
+
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": 2,
+        "name": "Administrator",
+        "login": "admin",
+        "email": "admin@company.com",
+        "active": true,
+        "create_date": "2026-03-21T05:08:09.435235",
+        "groups": ["Administrator", "Role / Administrator"],
+        "company_id": "My Company",
+        "login_date": "2026-03-21T22:47:42.502400"
+      }
+    ],
+    "count": 4,
+    "total_count": 4,
+    "limit": 10,
+    "offset": 0
+  },
+  "message": "Found 4 users"
+}
+```
+
+**Non-admin Response `200`** (basic info only):
+
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": 2,
+        "name": "Administrator",
+        "login": "admin",
+        "email": "admin@company.com",
+        "active": true,
+        "create_date": "2026-03-21T05:08:09.435235"
+      }
+    ],
+    "count": 4,
+    "total_count": 4,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**Required permission:** `base.group_user` (Internal User)
+
+---
+
+### 4.2 Get User by ID
+
+```
+GET /users/{user_id}
+```
+
+Returns different detail levels based on who is requesting:
+
+| Viewer | Fields Returned |
+|--------|----------------|
+| Admin viewing any user | id, name, email, active, create_date, login, phone, lang, tz, signature, company_id, **groups**, **company_ids**, **login_date** |
+| User viewing own profile | id, name, email, active, create_date, login, phone, lang, tz, signature, company_id |
+| User viewing other user | id, name, email, active, create_date |
+
+**Admin Response `200` (viewing user 6):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 6,
+      "name": "Regular User",
+      "email": "user@test.com",
+      "active": true,
+      "create_date": "2026-03-21T05:09:22.242613",
+      "login": "user@test.com",
+      "phone": null,
+      "lang": "en_US",
+      "tz": null,
+      "signature": "<div>Regular User</div>",
+      "company_id": [1, "My Company"],
+      "groups": [
+        { "id": 1, "name": "Role / User", "full_name": "Role / User" }
+      ],
+      "company_ids": [{ "id": 1, "name": "My Company" }],
+      "login_date": "2026-03-21T05:13:13.547871"
+    }
+  },
+  "message": "User information retrieved"
+}
+```
+
+---
+
+### 4.3 Create User
+
+```
+POST /create/res.users
+```
+
+**Required permission:** Admin (`base.group_system` or `base.group_user_admin`)
+
+**Request Body:**
+
+```json
+{
+  "name": "John Smith",
+  "login": "jsmith",
+  "email": "john.smith@company.com",
+  "group_names": ["User: Own Documents Only"],
+  "auto_generate_credentials": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Full name |
+| `login` | string | Yes | Username |
+| `email` | string | No | Email address |
+| `password` | string | No | Password (auto-generated if omitted and `auto_generate_credentials` is true) |
+| `group_names` | string[] | No | Group names to assign |
+| `group_ids` | integer[] | No | Group IDs to assign (alternative to `group_names`) |
+| `auto_generate_credentials` | boolean | No | Default `true`. When true, generates a temporary password and API key |
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 15,
+    "name": "John Smith",
+    "login": "jsmith",
+    "email": "john.smith@company.com",
+    "groups": [{ "id": 22, "name": "User: Own Documents Only" }],
+    "active": true,
+    "create_date": "2026-03-22T10:00:00",
+    "credentials": {
+      "temporary_password": "xbsWYCnrYtJM",
+      "api_key": "abc123def456...",
+      "note": "Store these credentials securely - they won't be shown again"
+    }
+  },
+  "message": "User created successfully with credentials"
+}
+```
+
+---
+
+### 4.4 Update User
+
+```
+PUT /users/{user_id}
+```
+
+**Editable fields by role:**
+
+| Field | Self-edit | Admin-only |
+|-------|----------|------------|
+| `name` | Yes | Yes |
+| `email` | Yes | Yes |
+| `phone` | Yes | Yes |
+| `signature` | Yes | Yes |
+| `lang` | Yes | Yes |
+| `tz` | Yes | Yes |
+| `login` | No | Yes |
+| `active` | No | Yes |
+| `company_id` | No | Yes |
+| `company_ids` | No | Yes |
+| `group_names` / `group_ids` | No | Yes |
+
+**Request Body:**
+
+```json
+{
+  "name": "John Smith Updated",
+  "phone": "+1-555-1234",
+  "lang": "en_US"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 6,
+      "name": "John Smith Updated",
+      "login": "jsmith",
+      "email": "john@company.com",
+      "phone": "+1-555-1234",
+      "active": true,
+      "lang": "en_US",
+      "tz": null
+    },
+    "updated_fields": ["name", "phone"]
+  },
+  "message": "User updated successfully"
+}
+```
+
+**Error `403`** (non-admin trying admin-only field):
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Access denied: Field 'login' requires admin rights",
+    "code": "ADMIN_FIELD_ACCESS_DENIED"
+  }
+}
+```
+
+---
+
+### 4.5 Change Password
+
+```
+PUT /users/{user_id}/password
+```
+
+| Scenario | Required Fields |
+|----------|----------------|
+| Changing own password (non-admin) | `old_password`, `new_password` |
+| Admin changing any password | `new_password` |
+
+**Request Body (own password):**
+
+```json
+{
+  "old_password": "current_password",
+  "new_password": "new_secure_password"
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 6,
+    "message": "Password changed successfully"
+  },
+  "message": "Password updated successfully"
+}
+```
+
+---
+
+### 4.6 Reset Password (Admin Only)
+
+Generates a random temporary password for the user.
+
+```
+POST /users/{user_id}/reset-password
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 6,
+    "temporary_password": "xbsWYCnrYtJM",
+    "message": "Password has been reset. User should change it on first login."
+  },
+  "message": "Password reset successfully"
+}
+```
+
+---
+
+### 4.7 Generate API Key
+
+Admin can generate for any user. Non-admin can generate for themselves only.
+
+```
+POST /users/{user_id}/api-key
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": 7,
+    "user_name": "Sales User",
+    "api_key": "416d662e83983a64ae607a034c7170072bc354cd",
+    "note": "Store this API key securely - it will not be shown again"
+  },
+  "message": "API key generated successfully"
+}
+```
+
+---
+
+### 4.8 List User Groups (Admin Only)
+
+Returns all assignable groups organized by category.
+
+```
+GET /groups
+```
+
+**Required permission:** `base.group_user_admin` or `base.group_system`
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "groups_by_category": {
+      "Sales": [
+        {
+          "id": 24,
+          "name": "Administrator",
+          "full_name": "Sales / Administrator",
+          "xml_id": "sales_team.group_sale_manager",
+          "comment": "the user will have an access to the sales configuration as well as statistic reports.",
+          "users_count": 1
+        },
+        {
+          "id": 22,
+          "name": "User: Own Documents Only",
+          "full_name": "Sales / User: Own Documents Only",
+          "xml_id": "sales_team.group_sale_salesman",
+          "comment": "the user will have access to his own data in the sales application.",
+          "users_count": 2
+        }
+      ],
+      "Human Resources": [ ... ],
+      "Accounting": [ ... ]
+    },
+    "total_groups": 17
+  },
+  "message": "Available groups retrieved"
+}
+```
+
+---
+
+## 5. Generic CRUD
+
+These endpoints work with **any** Odoo model that the authenticated user has access to (except [blocked models](#17-appendix-blocked-models)). All support both session and API key auth.
+
+### 5.1 Search Records
+
+```
+GET /search/{model}
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `10` | Max records |
+| `offset` | integer | `0` | Skip count |
+| `fields` | string | `"id,name,display_name"` | Comma-separated field names |
+| `{field_name}` | any | — | Exact-match filter on any model field |
+
+**Example:** `GET /search/res.partner?limit=5&fields=name,email,phone&is_company=true`
+
+**Response `200`:**
+
 ```json
 {
   "success": true,
   "data": {
     "records": [
       {
-        "id": 456,
-        "summary": "Follow-up call",
-        "date_deadline": "2025-01-15",
-        "user_id": [3, "Sales Manager"],           // ✅ Name included!
-        "activity_type_id": [2, "Call"],          // ✅ Name included!
-        "request_partner_id": [15, "Acme Corp"],  // ✅ Name included!
-        "res_model": "crm.lead",
-        "res_id": 25                              // ❌ Only ID
+        "id": 15,
+        "name": "Acme Corporation",
+        "email": "contact@acme.com",
+        "phone": "+1-555-0123"
       }
-    ]
-  }
+    ],
+    "count": 1,
+    "model": "res.partner",
+    "fields": ["id", "name", "email", "phone"],
+    "total_count": 42
+  },
+  "message": "Found 1 records in res.partner"
 }
 ```
 
-## 🔧 Customizing Relational Field Expansion
+**Error codes:** `MODEL_NOT_FOUND` (404), `ACCESS_DENIED` (403), `INVALID_FIELDS` (400), `SEARCH_ERROR` (400/500)
 
-### Problem: Default `[id, "name"]` Format Limitation
+---
 
-By default, Odoo returns relational fields as `[id, "name"]`, but sometimes you need more information like email, phone, or other details from the related record.
+### 5.2 Get Record by ID
 
-### 💡 Solution 1: Fetch Related Records with Specific Fields
-
-Instead of relying on automatic expansion, fetch the related records separately with exactly the fields you need:
-
-```bash
-# Step 1: Get activities (with standard relational fields)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,user_id,request_partner_id,res_id,res_model"
-
-# Step 2: Get detailed user information  
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users/3?fields=id,name,email,phone,department_id,company_id"
-
-# Step 3: Get detailed partner information
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/15?fields=id,name,email,phone,city,country_id,customer_rank"
+```
+GET /search/{model}/{record_id}
 ```
 
-**Result: Rich relational data**
-```json
-{
-  "user": {
-    "id": 3,
-    "name": "Sales Manager", 
-    "email": "sales@company.com",
-    "phone": "+1-555-0199",
-    "department_id": [5, "Sales Department"],
-    "company_id": [1, "Your Company"]
-  },
-  "partner": {
-    "id": 15,
-    "name": "Acme Corp",
-    "email": "contact@acme.com", 
-    "phone": "+1-555-0123",
-    "city": "Business City",
-    "country_id": [235, "United States"],
-    "customer_rank": 2
-  }
-}
-```
+Returns all fields by default. Use `?fields=` to limit.
 
-### 💡 Solution 2: Strategic Batch Queries
+**Query Parameters:**
 
-Get all related records at once, then enrich your data:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fields` | string | all fields | Comma-separated field names |
 
-```bash
-# Step 1: Get activities and collect all user IDs
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?limit=50&fields=id,summary,user_id,request_partner_id"
+**Response `200`:**
 
-# Step 2: Get all users with rich details (based on collected user_ids)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users?limit=100&fields=id,name,email,phone,department_id,image_1920"
-
-# Step 3: Get all partners with rich details (based on collected partner_ids)  
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?limit=100&fields=id,name,email,phone,city,industry_id,website"
-
-# Then match and enrich in your application
-```
-
-### 💡 Solution 3: Query from Target Model with Rich Context
-
-Query the model that has the richest context first:
-
-```bash
-# Instead of: activity → user details
-# Do: user → activities with user context
-
-# Get users with their activity information
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users?active=true&fields=id,name,email,phone,department_id,activity_ids,login_date"
-
-# Get partners with their activity context
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?is_company=true&fields=id,name,email,phone,city,website,activity_ids,activity_state"
-```
-
-### 💡 Solution 4: Combine Multiple Field Types
-
-Mix different approaches for maximum information:
-
-```bash
-# Get activities with mixed expansion strategies
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid,write_uid"
-```
-
-**This gives you:**
-- `user_id: [3, "Sales Manager"]` - Assigned user
-- `activity_type_id: [2, "Call"]` - Activity type  
-- `request_partner_id: [15, "Acme Corp"]` - Requesting partner
-- `create_uid: [2, "Admin"]` - Who created the activity
-- `write_uid: [3, "Sales Manager"]` - Who last modified it
-
-### 🔄 Practical Workflow: Rich Activity Dashboard
-
-Here's a complete workflow for getting rich relational data:
-
-```bash
-# 1. Get my activities with all available relational context
-ACTIVITIES=$(curl -s -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid")
-
-# 2. Extract unique user IDs from activities (create_uid, user_id, etc.)
-# Parse JSON and collect: [3, 2, 5, 7] 
-
-# 3. Get rich user details for all involved users
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users?limit=100&fields=id,name,email,phone,mobile,department_id,job_title,company_id,image_1920,login_date"
-
-# 4. Extract unique partner IDs and get rich partner details  
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?limit=100&fields=id,name,email,phone,mobile,street,city,state_id,country_id,website,industry_id,customer_rank,supplier_rank"
-
-# 5. Get activity type details
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity.type?fields=id,name,summary,icon,category,decoration_type,delay_count"
-
-# 6. Combine all data in your application for rich display
-```
-
-**Final enriched result:**
-```json
-{
-  "activity": {
-    "id": 456,
-    "summary": "Follow-up call with client",
-    "note": "Discuss pricing options and contract terms",
-    "date_deadline": "2025-01-15",
-    "res_model": "crm.lead",
-    "res_id": 25
-  },
-  "assigned_user": {
-    "id": 3,
-    "name": "Sales Manager",
-    "email": "sales@company.com", 
-    "phone": "+1-555-0199",
-    "department": "Sales Department",
-    "job_title": "Senior Sales Rep",
-    "image_url": "/web/image/res.users/3/image_1920"
-  },
-  "requesting_partner": {
-    "id": 15, 
-    "name": "Acme Corporation",
-    "email": "contact@acme.com",
-    "phone": "+1-555-0123",
-    "address": "123 Business Ave, Business City, CA",
-    "website": "https://acme.com",
-    "industry": "Technology"
-  },
-  "activity_type": {
-    "id": 2,
-    "name": "Call", 
-    "icon": "fa-phone",
-    "category": "phonecall",
-    "decoration_type": "info"
-  }
-}
-```
-
-### 💡 Solution 2: Batch Related Record Fetching
-
-Get multiple related records in one call by filtering:
-
-```bash
-# Step 1: Get activities for CRM leads
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,res_id,user_id,date_deadline"
-
-# Step 2: Get ALL lead details at once (more efficient than individual calls)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead?limit=100&fields=id,name,partner_id,expected_revenue,stage_id"
-
-# Then match res_id to lead.id in your application
-```
-
-### 💡 Solution 3: Strategic Field Selection
-
-Choose fields that give you maximum information in one call:
-
-```bash
-# Get activities with rich context
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?fields=id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_date"
-```
-
-**This gives you:**
-- ✅ **User name** via `user_id: [3, "Sales Manager"]`
-- ✅ **Activity type** via `activity_type_id: [2, "Call"]`
-- ✅ **Requesting partner** via `request_partner_id: [15, "Acme Corp"]`
-- ❌ **Target record details** still need separate call
-
-### 💡 Solution 4: Model-Specific Queries
-
-Query the target model directly with more context:
-
-```bash
-# Instead of: Get activities then fetch leads
-# Do: Get leads with their activity info
-
-# Get CRM leads with activity context
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead?fields=id,name,partner_id,activity_ids,activity_state,activity_summary,activity_date_deadline"
-
-# Get sales orders with activity info
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/sale.order?fields=id,name,partner_id,amount_total,activity_ids,activity_state"
-```
-
-### 📊 Efficient Workflow Examples
-
-#### Example 1: My Activities Dashboard
-
-```bash
-# Get my activities with maximum context in one call
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=id,summary,note,date_deadline,activity_type_id,request_partner_id,res_model,res_id,state,create_date"
-
-# Response gives you:
-# - Activity details (summary, note, deadline)
-# - Who requested it (request_partner_id: [15, "Acme Corp"])
-# - What type (activity_type_id: [2, "Call"])
-# - Which record (res_model: "crm.lead", res_id: 25)
-```
-
-#### Example 2: Lead Activities Overview
-
-```bash
-# Get lead with its activities in one enriched call
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead/25?fields=id,name,partner_id,expected_revenue,stage_id,activity_ids,activity_state,activity_summary,activity_date_deadline,user_id"
-```
-
-#### Example 3: Partner Activities Summary
-
-```bash
-# Get partner's activities across all models
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?request_partner_id=15&fields=summary,date_deadline,res_model,res_id,activity_type_id,state"
-```
-
-### 🚀 Pro Tips for Related Data
-
-1. **Use rich relational fields** - Many fields return `[id, "name"]` format
-2. **Batch queries** - Get multiple related records in one call, then match IDs
-3. **Query from the target model** - Often more efficient than activity → record
-4. **Strategic field selection** - Include context fields that reduce additional calls
-5. **Cache common lookups** - User names, activity types, partners don't change often
-
-### When You Still Need Multiple Calls
-
-Sometimes separate calls are unavoidable, but you can optimize:
-
-```bash
-# Get broader results and filter in your application
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/crm.lead?limit=100&fields=name,partner_id,expected_revenue"
-
-# Then match the IDs you need client-side
-```
-
-## 📋 Quick Reference: Filtering & Related Data
-
-### ⚡ Quick Filtering Examples
-
-```bash
-# Filter by user
-curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?user_id=3"
-
-# Filter by state  
-curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?state=overdue"
-
-# Multiple filters
-curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/sale.order?partner_id=15&state=sale"
-
-# With specific fields
-curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,activity_type_id"
-```
-
-### ⚡ Quick Related Data Solutions
-
-| Problem | Solution | Example |
-|---------|----------|---------|
-| Get user names | Use `user_id` field | Returns `[3, "Sales Manager"]` |
-| Get activity types | Use `activity_type_id` field | Returns `[2, "Call"]` |
-| Get partner names | Use `partner_id` field | Returns `[15, "Acme Corp"]` |
-| Get target records | Query target model directly | Use `/search/crm.lead` instead |
-| Batch related records | Get all at once, match IDs | Get all leads, match `res_id` |
-
-### ⚡ Relational Field Expansion Options
-
-| Need | Standard Format | Custom Solution | API Calls |
-|------|----------------|-----------------|-----------|
-| **Basic info** | `user_id: [3, "Sales Manager"]` | ✅ Automatic | 1 call |
-| **Email + Phone** | `user_id: [3, "Sales Manager"]` | Get `/search/res.users/3?fields=id,name,email,phone` | 2 calls |
-| **Rich details** | `user_id: [3, "Sales Manager"]` | Get `/search/res.users?fields=id,name,email,phone,department_id,image_1920` | 2 calls |
-| **Multiple users** | Various `[id, "name"]` | Batch: `/search/res.users?limit=100&fields=...` | 2 calls |
-| **Full context** | Standard format | Strategic workflow with multiple models | 3-5 calls |
-
-### ⚡ Best Practices
-
-1. **🎯 Use filtering** - `?user_id=3&state=overdue` instead of getting all records
-2. **📝 Select specific fields** - `&fields=summary,date_deadline,user_id` for faster responses  
-3. **🔗 Leverage relational fields** - Many return `[id, "name"]` automatically
-4. **📊 Query from target model** - Often more efficient than activity → record
-5. **⚡ Batch when possible** - Get multiple records in one call, match in app
-
-### Response Format
-
-**Basic Response:**
 ```json
 {
   "success": true,
@@ -969,1186 +885,1101 @@ curl -H "session-token: TOKEN" "http://localhost:8069/api/v2/search/mail.activit
       "name": "Acme Corporation",
       "email": "contact@acme.com",
       "phone": "+1-555-0123",
-      "city": "Business City",
       "country_id": [235, "United States"]
     },
     "model": "res.partner",
     "id": 15,
-    "fields_returned": ["id", "name", "email", "phone", "city", "country_id"],
+    "fields_returned": ["id", "name", "email", "phone", "country_id"],
     "total_fields_available": 127
   },
   "message": "Found record 15 in res.partner"
 }
 ```
 
-**Message Content Response:**
+If the user lacks read access to some fields, the endpoint falls back to basic fields (`id`, `name`, `display_name`, `create_date`, `write_date`, `create_uid`, `write_uid`).
+
+**Error codes:** `MODEL_NOT_FOUND` (404), `RECORD_NOT_FOUND` (404), `ACCESS_DENIED` (403)
+
+---
+
+### 5.3 Create Record
+
+```
+POST /create/{model}
+```
+
+**Headers:** `Content-Type: application/json`
+
+**Request Body:** JSON object with field name/value pairs.
+
+**Example — create a partner:**
+
+```json
+{
+  "name": "Acme Corporation",
+  "email": "contact@acme.com",
+  "phone": "+1-555-0123",
+  "is_company": true,
+  "customer_rank": 1
+}
+```
+
+**Response `201`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 42,
+    "record": {
+      "id": 42,
+      "name": "Acme Corporation",
+      "email": "contact@acme.com",
+      "display_name": "Acme Corporation"
+    }
+  },
+  "message": "Record created in res.partner"
+}
+```
+
+For `res.users` creation, see [4.3 Create User](#43-create-user) for the special handling of groups and credentials.
+
+**Error codes:** `INVALID_CONTENT_TYPE` (400), `NO_DATA` (400), `INVALID_JSON` (400), `MODEL_NOT_FOUND` (404), `ACCESS_DENIED` (403), `CREATE_ERROR` (400/500)
+
+---
+
+### 5.4 Update Record
+
+```
+PUT /update/{model}/{record_id}
+```
+
+**Headers:** `Content-Type: application/json`
+
+**Request Body:** JSON object with fields to update.
+
+```json
+{
+  "phone": "+1-555-9999",
+  "email": "new@acme.com"
+}
+```
+
+**Response `200`:**
+
 ```json
 {
   "success": true,
   "data": {
     "record": {
-      "id": 123,
-      "subject": "Initial Contact",
-      "body": "<p>First contact with the customer about their requirements...</p>",
-      "author_id": [2, "Admin User"],
-      "create_date": "2025-01-04 10:30:00",
-      "message_type": "comment",
-      "email_from": "admin@company.com"
+      "id": 42,
+      "name": "Acme Corporation",
+      "display_name": "Acme Corporation",
+      "write_date": "2026-03-22 01:35:45.710210"
     },
-    "model": "mail.message",
-    "id": 123,
-    "fields_returned": ["id", "subject", "body", "author_id", "create_date", "message_type", "email_from"],
-    "total_fields_available": 47
+    "updated_fields": ["phone", "email"]
   },
-  "message": "Found record 123 in mail.message"
+  "message": "Record 42 updated in res.partner"
 }
 ```
 
-### Error Handling
-
-```bash
-# Record not found (404 error)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner/99999"
-
-# Response:
-# {
-#   "success": false,
-#   "error": {
-#     "message": "Record with ID 99999 not found in res.partner",
-#     "code": "RECORD_NOT_FOUND"
-#   }
-# }
-
-# Invalid model (404 error)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/invalid.model/1"
-
-# Response:
-# {
-#   "success": false,
-#   "error": {
-#     "message": "Model 'invalid.model' not found",
-#     "code": "MODEL_NOT_FOUND"
-#   }
-# }
-```
-
-## 📝 URL Parameters & Filtering
-
-### Common Parameters
-
-| Parameter | Description | Example | Default |
-|-----------|-------------|---------|---------|
-| `limit` | Max records to return | `?limit=10` | 10 |
-| `offset` | Records to skip | `?offset=20` | 0 |
-| `fields` | Specific fields to return | `?fields=name,email,phone` | Basic fields |
-
-### 🔍 Dynamic Filtering
-
-**The API supports filtering by any field in the model using URL parameters!**
-
-**Basic Syntax:** `?field_name=value`
-
-#### Common Filtering Examples
-
-```bash
-# Filter mail.activity by user
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&fields=summary,date_deadline,state"
-
-# Filter by activity state
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?state=overdue&fields=summary,res_model,res_id,user_id"
-
-# Filter by specific model activities
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?res_model=crm.lead&fields=summary,res_id,date_deadline"
-
-# Filter by exact date
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?date_deadline=2025-01-15&fields=summary,user_id,res_id"
-
-# Multiple filters
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?user_id=3&state=planned&res_model=crm.lead"
-```
-
-#### Sales Order Filtering
-
-```bash
-# Filter by partner (customer)
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/sale.order?partner_id=15&fields=name,amount_total,state"
-
-# Filter by order state
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/sale.order?state=sale&fields=name,partner_id,amount_total,date_order"
-
-# Filter by salesperson
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/sale.order?user_id=5&fields=name,partner_id,amount_total"
-```
-
-#### User & Partner Filtering
-
-```bash
-# Filter active users only
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.users?active=true&fields=name,login,email"
-
-# Filter partners by country
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?country_id=235&fields=name,email,city"
-
-# Filter customers only
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/res.partner?is_company=true&fields=name,email,phone"
-```
-
-#### **⚠️ Current Limitations**
-
-- **Only exact matches supported** (`field = value`)
-- **No range queries** (`date > 2025-01-01` not supported yet)
-- **No text search** (`name ilike '%company%'` not supported yet)
-
-#### **💡 Workarounds for Complex Filtering**
-
-For advanced filtering needs:
-
-```bash
-# Use state fields instead of date comparisons
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/mail.activity?state=overdue"  # Instead of date_deadline < today
-
-# Get broader results and filter in your application
-curl -H "session-token: YOUR_SESSION_TOKEN" \
-     "http://localhost:8069/api/v2/search/sale.order?limit=100&fields=date_order,amount_total,state"
-```
-
-### Partner-Specific Parameters
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `customers_only` | Only customer partners | `?customers_only=true` |
-
-### Product-Specific Parameters
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `sale_ok` | Only saleable products | `?sale_ok=true` |
-
-## 🌐 Programming Language Examples
-
-### Python Client
-
-```python
-import requests
-import json
-
-class OdooAPIClient:
-    def __init__(self, base_url, api_key):
-        self.base_url = base_url
-        self.headers = {
-            'api-key': api_key,
-            'Content-Type': 'application/json'
-        }
-    
-    def test_connection(self):
-        """Test basic API connectivity"""
-        response = requests.get(f"{self.base_url}/test")
-        return response.json()
-    
-    def test_auth(self):
-        """Test authentication"""
-        response = requests.get(f"{self.base_url}/auth/test", headers=self.headers)
-        return response.json()
-    
-    def get_user_info(self):
-        """Get current user information"""
-        response = requests.get(f"{self.base_url}/user/info", headers=self.headers)
-        return response.json()
-    
-    def search_model(self, model, limit=10, offset=0):
-        """Search any Odoo model"""
-        params = {'limit': limit, 'offset': offset}
-        response = requests.get(
-            f"{self.base_url}/search/{model}", 
-            headers=self.headers, 
-            params=params
-        )
-        return response.json()
-    
-    def get_record(self, model, record_id, fields=None):
-        """Get a specific record by ID"""
-        params = {}
-        if fields:
-            params['fields'] = ','.join(fields) if isinstance(fields, list) else fields
-        response = requests.get(
-            f"{self.base_url}/search/{model}/{record_id}",
-            headers=self.headers,
-            params=params
-        )
-        return response.json()
-    
-    def create_record(self, model, data):
-        """Create a record in any model"""
-        response = requests.post(
-            f"{self.base_url}/create/{model}",
-            headers=self.headers,
-            json=data
-        )
-        return response.json()
-    
-    def get_partners(self, limit=10, customers_only=True):
-        """Get partners/customers"""
-        params = {'limit': limit, 'customers_only': str(customers_only).lower()}
-        response = requests.get(
-            f"{self.base_url}/partners",
-            headers=self.headers,
-            params=params
-        )
-        return response.json()
-    
-    def get_products(self, limit=10, sale_ok=True):
-        """Get products"""
-        params = {'limit': limit, 'sale_ok': str(sale_ok).lower()}
-        response = requests.get(
-            f"{self.base_url}/products",
-            headers=self.headers,
-            params=params
-        )
-        return response.json()
-
-# Usage example
-if __name__ == "__main__":
-    client = OdooAPIClient(
-        "http://localhost:8069/api/v2",
-        "YOUR_API_KEY"
-    )
-    
-    # Test connection
-    print("Testing connection:", client.test_connection())
-    
-    # Test authentication
-    print("Testing auth:", client.test_auth())
-    
-    # Get user info
-    print("User info:", client.get_user_info())
-    
-    # Get customers
-    customers = client.get_partners(limit=5)
-    print("Customers:", customers)
-    
-    # Create new customer
-    new_customer = client.create_record('res.partner', {
-        'name': 'Python API Customer',
-        'email': 'python@api.com',
-        'is_company': True,
-        'customer_rank': 1
-    })
-    print("New customer:", new_customer)
-    
-    # Get specific customer by ID
-    customer_detail = client.get_record('res.partner', 15)
-    print("Customer detail:", customer_detail)
-    
-    # Get customer with specific fields only
-    customer_basic = client.get_record('res.partner', 15, ['name', 'email', 'phone'])
-    print("Customer basic info:", customer_basic)
-    
-    # Get CRM lead with message IDs
-    lead = client.get_record('crm.lead', 5, ['name', 'message_ids'])
-    print("Lead:", lead)
-    
-    # Get specific message content by ID
-    if lead['data']['record']['message_ids']:
-        message_id = lead['data']['record']['message_ids'][0]  # Get first message
-        message = client.get_record('mail.message', message_id, 
-                                  ['subject', 'body', 'author_id', 'create_date'])
-        print("Message content:", message)
-    
-    # Get CRM lead with activity IDs
-    lead_with_activities = client.get_record('crm.lead', 5, ['name', 'activity_ids'])
-    print("Lead with activities:", lead_with_activities['data']['record']['name'])
-    
-    # Get each activity's details
-    if lead_with_activities['data']['record']['activity_ids']:
-        for activity_id in lead_with_activities['data']['record']['activity_ids']:
-            activity = client.get_record('mail.activity', activity_id, 
-                                       ['summary', 'note', 'date_deadline', 'user_id', 'activity_type_id', 'state'])
-            activity_data = activity['data']['record']
-            print(f"Activity: {activity_data['summary']}")
-            print(f"Due: {activity_data['date_deadline']}")
-            print(f"Assigned to: {activity_data['user_id'][1] if activity_data['user_id'] else 'Unassigned'}")
-            print(f"Type: {activity_data['activity_type_id'][1] if activity_data['activity_type_id'] else 'Unknown'}")
-            print(f"Status: {activity_data['state']}")
-            print("---")
-    
-    # ===== FILTERING AND RELATED DATA EXAMPLES =====
-    
-    # Example: Get my activities with rich context (minimal API calls)
-    print("\n=== My Activities Dashboard ===")
-    my_activities = client.search_model('mail.activity', 
-        limit=10, 
-        params={'user_id': 3, 'fields': 'id,summary,date_deadline,activity_type_id,request_partner_id,res_model,res_id,state'})
-    
-    if my_activities['success']:
-        for activity in my_activities['data']['records']:
-            print(f"📋 {activity['summary']}")
-            print(f"   📅 Due: {activity['date_deadline']}")
-            print(f"   👤 Requested by: {activity['request_partner_id'][1] if activity['request_partner_id'] else 'N/A'}")
-            print(f"   📝 Type: {activity['activity_type_id'][1] if activity['activity_type_id'] else 'Unknown'}")
-            print(f"   📊 Related: {activity['res_model']} #{activity['res_id']}")
-            print(f"   🎯 Status: {activity['state']}")
-            print()
-    
-    # Example: Get overdue activities across all models
-    print("\n=== Overdue Activities ===")
-    overdue = client.search_model('mail.activity',
-        limit=5,
-        params={'state': 'overdue', 'fields': 'summary,date_deadline,user_id,res_model,res_id'})
-    
-    if overdue['success']:
-        for activity in overdue['data']['records']:
-            print(f"⚠️  {activity['summary']} (Due: {activity['date_deadline']})")
-            print(f"    Assigned to: {activity['user_id'][1] if activity['user_id'] else 'Unassigned'}")
-            print(f"    Related to: {activity['res_model']} #{activity['res_id']}")
-    
-    # Example: Efficient lead activities (query from target model)
-    print("\n=== Lead Activities (Efficient Method) ===")
-    leads_with_activities = client.search_model('crm.lead',
-        limit=3,
-        params={'fields': 'id,name,partner_id,activity_ids,activity_state,user_id'})
-    
-    if leads_with_activities['success']:
-        for lead in leads_with_activities['data']['records']:
-            print(f"🎯 Lead: {lead['name']}")
-            print(f"   Customer: {lead['partner_id'][1] if lead['partner_id'] else 'No customer'}")
-            print(f"   Owner: {lead['user_id'][1] if lead['user_id'] else 'Unassigned'}")
-            print(f"   Activity Status: {lead.get('activity_state', 'No activities')}")
-            print(f"   Activity IDs: {lead.get('activity_ids', [])}")
-            print()
-    
-    # Enhanced search_model method to support parameters
-    def search_model_with_params(self, model, limit=10, offset=0, params=None):
-        """Enhanced search with parameter support for filtering."""
-        url_params = {'limit': limit, 'offset': offset}
-        if params:
-            url_params.update(params)
-        
-        response = requests.get(
-            f"{self.base_url}/search/{model}", 
-            headers=self.headers, 
-            params=url_params
-        )
-        return response.json()
-    
-    # Add the enhanced method to the class
-    client.search_model_with_params = search_model_with_params.__get__(client, OdooAPIClient)
-    
-    # ===== CUSTOM RELATIONAL FIELD EXPANSION =====
-    
-    print("\n=== Custom Relational Field Expansion ===")
-    
-    def get_enriched_activities(client, user_id=None, limit=10):
-        """Get activities with enriched relational field data."""
-        
-        # Step 1: Get activities with basic relational fields
-        params = {'fields': 'id,summary,note,date_deadline,user_id,activity_type_id,request_partner_id,res_model,res_id,create_uid'}
-        if user_id:
-            params['user_id'] = user_id
-        
-        activities_response = client.search_model('mail.activity', limit=limit, params=params)
-        
-        if not activities_response['success']:
-            return activities_response
-        
-        activities = activities_response['data']['records']
-        
-        # Step 2: Collect all unique user IDs and partner IDs
-        user_ids = set()
-        partner_ids = set()
-        
-        for activity in activities:
-            if activity.get('user_id') and isinstance(activity['user_id'], list):
-                user_ids.add(activity['user_id'][0])
-            if activity.get('create_uid') and isinstance(activity['create_uid'], list):
-                user_ids.add(activity['create_uid'][0])
-            if activity.get('request_partner_id') and isinstance(activity['request_partner_id'], list):
-                partner_ids.add(activity['request_partner_id'][0])
-        
-        # Step 3: Batch fetch rich user details
-        users_map = {}
-        if user_ids:
-            users_response = client.search_model('res.users', 
-                limit=100, 
-                params={'fields': 'id,name,email,phone,department_id,job_title,image_1920'})
-            
-            if users_response['success']:
-                for user in users_response['data']['records']:
-                    users_map[user['id']] = user
-        
-        # Step 4: Batch fetch rich partner details
-        partners_map = {}
-        if partner_ids:
-            partners_response = client.search_model('res.partner',
-                limit=100,
-                params={'fields': 'id,name,email,phone,city,website,industry_id,customer_rank'})
-            
-            if partners_response['success']:
-                for partner in partners_response['data']['records']:
-                    partners_map[partner['id']] = partner
-        
-        # Step 5: Enrich activities with detailed relational data
-        enriched_activities = []
-        for activity in activities:
-            enriched_activity = activity.copy()
-            
-            # Enrich user_id
-            if activity.get('user_id') and isinstance(activity['user_id'], list):
-                user_id = activity['user_id'][0]
-                if user_id in users_map:
-                    enriched_activity['assigned_user'] = users_map[user_id]
-            
-            # Enrich create_uid
-            if activity.get('create_uid') and isinstance(activity['create_uid'], list):
-                creator_id = activity['create_uid'][0]
-                if creator_id in users_map:
-                    enriched_activity['created_by'] = users_map[creator_id]
-            
-            # Enrich request_partner_id
-            if activity.get('request_partner_id') and isinstance(activity['request_partner_id'], list):
-                partner_id = activity['request_partner_id'][0]
-                if partner_id in partners_map:
-                    enriched_activity['requesting_partner'] = partners_map[partner_id]
-            
-            enriched_activities.append(enriched_activity)
-        
-        return {
-            'success': True,
-            'data': {
-                'enriched_activities': enriched_activities,
-                'api_calls_made': 3,  # activities + users + partners
-                'users_fetched': len(users_map),
-                'partners_fetched': len(partners_map)
-            }
-        }
-    
-    # Example usage
-    enriched_result = get_enriched_activities(client, user_id=3, limit=5)
-    
-    if enriched_result['success']:
-        print(f"📊 Fetched {len(enriched_result['data']['enriched_activities'])} activities")
-        print(f"📞 API calls made: {enriched_result['data']['api_calls_made']}")
-        print(f"👥 Users enriched: {enriched_result['data']['users_fetched']}")
-        print(f"🏢 Partners enriched: {enriched_result['data']['partners_fetched']}")
-        print()
-        
-        for activity in enriched_result['data']['enriched_activities']:
-            print(f"📋 Activity: {activity['summary']}")
-            print(f"📅 Due: {activity['date_deadline']}")
-            
-            # Rich user information
-            if 'assigned_user' in activity:
-                user = activity['assigned_user']
-                print(f"👤 Assigned to: {user['name']} ({user.get('email', 'No email')})")
-                if user.get('phone'):
-                    print(f"📞 Phone: {user['phone']}")
-                if user.get('department_id'):
-                    print(f"🏢 Department: {user['department_id'][1]}")
-            
-            # Rich partner information  
-            if 'requesting_partner' in activity:
-                partner = activity['requesting_partner']
-                print(f"🤝 Requested by: {partner['name']} ({partner.get('email', 'No email')})")
-                if partner.get('city'):
-                    print(f"📍 Location: {partner['city']}")
-                if partner.get('website'):
-                    print(f"🌐 Website: {partner['website']}")
-            
-            print(f"📊 Related to: {activity['res_model']} #{activity['res_id']}")
-            print("---")
-    
-    # Alternative: Simple field expansion helper
-    def expand_relational_field(client, model, record_id, fields):
-        """Helper to get rich details for a relational field."""
-        response = client.get_record(model, record_id, fields)
-        if response['success']:
-            return response['data']['record']
-        return None
-    
-    # Example: Expand a single user field on demand
-    print("\n=== On-Demand Field Expansion ===")
-    user_details = expand_relational_field(client, 'res.users', 3, 
-                                         ['id', 'name', 'email', 'phone', 'department_id', 'signature'])
-    if user_details:
-        print(f"👤 User: {user_details['name']}")
-        print(f"📧 Email: {user_details.get('email', 'N/A')}")
-        print(f"📞 Phone: {user_details.get('phone', 'N/A')}")
-        print(f"🏢 Department: {user_details.get('department_id', ['', 'N/A'])[1]}")
-```
-
-### JavaScript/Node.js Client
-
-```javascript
-const axios = require('axios');
-
-class OdooAPIClient {
-    constructor(baseUrl, apiKey) {
-        this.baseUrl = baseUrl;
-        this.headers = {
-            'api-key': apiKey,
-            'Content-Type': 'application/json'
-        };
-    }
-
-    async testConnection() {
-        const response = await axios.get(`${this.baseUrl}/test`);
-        return response.data;
-    }
-
-    async testAuth() {
-        const response = await axios.get(`${this.baseUrl}/auth/test`, { headers: this.headers });
-        return response.data;
-    }
-
-    async getUserInfo() {
-        const response = await axios.get(`${this.baseUrl}/user/info`, { headers: this.headers });
-        return response.data;
-    }
-
-    async searchModel(model, limit = 10, offset = 0) {
-        const response = await axios.get(`${this.baseUrl}/search/${model}`, {
-            headers: this.headers,
-            params: { limit, offset }
-        });
-        return response.data;
-    }
-
-    async createRecord(model, data) {
-        const response = await axios.post(`${this.baseUrl}/create/${model}`, data, {
-            headers: this.headers
-        });
-        return response.data;
-    }
-
-    async getPartners(limit = 10, customersOnly = true) {
-        const response = await axios.get(`${this.baseUrl}/partners`, {
-            headers: this.headers,
-            params: { limit, customers_only: customersOnly }
-        });
-        return response.data;
-    }
-}
-
-// Usage
-const client = new OdooAPIClient(
-    'http://localhost:8069/api/v2',
-    'YOUR_API_KEY'
-);
-
-client.testAuth().then(result => console.log('Auth test:', result));
-```
-
-### PHP Client
-
-```php
-<?php
-class OdooAPIClient {
-    private $baseUrl;
-    private $apiKey;
-
-    public function __construct($baseUrl, $apiKey) {
-        $this->baseUrl = $baseUrl;
-        $this->apiKey = $apiKey;
-    }
-
-    private function makeRequest($method, $endpoint, $data = null) {
-        $url = $this->baseUrl . $endpoint;
-        $headers = [
-            'api-key: ' . $this->apiKey,
-            'Content-Type: application/json'
-        ];
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        if ($method === 'POST' && $data) {
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        }
-
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        return json_decode($response, true);
-    }
-
-    public function testAuth() {
-        return $this->makeRequest('GET', '/auth/test');
-    }
-
-    public function getUserInfo() {
-        return $this->makeRequest('GET', '/user/info');
-    }
-
-    public function searchModel($model, $limit = 10) {
-        return $this->makeRequest('GET', "/search/{$model}?limit={$limit}");
-    }
-
-    public function createRecord($model, $data) {
-        return $this->makeRequest('POST', "/create/{$model}", $data);
-    }
-
-    public function getPartners($limit = 10) {
-        return $this->makeRequest('GET', "/partners?limit={$limit}");
-    }
-}
-
-// Usage
-$client = new OdooAPIClient(
-    'http://localhost:8069/api/v2',
-    'YOUR_API_KEY'
-);
-
-$authTest = $client->testAuth();
-echo "Auth test: " . json_encode($authTest) . "\n";
-?>
-```
-
-## 🧪 Testing Your Implementation
-
-Run the comprehensive test script:
-
-```bash
-bash scripts/test_all_endpoints.sh
-```
-
-This script runs 244 tests covering all endpoints, role-based access control, session auth, and error handling.
-
-## 🔒 Security & Production
-
-### Security Features
-
-- ✅ **48-character API keys** - Cryptographically secure
-- ✅ **Per-user authentication** - Individual permissions
-- ✅ **Odoo's access control** - Built-in security
-- ✅ **HTTPS ready** - SSL/TLS support
-- ✅ **Rate limiting compatible** - Works with nginx
-
-### Production Deployment
-
-**1. Environment Setup**
-```bash
-# Production configuration
-python3 odoo-bin --addons-path=addons -d production_db \
-                  --config=production.conf \
-                  --without-demo=all
-```
-
-**2. Nginx Rate Limiting**
-```nginx
-location /api/ {
-    limit_req zone=api burst=20 nodelay;
-    proxy_pass http://odoo;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-**3. API Key Rotation**
-```bash
-# Rotate API key for security
-python3 -c "
-import psycopg2, secrets, string
-api_key = ''.join(secrets.choice(string.ascii_letters + string.digits + '-_') for _ in range(48))
-conn = psycopg2.connect(host='localhost', port=5432, database='production_db', user='odoo')
-cur = conn.cursor()
-cur.execute('UPDATE res_users SET api_key = %s WHERE login = %s', (api_key, 'username'))
-conn.commit()
-print(f'New API key: {api_key}')
-"
-```
-
-## 📊 Performance Tips
-
-1. **Use pagination** - Always set `limit` parameter
-2. **Filter results** - Use specific search criteria
-3. **Batch operations** - Group multiple requests
-4. **Cache responses** - Cache frequently accessed data
-5. **Monitor usage** - Track API usage patterns
-
-## ❗ Important Notes
-
-### API Version Clarification
-
-**❌ API v1 does NOT exist** - All v1 endpoints return 404 errors
-
-**✅ API v2 is the ONLY version** - Use `/api/v2/` for all requests
-
-### Working API Key
-
-**You need to generate your own API key using one of the methods above.** The specific API key shown in examples is for demonstration purposes only.
-
-### Current Status
-
-- ✅ **Core API infrastructure** - 100% functional
-- ✅ **Authentication system** - Production ready
-- ✅ **All endpoints** - Tested and working
-- ✅ **CRUD operations** - Create and search working
-- ✅ **User management** - Complete functionality
-- ✅ **Error handling** - Comprehensive responses
-- ✅ **Documentation** - This guide covers everything
-
-## 🚀 Quick Start
-
-**Minimum steps to get started:**
-
-1. **Test basic connectivity:**
-   ```bash
-   curl "http://localhost:8069/api/v2/test"
-   ```
-
-2. **Test authentication:**
-   ```bash
-   curl -H "api-key: YOUR_API_KEY" \
-        "http://localhost:8069/api/v2/auth/test"
-   ```
-
-3. **Start building your integration!**
-
-**Your separate API can now access the complete Odoo backend with full functionality! 🎉**
+**Error codes:** `INVALID_CONTENT_TYPE`, `NO_DATA`, `INVALID_JSON`, `MODEL_NOT_FOUND` (404), `RECORD_NOT_FOUND` (404), `ACCESS_DENIED` (403), `UPDATE_ERROR` (400/500)
 
 ---
 
-# 🌍 Localization (l10n) Integration Guide
+### 5.5 Delete Record
 
-The base_api provides powerful access to Odoo's extensive localization modules, giving you instant access to country-specific business rules, tax systems, and compliance requirements through simple REST API calls.
-
-## 📍 Supported African Countries
-
-Odoo includes comprehensive localization support for the following African countries:
-
-### **🇿🇦 Major African Markets**
-- **South Africa (ZA)** - `l10n_za` - SARS VAT Ready Structure, generic chart of accounts
-- **Nigeria (NG)** - `l10n_ng` - Withholding VAT, tax reports, local compliance
-- **Egypt (EG)** - `l10n_eg` + `l10n_eg_edi_eta` - Full ETA e-invoicing, VAT returns, withholding tax
-- **Kenya (KE)** - `l10n_ke` + `l10n_ke_edi_tremol` - ETR integration, item codes, tax reports
-- **Morocco (MA)** - `l10n_ma` - Local chart of accounts, tax structure
-
-### **🌍 East Africa**
-- **Tanzania (TZ)** - `l10n_tz_account` - Chart of accounts, taxes, fiscal positions
-- **Rwanda (RW)** - `l10n_rw` - COA, taxes, tax reports, fiscal positions
-- **Ethiopia (ET)** - `l10n_et` - Basic accounting structure
-
-### **🌍 West Africa**
-- **Senegal (SN)** - `l10n_sn` - SYSCOHADA compatible
-- **Burkina Faso (BF)** - `l10n_bf` - SYSCOHADA structure
-- **Mali (ML)** - `l10n_ml` - West African accounting standards
-- **Niger (NE)** - `l10n_ne` - SYSCOHADA compliant
-- **Benin (BJ)** - `l10n_bj` - Local accounting framework
-- **Ivory Coast (CI)** - `l10n_ci` - SYSCOHADA structure
-- **Togo (TG)** - `l10n_tg` - Regional compliance
-- **Guinea (GN)** - `l10n_gn` - Basic localization
-- **Equatorial Guinea (GQ)** - `l10n_gq` - Local requirements
-
-### **🌍 Central Africa**
-- **Cameroon (CM)** - `l10n_cm` - CEMAC compliant
-- **Chad (TD)** - `l10n_td` - Central African standards
-- **Central African Republic (CF)** - `l10n_cf` - Regional structure
-- **Republic of the Congo (CG)** - `l10n_cg` - CEMAC framework
-- **Democratic Republic of Congo (CD)** - `l10n_cd` - Local accounting
-- **Gabon (GA)** - `l10n_ga` - CEMAC structure
-
-### **🌍 Southern Africa**
-- **Zambia (ZM)** - `l10n_zm_account` - Chart of accounts, taxes, fiscal positions
-
-### **🌍 North Africa**
-- **Algeria (DZ)** - `l10n_dz` - Full accounting structure, tax reports
-- **Tunisia (TN)** - `l10n_tn` - Local tax system, fiscal positions
-
-## 🔧 Accessing Localization Data via API
-
-### **Basic Localization Queries**
-
-#### **1. Get Tax Information by Country**
-```bash
-# Get all taxes for South Africa
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,country_id,description&country_id=197"
-
-# Get VAT rates for Egypt  
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use&country_id=65"
-
-# Get withholding taxes for Nigeria
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,tag_ids&country_id=156"
+```
+DELETE /delete/{model}/{record_id}
 ```
 
-#### **2. Access Chart of Accounts by Country**
-```bash
-# Get Kenyan chart of accounts
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.account?fields=code,name,user_type_id,country_id&country_id=115"
+**Response `200`:**
 
-# Get Moroccan account structure
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.account?fields=code,name,account_type&country_id=149"
+```json
+{
+  "success": true,
+  "data": {
+    "id": 42,
+    "model": "res.partner"
+  },
+  "message": "Record 42 deleted from res.partner"
+}
 ```
 
-#### **3. Get Fiscal Positions (International Trade Rules)**
-```bash
-# Get fiscal positions for Tanzania
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,auto_apply,sequence&country_id=215"
-
-# Get all African fiscal positions
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,auto_apply&country_id=in=[65,115,149,156,197,209,215,246]"
-```
-
-#### **4. Access Country-Specific Partner Fields**
-```bash
-# Get Moroccan partners with local fields
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.partner?fields=name,vat,country_id,l10n_ma_ice,l10n_ma_rc&country_id=149"
-
-# Get Egyptian partners with tax registration
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.partner?fields=name,vat,country_id,l10n_eg_tax_registration&country_id=65"
-```
-
-## 💼 Business Use Cases
-
-### **🌍 Multi-Country E-commerce**
-```bash
-# Automatic tax calculation for African customers
-def get_customer_taxes(customer_country_code):
-    # Get applicable taxes for customer's country
-    taxes_response = client.search_model('account.tax', 
-        params={
-            'fields': 'name,amount,type_tax_use,price_include',
-            'country_id': get_country_id(customer_country_code),
-            'type_tax_use': 'sale'
-        })
-    return taxes_response['data']['records']
-
-# Example for South African customer
-za_taxes = get_customer_taxes('ZA')
-print(f"VAT rate for ZA: {za_taxes[0]['amount']}%")
-```
-
-### **🏢 International Invoicing**
-```bash
-# Get country-specific invoice requirements
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.move?fields=name,partner_id,country_code,l10n_*"
-
-# Access Egyptian ETA e-invoicing data
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.move?fields=name,l10n_eg_eta_uuid,l10n_eg_eta_status&country_code=EG"
-```
-
-### **📊 Tax Compliance Dashboard**
-```bash
-# Monitor VAT across African countries
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,country_id,active&country_id=in=[65,115,149,156,197,215,246]"
-
-# Get tax reports by country
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax.report?fields=name,country_id&country_id=197"
-```
-
-### **🔄 Cross-Border Trade API**
-```bash
-# Determine applicable fiscal position for international sales
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id,country_group_id,auto_apply&auto_apply=true"
-
-# Get SYSCOHADA countries (West/Central Africa)
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.country?fields=name,code&code=in=[SN,BF,ML,NE,BJ,CI,TG,CM,TD,CF,CG,GA]"
-```
-
-## 🚀 Advanced Integration Examples
-
-### **📍 Country Detection & Auto-Configuration**
-```python
-def setup_company_for_country(company_id, country_code):
-    """Automatically configure company for specific African country"""
-    
-    # Get country-specific chart of accounts
-    coa_response = client.search_model('account.account',
-        params={
-            'fields': 'code,name,account_type',
-            'country_id': get_country_id(country_code)
-        })
-    
-    # Get country-specific taxes
-    tax_response = client.search_model('account.tax',
-        params={
-            'fields': 'name,amount,type_tax_use',
-            'country_id': get_country_id(country_code)
-        })
-    
-    # Configure fiscal positions
-    fiscal_response = client.search_model('account.fiscal.position',
-        params={
-            'fields': 'name,auto_apply,sequence',
-            'country_id': get_country_id(country_code)
-        })
-    
-    return {
-        'chart_of_accounts': coa_response['data']['records'],
-        'taxes': tax_response['data']['records'],
-        'fiscal_positions': fiscal_response['data']['records']
-    }
-```
-
-### **💱 Multi-Currency African Operations**
-```bash
-# Get currencies used in African countries
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.currency?fields=name,symbol,position,active"
-
-# Access country-specific currency rates
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/res.currency.rate?fields=name,rate,currency_id,company_id"
-```
-
-### **📈 Regional Analytics API**
-```python
-def get_african_market_analysis():
-    """Analyze business metrics across African markets"""
-    
-    african_countries = ['ZA', 'NG', 'EG', 'KE', 'MA', 'TZ', 'RW', 'ET']
-    market_data = {}
-    
-    for country in african_countries:
-        # Get country-specific invoices
-        invoices = client.search_model('account.move',
-            params={
-                'fields': 'amount_total,currency_id,state,country_code',
-                'country_code': country,
-                'state': 'posted'
-            })
-        
-        # Get tax collection data
-        taxes = client.search_model('account.tax',
-            params={
-                'fields': 'amount,type_tax_use',
-                'country_id': get_country_id(country)
-            })
-        
-        market_data[country] = {
-            'invoices': invoices['data']['records'],
-            'tax_rates': taxes['data']['records']
-        }
-    
-    return market_data
-```
-
-## 🛠️ Country-Specific Features
-
-### **🇪🇬 Egypt - Advanced E-Invoicing**
-```bash
-# Access ETA (Egyptian Tax Authority) integration
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.move?fields=l10n_eg_eta_uuid,l10n_eg_eta_status,l10n_eg_eta_signed_document"
-
-# Get ETA activity types
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/l10n.eg.edi.activity.type?fields=name,code,description"
-```
-
-### **🇰🇪 Kenya - ETR Integration**
-```bash
-# Access Kenyan item codes for tax reporting
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/l10n.ke.item.code?fields=name,code,description"
-
-# Get ETR-ready invoice data
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.move?fields=name,l10n_ke_cu_serial_number,l10n_ke_cu_invoice_number"
-```
-
-### **🇿🇦 South Africa - SARS Compliance**
-```bash
-# Get SARS VAT-ready tax structure
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,tag_ids,description&country_id=197"
-
-# Access South African account tags
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.account.tag?fields=name,applicability"
-```
-
-### **🇳🇬 Nigeria - Withholding Tax**
-```bash
-# Get Nigerian withholding tax configuration
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?fields=name,amount,type_tax_use,tag_ids&country_id=156&type_tax_use=purchase"
-
-# Access withholding VAT reports
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax.report?fields=name,country_id&country_id=156"
-```
-
-## 🌐 Regional Standards
-
-### **SYSCOHADA Countries (West/Central Africa)**
-Countries using the SYSCOHADA accounting standard:
-- Senegal (SN), Burkina Faso (BF), Mali (ML), Niger (NE)
-- Benin (BJ), Ivory Coast (CI), Togo (TG)
-
-```bash
-# Get SYSCOHADA-compatible chart of accounts
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.account?fields=code,name,account_type&country_id=in=[198,37,143,156]"
-```
-
-### **CEMAC Countries (Central Africa)**
-Countries using CEMAC standards:
-- Cameroon (CM), Chad (TD), Central African Republic (CF)
-- Republic of the Congo (CG), Gabon (GA)
-
-```bash
-# Get CEMAC fiscal positions
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.fiscal.position?fields=name,country_id&country_id=in=[47,212,49,53,78]"
-```
-
-## 📝 Implementation Best Practices
-
-### **1. Country Detection**
-```python
-def detect_customer_country(customer_data):
-    """Automatically detect customer country and apply localization"""
-    country_code = customer_data.get('country_code')
-    
-    # Get country-specific configuration
-    config = client.search_model('res.country',
-        params={'fields': 'name,code,currency_id', 'code': country_code})
-    
-    return config['data']['records'][0] if config['data']['records'] else None
-```
-
-### **2. Tax Calculation**
-```python
-def calculate_taxes(product_price, customer_country, product_type='service'):
-    """Calculate applicable taxes based on customer location"""
-    
-    # Get applicable taxes
-    taxes = client.search_model('account.tax',
-        params={
-            'fields': 'amount,price_include,type_tax_use',
-            'country_id': get_country_id(customer_country),
-            'type_tax_use': 'sale'
-        })
-    
-    total_tax = 0
-    for tax in taxes['data']['records']:
-        total_tax += (product_price * tax['amount'] / 100)
-    
-    return total_tax
-```
-
-### **3. Compliance Reporting**
-```python
-def generate_country_tax_report(country_code, start_date, end_date):
-    """Generate tax compliance report for specific country"""
-    
-    # Get country-specific tax reports
-    reports = client.search_model('account.tax.report',
-        params={
-            'fields': 'name,country_id,line_ids',
-            'country_id': get_country_id(country_code)
-        })
-    
-    return reports['data']['records']
-```
-
-## 🎯 Quick Start Examples
-
-### **Test African Localization**
-```bash
-# Test South African taxes
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=197"
-
-# Test Nigerian withholding
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=156"
-
-# Test Egyptian VAT
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.tax?limit=5&country_id=65"
-
-# Test Kenyan structure
-curl -H "api-key: YOUR_API_KEY" \
-     "http://localhost:8069/api/v2/search/account.account?limit=5&country_id=115"
-```
-
-## 🔗 Country Code Reference
-
-| Country | Code | Primary Module | Features |
-|---------|------|----------------|----------|
-| 🇩🇿 Algeria | DZ | l10n_dz | Chart of accounts, taxes, fiscal positions |
-| 🇧🇯 Benin | BJ | l10n_bj | SYSCOHADA compliant |
-| 🇧🇫 Burkina Faso | BF | l10n_bf | SYSCOHADA structure |
-| 🇨🇲 Cameroon | CM | l10n_cm | CEMAC compliant |
-| 🇹🇩 Chad | TD | l10n_td | Central African standards |
-| 🇨🇩 DR Congo | CD | l10n_cd | Local accounting |
-| 🇨🇬 Rep. Congo | CG | l10n_cg | CEMAC framework |
-| 🇨🇮 Ivory Coast | CI | l10n_ci | SYSCOHADA structure |
-| 🇪🇬 Egypt | EG | l10n_eg, l10n_eg_edi_eta | Full ETA e-invoicing |
-| 🇪🇹 Ethiopia | ET | l10n_et | Basic structure |
-| 🇬🇦 Gabon | GA | l10n_ga | CEMAC structure |
-| 🇬🇭 Ghana | GH | - | *Coming soon* |
-| 🇬🇳 Guinea | GN | l10n_gn | Basic localization |
-| 🇰🇪 Kenya | KE | l10n_ke, l10n_ke_edi_tremol | ETR integration |
-| 🇲🇦 Morocco | MA | l10n_ma | Local chart, tax structure |
-| 🇲🇱 Mali | ML | l10n_ml | SYSCOHADA compatible |
-| 🇳🇪 Niger | NE | l10n_ne | SYSCOHADA compliant |
-| 🇳🇬 Nigeria | NG | l10n_ng | Withholding VAT |
-| 🇷🇼 Rwanda | RW | l10n_rw | COA, taxes, reports |
-| 🇸🇳 Senegal | SN | l10n_sn | SYSCOHADA compatible |
-| 🇿🇦 South Africa | ZA | l10n_za | SARS VAT ready |
-| 🇹🇿 Tanzania | TZ | l10n_tz_account | Full localization |
-| 🇹🇬 Togo | TG | l10n_tg | Regional compliance |
-| 🇹🇳 Tunisia | TN | l10n_tn | Tax system, fiscal positions |
-| 🇿🇲 Zambia | ZM | l10n_zm_account | Chart, taxes, fiscal positions |
-
-## 💡 Benefits of Using l10n with API
-
-### **🚀 Instant Compliance**
-- Pre-built tax structures for 25+ African countries
-- Government-approved chart of accounts
-- Automatic fiscal position detection
-
-### **⚡ Rapid Development**
-- No custom tax engine development needed
-- Proven localization logic from Odoo community
-- Real-time compliance updates
-
-### **🌍 Scalable International Operations**
-- Add new African markets instantly
-- Consistent API across all countries
-- Unified data structure for analytics
-
-### **🔧 Advanced Features**
-- E-invoicing integration (Egypt ETA, Kenya ETR)
-- Withholding tax automation
-- Multi-currency support
-- Regional accounting standards (SYSCOHADA, CEMAC)
+**Error codes:** `MODEL_NOT_FOUND` (404), `RECORD_NOT_FOUND` (404), `ACCESS_DENIED` (403), `DELETE_ERROR` (400/500)
 
 ---
 
-**Your API now has access to comprehensive African business localization! 🌍🚀**
+## 6. Model & Field Discovery
+
+### 6.1 List Accessible Models
+
+Returns all models the authenticated user can read, excluding transient models and blocked models.
+
+```
+GET /models
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `search` | string | `""` | Filter by model technical name or display name |
+| `transient` | boolean | `false` | Include transient (wizard) models |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "models": [
+      {
+        "model": "res.partner",
+        "name": "Contact",
+        "info": "",
+        "field_count": 127
+      },
+      {
+        "model": "crm.lead",
+        "name": "Lead/Opportunity",
+        "info": "",
+        "field_count": 118
+      }
+    ],
+    "count": 85
+  },
+  "message": "Found 85 accessible models"
+}
+```
+
+---
+
+### 6.2 Get Model Fields
+
+Returns field metadata for a specific model.
+
+```
+GET /fields/{model}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "model": "crm.lead",
+    "fields": [
+      {
+        "name": "name",
+        "description": "Opportunity",
+        "type": "char",
+        "required": true,
+        "readonly": false,
+        "help": "",
+        "relation": "",
+        "store": true
+      },
+      {
+        "name": "partner_id",
+        "description": "Customer",
+        "type": "many2one",
+        "required": false,
+        "readonly": false,
+        "help": "Linked partner",
+        "relation": "res.partner",
+        "store": true
+      }
+    ],
+    "count": 118
+  },
+  "message": "Found 118 fields for model crm.lead"
+}
+```
+
+---
+
+## 7. Partners & Contacts
+
+### 7.1 List Partners (Legacy Endpoint)
+
+Convenience endpoint. API key auth only. For session auth compatibility, use `GET /search/res.partner` instead.
+
+```
+GET /partners
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `10` | Max records |
+| `offset` | integer | `0` | Skip count |
+| `customers_only` | boolean | `true` | Only partners with `customer_rank > 0` |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "partners": [
+      {
+        "id": 15,
+        "name": "Acme Corporation",
+        "email": "contact@acme.com",
+        "phone": "+1-555-0123",
+        "is_company": true,
+        "customer_rank": 1,
+        "city": "Business City",
+        "country": "United States"
+      }
+    ],
+    "count": 1,
+    "total_count": 42
+  },
+  "message": "Partners retrieved successfully"
+}
+```
+
+### 7.2 Partner CRUD via Generic Endpoints
+
+```
+GET    /search/res.partner?fields=name,email,phone,city,country_id&is_company=true
+GET    /search/res.partner/15?fields=name,email,phone,street,city,zip,country_id
+POST   /create/res.partner
+PUT    /update/res.partner/15
+DELETE /delete/res.partner/15
+```
+
+**Create Partner Example:**
+
+```json
+{
+  "name": "Acme Corporation",
+  "email": "contact@acme.com",
+  "phone": "+1-555-0123",
+  "is_company": true,
+  "customer_rank": 1,
+  "street": "123 Business Ave",
+  "city": "Business City",
+  "zip": "12345"
+}
+```
+
+**Key fields:** `name`, `email`, `phone`, `mobile`, `street`, `street2`, `city`, `zip`, `state_id`, `country_id`, `website`, `is_company`, `customer_rank`, `supplier_rank`, `vat`, `lang`, `tz`
+
+---
+
+## 8. Products
+
+### 8.1 List Products (Legacy Endpoint)
+
+Convenience endpoint. API key auth only. For session auth compatibility, use `GET /search/product.template` instead.
+
+```
+GET /products
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | `10` | Max records |
+| `offset` | integer | `0` | Skip count |
+| `sale_ok` | boolean | `true` | Only saleable products |
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "products": [
+      {
+        "id": 23,
+        "name": "Office Chair",
+        "default_code": "FURN_0001",
+        "list_price": 295.00,
+        "sale_ok": true,
+        "category": "Office Furniture"
+      }
+    ],
+    "count": 5,
+    "total_count": 12
+  },
+  "message": "Products retrieved successfully"
+}
+```
+
+### 8.2 Product CRUD via Generic Endpoints
+
+```
+GET    /search/product.template?fields=name,list_price,default_code,sale_ok,categ_id
+GET    /search/product.template/23?fields=name,list_price,default_code,description
+POST   /create/product.template
+PUT    /update/product.template/23
+DELETE /delete/product.template/23
+```
+
+**Create Product Example:**
+
+```json
+{
+  "name": "API Product",
+  "list_price": 99.99,
+  "default_code": "API001",
+  "sale_ok": true,
+  "purchase_ok": true,
+  "type": "consu"
+}
+```
+
+**Key fields:** `name`, `default_code`, `list_price`, `standard_price`, `categ_id`, `sale_ok`, `purchase_ok`, `type`, `description`, `description_sale`, `image_1920`
+
+**Related models:** `product.product` (variants), `product.category`, `product.attribute`, `product.pricelist`
+
+---
+
+## 9. Sales
+
+All sales operations use the generic CRUD endpoints.
+
+### 9.1 Sales Orders
+
+```
+GET    /search/sale.order?fields=name,partner_id,amount_total,state,date_order
+GET    /search/sale.order/5?fields=name,partner_id,order_line,amount_total,state
+POST   /create/sale.order
+PUT    /update/sale.order/5
+DELETE /delete/sale.order/5
+```
+
+**Create Sales Order Example:**
+
+```json
+{
+  "partner_id": 15,
+  "order_line": [
+    [0, 0, {
+      "product_id": 23,
+      "product_uom_qty": 2,
+      "price_unit": 295.00
+    }]
+  ]
+}
+```
+
+**Key fields:** `name`, `partner_id`, `date_order`, `state`, `amount_total`, `amount_tax`, `amount_untaxed`, `user_id`, `team_id`, `order_line`, `invoice_status`, `pricelist_id`, `payment_term_id`
+
+**Order states:** `draft` (Quotation), `sent` (Quotation Sent), `sale` (Sales Order), `done` (Locked), `cancel` (Cancelled)
+
+**Related models:** `sale.order.line`
+
+---
+
+## 10. CRM
+
+### 10.1 Leads & Opportunities
+
+```
+GET    /search/crm.lead?fields=name,partner_name,email_from,expected_revenue,stage_id,user_id
+GET    /search/crm.lead/11?fields=name,partner_id,expected_revenue,stage_id,activity_ids,message_ids
+POST   /create/crm.lead
+PUT    /update/crm.lead/11
+DELETE /delete/crm.lead/11
+```
+
+**Create Lead Example:**
+
+```json
+{
+  "name": "New Business Opportunity",
+  "partner_name": "Potential Customer",
+  "email_from": "potential@customer.com",
+  "phone": "+1-555-0199",
+  "expected_revenue": 5000.00
+}
+```
+
+**Key fields:** `name`, `partner_name`, `email_from`, `phone`, `expected_revenue`, `probability`, `stage_id`, `user_id`, `team_id`, `partner_id`, `date_deadline`, `priority`, `type`, `source_id`, `medium_id`, `campaign_id`, `activity_ids`, `message_ids`
+
+**Related models:** `crm.stage`, `crm.team`, `crm.tag`, `crm.lost.reason`
+
+### 10.2 CRM Stages
+
+```
+GET /search/crm.stage?fields=name,sequence,is_won
+```
+
+---
+
+## 11. HR & Employees
+
+### 11.1 Employees
+
+```
+GET    /search/hr.employee?fields=name,work_email,department_id,job_id,manager_id
+GET    /search/hr.employee/1?fields=name,work_email,department_id,job_id,work_phone
+POST   /create/hr.employee
+PUT    /update/hr.employee/1
+DELETE /delete/hr.employee/1
+```
+
+**Create Employee Example:**
+
+```json
+{
+  "name": "Jane Doe",
+  "work_email": "jane.doe@company.com",
+  "department_id": 1,
+  "job_id": 1
+}
+```
+
+**Key fields:** `name`, `work_email`, `work_phone`, `mobile_phone`, `department_id`, `job_id`, `manager_id`, `company_id`, `employee_type`, `active`
+
+### 11.2 Related Models
+
+```
+GET /search/hr.department?fields=name,manager_id,company_id
+GET /search/hr.job?fields=name,department_id,no_of_recruitment
+```
+
+---
+
+## 12. Notifications & Messaging
+
+Odoo's messaging system is built on several interconnected models. All are accessible through the generic CRUD endpoints.
+
+### 12.1 Messages (`mail.message`)
+
+Messages power the chatter, inbox, and notification system.
+
+```
+GET /search/mail.message?fields=subject,body,author_id,date,message_type,model,res_id,record_name,starred,needaction,is_internal
+```
+
+**Useful Filters:**
+
+```
+GET /search/mail.message?needaction=true&fields=...         # Inbox items
+GET /search/mail.message?starred=true&fields=...            # Starred messages
+GET /search/mail.message?model=res.partner&res_id=9&fields=... # Messages on a specific record
+GET /search/mail.message?message_type=comment&fields=...    # User-posted comments
+```
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `subject` | char | Message subject |
+| `body` | html | Message content (HTML) |
+| `preview` | char | Plain text preview |
+| `author_id` | many2one | Author `[id, "name"]` |
+| `date` | datetime | Message date |
+| `message_type` | selection | `email`, `comment`, `notification`, `user_notification`, `auto_comment` |
+| `model` | char | Related model (e.g. `res.partner`) |
+| `res_id` | integer | Related record ID |
+| `record_name` | char | Related record display name |
+| `subtype_id` | many2one | Message subtype `[id, "name"]` |
+| `is_internal` | boolean | Internal/employee-only |
+| `starred` | boolean | Starred by current user |
+| `needaction` | boolean | Pending action for current user (inbox item) |
+| `notification_ids` | one2many | Per-recipient notification records |
+| `partner_ids` | many2many | Explicit recipients |
+| `attachment_ids` | many2many | File attachments |
+| `parent_id` | many2one | Parent message (threading) |
+
+**Post a message on a record:**
+
+```
+POST /create/mail.message
+```
+
+```json
+{
+  "body": "<p>Important update about this customer</p>",
+  "message_type": "comment",
+  "model": "res.partner",
+  "res_id": 9,
+  "subtype_id": 1
+}
+```
+
+Subtype IDs: `1` = Discussions (visible to followers), `2` = Note (internal only)
+
+**Permissions:** Creating messages requires write access to the target model.
+
+---
+
+### 12.2 Activities (`mail.activity`)
+
+Scheduled tasks/reminders assigned to users on specific records (calls, meetings, to-dos).
+
+```
+GET /search/mail.activity?fields=summary,note,date_deadline,user_id,activity_type_id,res_model,res_id,res_name,state
+```
+
+**Useful Filters:**
+
+```
+GET /search/mail.activity?user_id=3&fields=...              # My activities
+GET /search/mail.activity?res_model=crm.lead&fields=...     # Activities on CRM leads
+GET /search/mail.activity?res_model=crm.lead&res_id=11&fields=... # Activities on a specific lead
+```
+
+**Note:** The `state` field (`overdue`, `today`, `planned`) is a computed field. It may not work reliably as a search filter in all cases.
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `summary` | char | Activity title |
+| `note` | html | Detailed description |
+| `date_deadline` | date | Due date |
+| `date_done` | date | Completion date |
+| `state` | selection | `overdue`, `today`, `planned` (computed) |
+| `user_id` | many2one | Assigned user `[id, "name"]` |
+| `activity_type_id` | many2one | Type `[id, "Call"]` |
+| `res_model` | char | Related model name |
+| `res_model_id` | many2one | Related model (from `ir.model`) |
+| `res_id` | integer | Related record ID |
+| `res_name` | char | Related record display name |
+| `feedback` | text | Completion feedback |
+| `can_write` | boolean | Whether current user can edit |
+| `icon` | char | FontAwesome icon (e.g. `fa-phone`) |
+
+**Create an activity:**
+
+```
+POST /create/mail.activity
+```
+
+**Important:** You need `res_model_id` (the ID from `ir.model`), not just the model name string.
+
+Step 1 — Look up the model ID:
+
+```
+GET /search/ir.model?model=crm.lead&fields=id,model
+```
+
+Step 2 — Create the activity:
+
+```json
+{
+  "summary": "Follow up with client",
+  "note": "<p>Call to discuss contract terms</p>",
+  "activity_type_id": 2,
+  "date_deadline": "2026-03-25",
+  "user_id": 2,
+  "res_model_id": 512,
+  "res_id": 11
+}
+```
+
+**Activity Type IDs:**
+
+| ID | Name | Icon | Category |
+|----|------|------|----------|
+| 1 | Email | `fa-envelope` | default |
+| 2 | Call | `fa-phone` | phonecall |
+| 3 | Meeting | `fa-users` | meeting |
+| 4 | To-Do | `fa-check` | default |
+| 5 | Document | `fa-upload` | upload_file |
+
+**Update and delete:**
+
+```
+PUT    /update/mail.activity/1  → {"summary": "Updated summary"}
+DELETE /delete/mail.activity/1
+```
+
+**Permissions:** Users can only update/delete their own activities unless they are admin.
+
+---
+
+### 12.3 Notifications (`mail.notification`)
+
+Per-recipient delivery tracking for messages.
+
+```
+GET /search/mail.notification?fields=mail_message_id,res_partner_id,notification_type,notification_status,is_read,read_date,failure_type,failure_reason
+```
+
+**Useful Filters:**
+
+```
+GET /search/mail.notification?is_read=false&fields=...              # Unread
+GET /search/mail.notification?notification_status=exception&fields=... # Failed
+```
+
+**Key fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mail_message_id` | many2one | The message `[id, "subject"]` |
+| `res_partner_id` | many2one | Recipient `[id, "name"]` |
+| `notification_type` | selection | `inbox` or `email` |
+| `notification_status` | selection | `ready`, `sent`, `bounce`, `exception`, `canceled` |
+| `is_read` | boolean | Read status |
+| `read_date` | datetime | When read |
+| `failure_type` | selection | `mail_smtp`, `mail_email_invalid`, etc. |
+| `failure_reason` | text | Failure details |
+
+---
+
+### 12.4 Followers (`mail.followers`)
+
+Tracks who is subscribed to which record and what notification subtypes they receive.
+
+```
+GET /search/mail.followers?fields=partner_id,res_model,res_id,name,email,subtype_ids
+GET /search/mail.followers?res_model=crm.lead&res_id=11&fields=partner_id,name,email,subtype_ids
+```
+
+---
+
+### 12.5 Activity Types (`mail.activity.type`)
+
+```
+GET /search/mail.activity.type?fields=name,summary,icon,category,delay_count,delay_unit,res_model,chaining_type
+```
+
+---
+
+### 12.6 Message Subtypes (`mail.message.subtype`)
+
+```
+GET /search/mail.message.subtype?fields=name,description,internal,hidden,default,res_model,sequence
+```
+
+**Common subtypes:** `1` Discussions, `2` Note, `3` Activities, `9` Stage Changed, `10` Opportunity Won, `23` Sale Order Confirmed
+
+---
+
+### 12.7 Common Workflows
+
+**Notification Inbox:**
+
+```
+1. GET /search/mail.message?needaction=true&fields=subject,body,author_id,date,message_type,model,res_id,record_name
+2. GET /search/mail.notification?is_read=false&fields=mail_message_id,res_partner_id,notification_status
+3. GET /search/mail.message?starred=true&fields=subject,body,author_id,date,model,res_id,record_name
+```
+
+**Activity Dashboard:**
+
+```
+1. GET /search/mail.activity?user_id={my_id}&fields=summary,date_deadline,activity_type_id,res_model,res_name,state
+2. Group/sort by state (overdue → today → planned) and by res_model
+```
+
+**Record Chatter:**
+
+```
+1. GET /search/mail.message?model=res.partner&res_id=9&fields=subject,body,author_id,date,message_type,starred
+2. GET /search/mail.followers?res_model=res.partner&res_id=9&fields=partner_id,name,email
+3. GET /search/mail.activity?res_model=res.partner&res_id=9&fields=summary,date_deadline,user_id,activity_type_id,state
+```
+
+---
+
+## 13. Settings & Configuration
+
+Most settings endpoints are **admin-only**. Non-admin users receive `ACCESS_DENIED` (403).
+
+### 13.1 System Configuration (`res.config.settings`)
+
+```
+GET /search/res.config.settings                              # List (admin only)
+GET /search/res.config.settings/1?fields=company_name,...    # Full detail (249 fields)
+PUT /update/res.config.settings/1                            # Update (admin only)
+```
+
+**Useful fields to query:**
+
+```
+?fields=company_name,currency_id,sale_tax_id,purchase_tax_id,auth_signup_reset_password,show_effect,active_user_count,company_country_code
+```
+
+### 13.2 System Parameters (`ir.config_parameter`)
+
+Key-value configuration store. Admin only.
+
+```
+GET /search/ir.config_parameter?fields=key,value
+PUT /update/ir.config_parameter/9  → {"value": "True"}
+```
+
+### 13.3 Company Settings (`res.company`)
+
+Readable by all users. Writable by admin only.
+
+```
+GET /search/res.company/1?fields=name,currency_id,country_id,street,city,zip,phone,email,website,vat
+PUT /update/res.company/1  → {"phone": "+1-555-0100"}    # admin only
+```
+
+### 13.4 Settings Field Metadata
+
+```
+GET /fields/res.config.settings    # Admin only, returns 249 fields
+```
+
+### 13.5 Discover Settings Models
+
+```
+GET /models?search=config    # Admin sees 3 models, regular users see 1
+```
+
+### 13.6 Access Matrix
+
+| Endpoint | Admin | Internal User |
+|----------|-------|---------------|
+| `GET /search/res.config.settings` | Full | Denied |
+| `PUT /update/res.config.settings/{id}` | Full | Denied |
+| `GET /search/ir.config_parameter` | Full | Denied |
+| `PUT /update/ir.config_parameter/{id}` | Full | Denied |
+| `GET /search/res.company/{id}` | Full | Read-only |
+| `PUT /update/res.company/{id}` | Full | Denied |
+
+---
+
+## 14. Localization
+
+The API provides access to Odoo's localization modules for country-specific tax systems, charts of accounts, and compliance rules.
+
+### 14.1 Taxes by Country
+
+```
+GET /search/account.tax?fields=name,amount,type_tax_use,country_id,description&country_id=197
+```
+
+### 14.2 Chart of Accounts
+
+```
+GET /search/account.account?fields=code,name,account_type&country_id=115
+```
+
+### 14.3 Fiscal Positions
+
+```
+GET /search/account.fiscal.position?fields=name,country_id,auto_apply,sequence
+```
+
+### 14.4 Currencies
+
+```
+GET /search/res.currency?fields=name,symbol,position,active
+GET /search/res.currency.rate?fields=name,rate,currency_id,company_id
+```
+
+### 14.5 Countries
+
+```
+GET /search/res.country?fields=name,code,currency_id
+```
+
+---
+
+## 15. Error Handling
+
+### 15.1 HTTP Status Codes
+
+| Status | Meaning |
+|--------|---------|
+| `200` | Success |
+| `201` | Created (for `POST /create/*`) |
+| `400` | Bad request (invalid input, validation error) |
+| `401` | Authentication required or failed |
+| `403` | Access denied (insufficient permissions) |
+| `404` | Model or record not found |
+| `500` | Internal server error |
+
+### 15.2 Error Response Format
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Human-readable error description",
+    "code": "ERROR_CODE"
+  }
+}
+```
+
+### 15.3 Error Code Reference
+
+**Authentication Errors:**
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `MISSING_API_KEY` | 401 | No `api-key` header provided |
+| `INVALID_API_KEY` | 403 | API key is invalid |
+| `INACTIVE_USER` | 403 | User account is deactivated |
+| `AUTH_ERROR` | 500 | Unexpected authentication error |
+| `MISSING_SESSION_TOKEN` | 401 | No `session-token` header provided |
+| `INVALID_SESSION` | 401 | Session token is invalid or expired |
+| `SESSION_AUTH_ERROR` | 500 | Unexpected session auth error |
+| `INVALID_CONTENT_TYPE` | 400 | Content-Type must be `application/json` |
+| `MISSING_CREDENTIALS` | 400 | Username or password missing |
+| `INVALID_CREDENTIALS` | 401 | Wrong username/password |
+| `AUTH_FAILED` | 401 | Authentication failed |
+| `LOGIN_ERROR` | 500 | Unexpected login error |
+
+**Session Errors:**
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `SESSION_NOT_REFRESHABLE` | 401 | Session expired beyond 1-hour grace period |
+| `REFRESH_ERROR` | 500 | Unexpected refresh error |
+| `LOGOUT_ERROR` | 500 | Unexpected logout error |
+
+**CRUD Errors:**
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `MODEL_NOT_FOUND` | 404 | Model does not exist |
+| `RECORD_NOT_FOUND` | 404 | Record does not exist |
+| `ACCESS_DENIED` | 403 | User lacks permission |
+| `INVALID_FIELDS` | 400 | No valid field names provided |
+| `NO_DATA` | 400 | Request body is empty |
+| `INVALID_JSON` | 400 | Request body is not valid JSON |
+| `SEARCH_ERROR` | 400/500 | Error during search |
+| `CREATE_ERROR` | 400/500 | Error during create |
+| `UPDATE_ERROR` | 400/500 | Error during update |
+| `DELETE_ERROR` | 400/500 | Error during delete |
+| `GET_RECORD_ERROR` | 400/500 | Error getting record by ID |
+
+**User Management Errors:**
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `USER_NOT_FOUND` | 404 | Target user does not exist |
+| `ADMIN_FIELD_ACCESS_DENIED` | 403 | Non-admin trying to update admin-only field |
+| `NO_VALID_FIELDS` | 400 | No updatable fields in request |
+| `MISSING_PASSWORD` | 400 | `new_password` not provided |
+| `MISSING_OLD_PASSWORD` | 400 | `old_password` required for own password change |
+| `INVALID_OLD_PASSWORD` | 401 | Old password is incorrect |
+| `USER_CREATE_ERROR` | 500 | Error creating user |
+| `USER_UPDATE_ERROR` | 500 | Error updating user |
+| `PASSWORD_CHANGE_ERROR` | 500 | Error changing password |
+| `PASSWORD_RESET_ERROR` | 500 | Error resetting password |
+| `API_KEY_GENERATION_ERROR` | 500 | Error generating API key |
+
+---
+
+## 16. Security & Permissions
+
+### 16.1 Role-Based Access Control
+
+The API enforces Odoo's native security model:
+
+1. **Model-level ACLs** — determines which models a user can read/write/create/delete
+2. **Record-level rules** — filters which specific records a user can see
+3. **Group membership** — determines all capabilities
+
+### 16.2 Permission Matrix — User Management
+
+| Action | Admin | Internal User |
+|--------|-------|---------------|
+| List users | All fields + groups | Basic fields only |
+| View own profile | Full | Extended (login, phone, lang, tz, company) |
+| View other user | Full | Basic (name, email, active, create_date) |
+| Update own profile | All fields | name, email, phone, signature, lang, tz |
+| Update other user | All fields | Denied |
+| Change own password | Yes | Yes (requires `old_password`) |
+| Change other password | Yes | Denied |
+| Reset password | Yes | Denied |
+| Generate own API key | Yes | Yes |
+| Generate other API key | Yes | Denied |
+| Create user | Yes | Denied |
+| List groups | Yes | Denied |
+
+### 16.3 Permission Matrix — Data Models
+
+| Model | Admin | Internal User | Sales User |
+|-------|-------|---------------|------------|
+| `res.partner` | Full | Full | Full |
+| `product.template` | Full | Read | Read |
+| `sale.order` | Full | Depends on groups | Own documents |
+| `crm.lead` | Full | Depends on groups | Own leads |
+| `hr.employee` | Full | Denied (unless HR group) | Denied |
+| `account.move` | Full | Denied (unless Accounting group) | Read |
+| `res.config.settings` | Full | Denied | Denied |
+| `ir.config_parameter` | Full | Denied | Denied |
+| `res.company` | Full | Read-only | Read-only |
+
+### 16.4 Blocked Models
+
+These models cannot be accessed via the generic CRUD endpoints regardless of user permissions:
+
+- `api.session`
+- `ir.cron`
+- `ir.rule`
+- `ir.model.access`
+- `res.users.apikeys`
+- `ir.attachment`
+- `base.module.update`
+
+### 16.5 Session Security
+
+- Session tokens are 48 characters, cryptographically random
+- Tokens are stored as SHA-256 hashes (never in plaintext)
+- Sessions expire after 24 hours
+- Refresh is allowed up to 1 hour after expiry
+- Refreshing issues a new token and invalidates the old one
+- Responses containing credentials include `Cache-Control: no-store` headers
+- `last_activity` is updated on each authenticated request
+
+---
+
+## 17. Appendix: Blocked Models
+
+The following models are blocked from all generic CRUD endpoints (`/search`, `/create`, `/update`, `/delete`). Accessing them returns `403 ACCESS_DENIED`.
+
+| Model | Reason |
+|-------|--------|
+| `api.session` | Contains hashed session tokens |
+| `ir.cron` | Scheduled actions (code execution risk) |
+| `ir.rule` | Security rules (information disclosure) |
+| `ir.model.access` | ACL definitions (information disclosure) |
+| `res.users.apikeys` | API key hashes |
+| `ir.attachment` | File system access |
+| `base.module.update` | Module installation control |
+
+---
+
+## 18. Appendix: Common Odoo Models
+
+### Core
+
+| Model | Description |
+|-------|-------------|
+| `res.partner` | Contacts, customers, suppliers |
+| `res.users` | System users |
+| `res.company` | Companies |
+| `res.country` | Countries |
+| `res.currency` | Currencies |
+| `res.groups` | User groups |
+| `res.lang` | Languages |
+
+### CRM
+
+| Model | Description |
+|-------|-------------|
+| `crm.lead` | Leads and opportunities |
+| `crm.stage` | Pipeline stages |
+| `crm.team` | Sales teams |
+| `crm.tag` | CRM tags |
+| `crm.lost.reason` | Lost opportunity reasons |
+
+### Sales
+
+| Model | Description |
+|-------|-------------|
+| `sale.order` | Sales orders / quotations |
+| `sale.order.line` | Order line items |
+
+### Products
+
+| Model | Description |
+|-------|-------------|
+| `product.template` | Product templates |
+| `product.product` | Product variants |
+| `product.category` | Product categories |
+| `product.attribute` | Product attributes (size, color, etc.) |
+| `product.pricelist` | Pricelists |
+
+### Accounting
+
+| Model | Description |
+|-------|-------------|
+| `account.move` | Journal entries, invoices, bills |
+| `account.move.line` | Journal entry lines |
+| `account.payment` | Payments |
+| `account.account` | Chart of accounts |
+| `account.journal` | Journals |
+| `account.tax` | Taxes |
+| `account.fiscal.position` | Fiscal positions |
+
+### HR
+
+| Model | Description |
+|-------|-------------|
+| `hr.employee` | Employees |
+| `hr.department` | Departments |
+| `hr.job` | Job positions |
+| `hr.contract` | Employment contracts |
+| `hr.contract.type` | Contract types |
+
+### Messaging & Activities
+
+| Model | Description |
+|-------|-------------|
+| `mail.message` | Messages, notes, notifications |
+| `mail.notification` | Per-recipient delivery tracking |
+| `mail.activity` | Scheduled tasks / reminders |
+| `mail.activity.type` | Activity type definitions |
+| `mail.followers` | Record subscriptions |
+| `mail.message.subtype` | Notification categories |
+
+### Inventory
+
+| Model | Description |
+|-------|-------------|
+| `stock.picking` | Transfers / deliveries |
+| `stock.move` | Stock movements |
+| `stock.quant` | Stock quantities |
+| `stock.location` | Stock locations |
+| `stock.warehouse` | Warehouses |
+| `stock.lot` | Lots / serial numbers |
+
+### Calendar
+
+| Model | Description |
+|-------|-------------|
+| `calendar.event` | Calendar events / meetings |
+| `calendar.attendee` | Event attendees |
+
+### System
+
+| Model | Description |
+|-------|-------------|
+| `ir.model` | Database models (for discovery) |
+| `ir.model.fields` | Model field metadata |
+| `ir.config_parameter` | System key-value parameters |
+| `res.config.settings` | System configuration |
+
+---
+
+## Quick Reference: All Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/test` | None | Health check |
+| `POST` | `/auth/login` | None | Login, get session token |
+| `POST` | `/auth/refresh` | Session | Refresh session token |
+| `POST` | `/auth/logout` | Session | Invalidate session |
+| `GET` | `/auth/me` | Both | Current user + permissions + module access |
+| `GET` | `/modules/access` | Both | Check which modules user can access |
+| `GET` | `/auth/test` | API Key | Test API key auth |
+| `GET` | `/user/info` | API Key | User info + API metadata |
+| `GET` | `/users` | Both | List users (paginated) |
+| `GET` | `/users/{id}` | Both | Get user detail |
+| `PUT` | `/users/{id}` | Both | Update user profile |
+| `PUT` | `/users/{id}/password` | Both | Change password |
+| `POST` | `/users/{id}/reset-password` | Both (Admin) | Reset password |
+| `POST` | `/users/{id}/api-key` | Both | Generate API key |
+| `GET` | `/groups` | Both (Admin) | List assignable groups |
+| `GET` | `/partners` | API Key | List partners (legacy) |
+| `GET` | `/products` | API Key | List products (legacy) |
+| `GET` | `/search/{model}` | Both | Search records |
+| `GET` | `/search/{model}/{id}` | Both | Get record by ID |
+| `POST` | `/create/{model}` | Both | Create record |
+| `PUT` | `/update/{model}/{id}` | Both | Update record |
+| `DELETE` | `/delete/{model}/{id}` | Both | Delete record |
+| `GET` | `/fields/{model}` | Both | Get model field metadata |
+| `GET` | `/models` | Both | List accessible models |

@@ -136,6 +136,36 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return False
 
+    MODULE_ACCESS_MAP = {
+        'crm':        {'model': 'crm.lead',          'label': 'CRM'},
+        'sales':      {'model': 'sale.order',         'label': 'Sales'},
+        'hr':         {'model': 'hr.employee',        'label': 'Employees'},
+        'accounting': {'model': 'account.move',       'label': 'Accounting'},
+        'inventory':  {'model': 'stock.picking',      'label': 'Inventory'},
+        'purchase':   {'model': 'purchase.order',     'label': 'Purchase'},
+        'contacts':   {'model': 'res.partner',        'label': 'Contacts'},
+        'products':   {'model': 'product.template',   'label': 'Products'},
+        'project':    {'model': 'project.project',    'label': 'Project'},
+        'calendar':   {'model': 'calendar.event',     'label': 'Calendar'},
+    }
+
+    def _get_module_access(self):
+        """Return a dict of module_key → {accessible, label} for the current user."""
+        result = {}
+        for key, info in self.MODULE_ACCESS_MAP.items():
+            model_name = info['model']
+            accessible = (
+                model_name in request.env
+                and not self._is_model_blocked(model_name)
+                and self._check_model_access(model_name, 'read')
+            )
+            result[key] = {
+                'accessible': accessible,
+                'label': info['label'],
+                'model': model_name,
+            }
+        return result
+
     # ===== WORKING ENDPOINTS =====
 
     @http.route('/api/v2/test', type='http', auth='none', methods=['GET'], csrf=False)
@@ -668,7 +698,8 @@ class SimpleApiController(http.Controller):
                             'is_admin': user.has_group('base.group_system'),
                             'is_user': user.has_group('base.group_user'),
                             'can_manage_users': user.has_group('base.group_user_admin')
-                        }
+                        },
+                        'module_access': self._get_module_access()
                     }
                 },
                 message="User information retrieved"
@@ -1401,3 +1432,29 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Error listing models: %s", str(e))
             return self._error_response("Error listing models", 500, "MODELS_ERROR")
+
+    # ===== MODULE ACCESS CHECK =====
+
+    @http.route('/api/v2/modules/access', type='http', auth='none', methods=['GET'], csrf=False)
+    def check_module_access(self):
+        """Return which functional modules the current user can access."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            module_access = self._get_module_access()
+
+            return self._json_response(
+                data={
+                    'user_id': user.id,
+                    'module_access': module_access,
+                },
+                message="Module access retrieved"
+            )
+
+        except Exception as e:
+            _logger.error("Error checking module access: %s", str(e))
+            return self._error_response("Error checking module access", 500, "MODULE_ACCESS_ERROR")
