@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxrender1 \
         wkhtmltopdf \
         postgresql-client \
+        gettext-base \
     && npm install -g rtlcss \
     && apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false \
     && rm -rf /var/lib/apt/lists/*
@@ -44,12 +45,14 @@ COPY . /opt/odoo/
 RUN mkdir -p /var/lib/odoo/filestore /var/log/odoo /etc/odoo \
     && chown -R odoo:odoo /var/lib/odoo /var/log/odoo /etc/odoo /opt/odoo
 
-COPY docker/odoo.conf /etc/odoo/odoo.conf
-RUN chown odoo:odoo /etc/odoo/odoo.conf
+COPY docker/odoo.conf /etc/odoo/odoo.conf.template
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chown odoo:odoo /etc/odoo/odoo.conf.template \
+    && chmod +x /entrypoint.sh
 
 EXPOSE 8069 8072
 
 USER odoo
 
-ENTRYPOINT ["python3", "/opt/odoo/odoo-bin"]
+ENTRYPOINT ["/entrypoint.sh", "python3", "/opt/odoo/odoo-bin"]
 CMD ["-c", "/etc/odoo/odoo.conf"]
