@@ -621,6 +621,7 @@ End-users **never** see or touch the Odoo web interface. Odoo serves purely as a
 | **User management** | Admin users can create/edit/delete users via the API; the UI enforces plan limits visually (shows "5/5 users — upgrade to add more") |
 | **Plan-awareness** | The frontend reads the user's plan and hides features/modules not included. This is a UX layer — the backend enforcer is the real gate. |
 | **Billing self-service** | Links to Stripe billing portal for plan changes, payment method updates, invoices |
+or Adyen
 
 ### 7.4 What the Reverse Proxy Blocks
 
