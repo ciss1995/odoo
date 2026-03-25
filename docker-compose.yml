@@ -35,20 +35,11 @@ services:
       - odoo-logs:/var/log/odoo
       - ./addons:/opt/odoo/addons
     environment:
-      HOST: db
-      USER: ${ODOO_DB_USER:-odoo}
-      PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
-    command:
-      [
-        "-c",
-        "/etc/odoo/odoo.conf",
-        "-d",
-        "${ODOO_DB:-odoo19_db}",
-        "--db_user",
-        "${ODOO_DB_USER:-odoo}",
-        "--db_password",
-        "${ODOO_DB_PASSWORD:-odoo}",
-      ]
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${ODOO_DB_USER:-odoo}
+      DB_PASSWORD: ${ODOO_DB_PASSWORD:-odoo}
+      DB_NAME: ${ODOO_DB:-odoo19_db}
 
 volumes:
   odoo-db-data:
