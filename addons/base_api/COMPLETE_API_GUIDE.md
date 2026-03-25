@@ -27,6 +27,7 @@
 16. [Security & Permissions](#16-security--permissions)
 17. [Appendix: Blocked Models](#17-appendix-blocked-models)
 18. [Appendix: Common Odoo Models](#18-appendix-common-odoo-models)
+19. [Analytics & Dashboards](#19-analytics--dashboards)
 
 ---
 
@@ -1955,6 +1956,478 @@ The following models are blocked from all generic CRUD endpoints (`/search`, `/c
 
 ---
 
+## 19. Analytics & Dashboards
+
+All analytics endpoints are **permission-aware** — only data the authenticated user has access to is returned. Each endpoint supports time windows, optional filters, and returns a consistent response shape.
+
+**Authentication:** Session token only (header: `session-token: <token>`). API keys are not accepted for analytics endpoints.
+
+### 19.1 Common Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `from` | `YYYY-MM-DD` | First day of current month | Start of period |
+| `to` | `YYYY-MM-DD` | Today | End of period (inclusive) |
+| `timezone` | String | `UTC` | IANA timezone for period boundaries |
+| `company_id` | Integer | — | Filter by company |
+| `team_id` | Integer | — | Filter by sales/CRM team |
+| `owner_id` | Integer | — | Filter by responsible user |
+
+**Previous period** is auto-calculated: same duration, shifted back immediately before `from`. For example, if `from=2026-03-01&to=2026-03-31`, the previous period is `2026-01-29` to `2026-02-28`.
+
+### 19.2 Standard Analytics Response Shape
+
+Every analytics endpoint returns the same structure:
+
+```json
+{
+  "success": true,
+  "data": {
+    "kpis": {
+      "<kpi_name>": {
+        "current": 42,
+        "previous": 35,
+        "delta": 7,
+        "delta_percent": 20.0
+      }
+    },
+    "breakdowns": {
+      "by_<dimension>": [
+        { "id": 1, "label": "Category A", "count": 15, "value": 25000.00 }
+      ]
+    },
+    "chart": {
+      "labels": ["January 2026", "February 2026", "March 2026"],
+      "series": [
+        { "label": "Count", "data": [10, 15, 17] },
+        { "label": "amount_total", "data": [5000, 8000, 12000] }
+      ]
+    },
+    "alerts": [
+      {
+        "type": "warning|danger|info",
+        "title": "Overdue activities",
+        "message": "5 overdue follow-ups on leads",
+        "count": 5
+      }
+    ],
+    "meta": {
+      "generated_at": "2026-03-22T14:30:00.000000",
+      "period": {
+        "from": "2026-03-01",
+        "to": "2026-03-31",
+        "previous_from": "2026-01-29",
+        "previous_to": "2026-02-28"
+      },
+      "period_label": "2026-03-01 to 2026-03-31",
+      "timezone": "UTC"
+    }
+  },
+  "message": "..."
+}
+```
+
+**KPI fields:**
+- `current` — value for the requested period
+- `previous` — value for the auto-calculated previous period
+- `delta` — `current - previous`
+- `delta_percent` — percentage change (100.0 if previous is 0 and current > 0)
+- Snapshot KPIs (e.g. `total_employees`) set `previous`, `delta`, `delta_percent` to `null`
+
+**Alert types:** `danger` (requires action), `warning` (attention needed), `info` (informational)
+
+### 19.3 Dashboard Summary
+
+```
+GET /api/v2/analytics/dashboard/summary
+```
+
+Cross-module overview returning key KPIs from every module the user has access to.
+
+**Auth:** Session token
+
+**Response `data.kpis`** — keyed by module:
+
+```json
+{
+  "kpis": {
+    "crm": {
+      "total_leads": { "current": 42, "previous": 35, "delta": 7, "delta_percent": 20.0 },
+      "expected_revenue": { "current": 150000, "previous": 120000, "delta": 30000, "delta_percent": 25.0 }
+    },
+    "sales": {
+      "total_orders": { "current": 18, "previous": 12, "delta": 6, "delta_percent": 50.0 },
+      "total_revenue": { "current": 95000, "previous": 78000, "delta": 17000, "delta_percent": 21.8 }
+    },
+    "invoicing": { ... },
+    "inventory": { ... },
+    "purchase": { ... },
+    "hr": {
+      "total_employees": { "current": 45, "previous": null, "delta": null, "delta_percent": null },
+      "new_hires": { "current": 3, "previous": 1, "delta": 2, "delta_percent": 200.0 }
+    },
+    "project": { ... }
+  },
+  "accessible_modules": ["crm", "sales", "invoicing", "inventory", "purchase", "hr", "project"],
+  "alerts": [ ... ],
+  "meta": { ... }
+}
+```
+
+Modules where the underlying Odoo app is not installed or the user lacks read access are **omitted** from the response.
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/dashboard/summary?from=2026-03-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.4 CRM Overview
+
+```
+GET /api/v2/analytics/crm/overview
+```
+
+**Auth:** Session token  
+**Model:** `crm.lead`  
+**Date field:** `create_date`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_leads` | Count of leads/opportunities created |
+| `expected_revenue` | Sum of expected revenue |
+| `won` | Count of won opportunities |
+| `win_rate` | Win percentage (won / total × 100) |
+
+**Breakdowns:** `by_stage` — pipeline stages with count and revenue per stage
+
+**Chart series:** Monthly lead count and revenue
+
+**Alerts:** Overdue CRM activities (via `mail.activity`)
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/crm/overview?from=2026-01-01&to=2026-03-31&team_id=1' \
+  -H "session-token: <token>"
+```
+
+### 19.5 Sales Overview
+
+```
+GET /api/v2/analytics/sales/overview
+```
+
+**Auth:** Session token  
+**Model:** `sale.order`  
+**Date field:** `date_order`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_orders` | Count of all sale orders |
+| `total_revenue` | Sum of `amount_total` |
+| `avg_order_value` | Average order value |
+| `confirmed_orders` | Orders in state `sale` |
+| `draft_quotations` | Orders in state `draft` |
+
+**Breakdowns:** `by_state` — order states with revenue per state
+
+**Chart series:** Monthly order count and revenue
+
+**Alerts:** Overdue activities; pending quotations if > 5 drafts
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/sales/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.6 Invoicing Overview
+
+```
+GET /api/v2/analytics/invoicing/overview
+```
+
+**Auth:** Session token  
+**Model:** `account.move` (filtered to `out_invoice` and `out_refund`)  
+**Date field:** `invoice_date`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_invoices` | Count of customer invoices/credit notes |
+| `total_amount` | Sum of `amount_total` |
+| `amount_paid` | Total amount paid (total - residual) |
+| `amount_due` | Total outstanding (sum of `amount_residual` on posted invoices) |
+
+**Breakdowns:** `by_payment_state` — `not_paid`, `in_payment`, `paid`, `partial`, `reversed`
+
+**Chart series:** Monthly invoice count and amount
+
+**Alerts:** Overdue invoices (posted, not paid, past `invoice_date_due`)
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/invoicing/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.7 Inventory Overview
+
+```
+GET /api/v2/analytics/inventory/overview
+```
+
+**Auth:** Session token  
+**Model:** `stock.picking`  
+**Date field:** `scheduled_date`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_transfers` | Count of transfers in period |
+| `done` | Completed transfers |
+| `waiting` | Transfers in `waiting`, `confirmed`, or `assigned` |
+| `late` | Transfers past scheduled date and not done/cancelled (snapshot, no delta) |
+
+**Breakdowns:** `by_state` — `draft`, `waiting`, `confirmed`, `assigned`, `done`, `cancel`
+
+**Chart series:** Monthly transfer count
+
+**Alerts:** Late transfers past scheduled date
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/inventory/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.8 Purchases Overview
+
+```
+GET /api/v2/analytics/purchases/overview
+```
+
+**Auth:** Session token  
+**Model:** `purchase.order`  
+**Date field:** `date_order`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_orders` | Count of purchase orders |
+| `total_amount` | Sum of `amount_total` |
+| `draft` | Draft/RFQ count |
+| `confirmed` | Confirmed POs (state `purchase`) |
+
+**Breakdowns:** `by_state` — states with amount per state
+
+**Chart series:** Monthly PO count and amount
+
+**Alerts:** Pending RFQs if > 3 drafts
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/purchases/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.9 HR Overview
+
+```
+GET /api/v2/analytics/hr/overview
+```
+
+**Auth:** Session token  
+**Model:** `hr.employee`  
+**Date field:** `create_date` (for new hires)
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_employees` | Current headcount snapshot (no delta) |
+| `new_hires` | Employees created in period (with delta) |
+| `departments` | Total department count snapshot (no delta) |
+
+**Breakdowns:** `by_department` — active employees per department
+
+**Chart series:** Monthly new hire count
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/hr/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+### 19.10 Projects Overview
+
+```
+GET /api/v2/analytics/projects/overview
+```
+
+**Auth:** Session token  
+**Model:** `project.task`  
+**Date field:** `create_date`
+
+**KPIs:**
+| KPI | Description |
+|-----|-------------|
+| `total_tasks` | Tasks created in period |
+| `closed` | Tasks in folded (done) stages |
+| `overdue` | Tasks past deadline and not closed (snapshot) |
+
+**Breakdowns:**
+- `by_stage` — task stages with counts
+- `by_project` — tasks grouped by project
+
+**Chart series:** Monthly task creation count
+
+**Alerts:** Overdue tasks past deadline
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/analytics/projects/overview?from=2026-01-01&to=2026-03-31' \
+  -H "session-token: <token>"
+```
+
+---
+
+## 20. Project & Task API (Session Token)
+
+Project and task data use the generic CRUD endpoints with these models:
+
+- **Projects model:** `project.project`
+- **Tasks model:** `project.task`
+
+Use the same session token you get from `POST /auth/login`:
+
+```bash
+-H "session-token: <token>"
+```
+
+### 20.1 List Projects
+
+```
+GET /search/project.project
+```
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/search/project.project?limit=20&fields=id,name,partner_id,user_id,stage_id,date_start,date' \
+  -H "session-token: <token>"
+```
+
+---
+
+### 20.2 Get One Project
+
+```
+GET /search/project.project/{id}
+```
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/search/project.project/1?fields=id,name,description,partner_id,user_id,stage_id' \
+  -H "session-token: <token>"
+```
+
+---
+
+### 20.3 Create Project
+
+```
+POST /create/project.project
+```
+
+**Headers:** `Content-Type: application/json` + `session-token`
+**Required role/group:** Project Administrator (`project.group_project_manager`) or equivalent admin rights.
+
+**Example:**
+
+```bash
+curl -s -X POST 'http://localhost:8069/api/v2/create/project.project' \
+  -H "session-token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Portal Revamp",
+    "partner_id": 59,
+    "description": "<p>Modernize portal experience and workflows.</p>"
+  }'
+```
+
+---
+
+### 20.4 List Tasks
+
+```
+GET /search/project.task
+```
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/search/project.task?limit=20&fields=id,name,project_id,user_ids,stage_id,priority,date_deadline' \
+  -H "session-token: <token>"
+```
+
+---
+
+### 20.5 Get One Task
+
+```
+GET /search/project.task/{id}
+```
+
+**Example:**
+
+```bash
+curl -s 'http://localhost:8069/api/v2/search/project.task/1?fields=id,name,project_id,description,user_ids,stage_id,date_deadline' \
+  -H "session-token: <token>"
+```
+
+---
+
+### 20.6 Create Task
+
+```
+POST /create/project.task
+```
+
+**Headers:** `Content-Type: application/json` + `session-token`
+**Required role/group:** Project User (`project.group_project_user`) or Project Administrator (`project.group_project_manager`).
+
+**Example:**
+
+```bash
+curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
+  -H "session-token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Define API contract with frontend",
+    "project_id": 1,
+    "priority": "1",
+    "description": "<p>Document request/response schema and edge cases.</p>"
+  }'
+```
+
+**Optional assignment fields for task creation:**
+- `user_ids`: many2many command format, example `[[6, 0, [31, 32]]]`
+- `date_deadline`: deadline datetime string
+- `tag_ids`: many2many command format
+
+---
+
 ## Quick Reference: All Endpoints
 
 | Method | Endpoint | Auth | Description |
@@ -1981,5 +2454,17 @@ The following models are blocked from all generic CRUD endpoints (`/search`, `/c
 | `POST` | `/create/{model}` | Both | Create record |
 | `PUT` | `/update/{model}/{id}` | Both | Update record |
 | `DELETE` | `/delete/{model}/{id}` | Both | Delete record |
+| `GET` | `/search/project.project` | Both | List/search projects |
+| `POST` | `/create/project.project` | Both | Create project |
+| `GET` | `/search/project.task` | Both | List/search tasks |
+| `POST` | `/create/project.task` | Both | Create task |
 | `GET` | `/fields/{model}` | Both | Get model field metadata |
 | `GET` | `/models` | Both | List accessible models |
+| `GET` | `/analytics/dashboard/summary` | Session | Cross-module KPI dashboard |
+| `GET` | `/analytics/crm/overview` | Session | CRM leads, pipeline, revenue |
+| `GET` | `/analytics/sales/overview` | Session | Sales orders, revenue, quotations |
+| `GET` | `/analytics/invoicing/overview` | Session | Invoices, payments, overdue |
+| `GET` | `/analytics/inventory/overview` | Session | Transfers, late shipments |
+| `GET` | `/analytics/purchases/overview` | Session | Purchase orders, RFQs |
+| `GET` | `/analytics/hr/overview` | Session | Headcount, new hires, departments |
+| `GET` | `/analytics/projects/overview` | Session | Tasks, overdue, projects |

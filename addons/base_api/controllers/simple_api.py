@@ -119,7 +119,12 @@ class SimpleApiController(http.Controller):
             if not session:
                 return False, self._error_response("Invalid or expired session", 401, "INVALID_SESSION")
             
-            session.sudo().write({'last_activity': datetime.now()})
+            try:
+                session.sudo().write({'last_activity': datetime.now()})
+            except Exception as write_error:
+                # Keep auth successful even if activity timestamp cannot be persisted
+                # (e.g., read-only transaction context in some test scenarios).
+                _logger.warning("Could not update session last_activity: %s", str(write_error))
             
             request.update_env(user=session.user_id.id)
             return True, session.user_id
@@ -804,11 +809,19 @@ class SimpleApiController(http.Controller):
             
             # Create record
             new_record = model_obj.create(data)
-            
+
+            # Return a safe subset of fields to avoid post-create AccessError
+            # on models where some fields are not readable by the creator.
+            basic_fields = ['id', 'name', 'display_name', 'create_date']
+            safe_fields = [f for f in basic_fields if f in request.env[model]._fields]
+            if not safe_fields:
+                safe_fields = ['id']
+            record_data = new_record.read(safe_fields)[0]
+
             return self._json_response(
                 data={
                     'id': new_record.id,
-                    'record': new_record.read()[0]
+                    'record': record_data
                 },
                 message=f"Record created in {model}",
                 status_code=201
@@ -1458,3 +1471,580 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Error checking module access: %s", str(e))
             return self._error_response("Error checking module access", 500, "MODULE_ACCESS_ERROR")
+
+    # ===== ANALYTICS HELPERS =====
+
+    def _parse_analytics_params(self):
+        """Parse date range (from, to), timezone, and optional filter query params."""
+        args = request.httprequest.args
+        today = datetime.now().date()
+
+        try:
+            from_date = datetime.strptime(args.get('from', ''), '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            from_date = today.replace(day=1)
+        try:
+            to_date = datetime.strptime(args.get('to', ''), '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            to_date = today
+
+        duration = max((to_date - from_date).days + 1, 1)
+        prev_to = from_date - timedelta(days=1)
+        prev_from = prev_to - timedelta(days=duration - 1)
+
+        extra_domain = []
+        for qp, field in [('company_id', 'company_id'), ('team_id', 'team_id'), ('owner_id', 'user_id')]:
+            v = args.get(qp)
+            if v:
+                try:
+                    extra_domain.append((field, '=', int(v)))
+                except (ValueError, TypeError):
+                    pass
+
+        return {
+            'from_date': from_date,
+            'to_date': to_date,
+            'prev_from': prev_from,
+            'prev_to': prev_to,
+            'extra_domain': extra_domain,
+            'timezone': args.get('timezone', 'UTC'),
+            'period_label': f"{from_date.isoformat()} to {to_date.isoformat()}",
+        }
+
+    def _kpi(self, current, previous):
+        """Build a KPI dict with current, previous, delta, delta_percent."""
+        c = round(current, 2) if isinstance(current, float) else current
+        p = round(previous, 2) if isinstance(previous, float) else previous
+        delta = round(c - p, 2) if isinstance(c, float) else c - p
+        pct = round(delta / abs(p) * 100, 1) if p else (100.0 if c > 0 else 0.0)
+        return {'current': c, 'previous': p, 'delta': delta, 'delta_percent': pct}
+
+    def _ddom(self, field, fr, to):
+        """Build an inclusive date-range domain for a field."""
+        return [(field, '>=', fr.isoformat()), (field, '<', (to + timedelta(days=1)).isoformat())]
+
+    def _agg(self, model_obj, domain, sum_field=None):
+        """Return (count, sum_value) via a single read_group aggregate."""
+        data = model_obj.read_group(domain, [sum_field] if sum_field else [], [])
+        if not data:
+            return 0, 0
+        count = data[0].get('__count', 0)
+        value = (data[0].get(sum_field, 0) or 0) if sum_field else 0
+        return count, value
+
+    def _analytics_meta(self, params):
+        """Build the meta block included in every analytics response."""
+        return {
+            'generated_at': datetime.now().isoformat(),
+            'period': {
+                'from': params['from_date'].isoformat(),
+                'to': params['to_date'].isoformat(),
+                'previous_from': params['prev_from'].isoformat(),
+                'previous_to': params['prev_to'].isoformat(),
+            },
+            'period_label': params['period_label'],
+            'timezone': params['timezone'],
+        }
+
+    def _chart_series(self, rg_data, date_key, value_field=None):
+        """Convert read_group results into {labels, series} for charting."""
+        chart = {'labels': [], 'series': [{'label': 'Count', 'data': []}]}
+        if value_field:
+            chart['series'].append({'label': value_field, 'data': []})
+        for row in rg_data:
+            chart['labels'].append(row.get(date_key, ''))
+            chart['series'][0]['data'].append(row.get('__count', 0))
+            if value_field:
+                chart['series'][1]['data'].append(row.get(value_field, 0) or 0)
+        return chart
+
+    def _breakdown(self, rg_data, group_field, value_field=None):
+        """Convert read_group results into a list of breakdown buckets."""
+        buckets = []
+        for row in rg_data:
+            g = row.get(group_field)
+            buckets.append({
+                'id': g[0] if isinstance(g, (list, tuple)) else g,
+                'label': g[1] if isinstance(g, (list, tuple)) else str(g or 'Undefined'),
+                'count': row.get('__count', 0),
+                'value': (row.get(value_field, 0) or 0) if value_field else 0,
+            })
+        return buckets
+
+    def _overdue_activities(self, res_model):
+        """Count overdue mail.activity records for a model (returns 0 on error)."""
+        try:
+            if 'mail.activity' not in request.env:
+                return 0
+            return request.env['mail.activity'].search_count([
+                ('res_model', '=', res_model),
+                ('date_deadline', '<', datetime.now().date().isoformat()),
+            ])
+        except Exception:
+            return 0
+
+    # ===== ANALYTICS ENDPOINTS =====
+
+    @http.route('/api/v2/analytics/dashboard/summary', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_dashboard(self):
+        """Cross-module dashboard summary with key KPIs from each accessible module."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            params = self._parse_analytics_params()
+            module_kpis = {}
+
+            specs = [
+                ('crm', 'crm.lead', 'create_date', 'expected_revenue',
+                 [('total_leads', None), ('expected_revenue', 'expected_revenue')]),
+                ('sales', 'sale.order', 'date_order', 'amount_total',
+                 [('total_orders', None), ('total_revenue', 'amount_total')]),
+                ('invoicing', 'account.move', 'invoice_date', 'amount_total',
+                 [('total_invoices', None), ('total_amount', 'amount_total')]),
+                ('inventory', 'stock.picking', 'scheduled_date', None,
+                 [('total_transfers', None)]),
+                ('purchase', 'purchase.order', 'date_order', 'amount_total',
+                 [('total_orders', None), ('total_amount', 'amount_total')]),
+                ('hr', 'hr.employee', 'create_date', None,
+                 [('new_hires', None)]),
+                ('project', 'project.task', 'create_date', None,
+                 [('total_tasks', None)]),
+            ]
+
+            for mod_key, model_name, date_field, _, kpi_defs in specs:
+                if model_name not in request.env:
+                    continue
+                if not self._check_model_access(model_name):
+                    continue
+
+                model_obj = request.env[model_name]
+                cur_d = self._ddom(date_field, params['from_date'], params['to_date']) + params['extra_domain']
+                prev_d = self._ddom(date_field, params['prev_from'], params['prev_to']) + params['extra_domain']
+
+                if model_name == 'account.move':
+                    invoice_filter = [('move_type', 'in', ('out_invoice', 'out_refund'))]
+                    cur_d = cur_d + invoice_filter
+                    prev_d = prev_d + invoice_filter
+
+                kpis = {}
+                for kpi_name, sum_field in kpi_defs:
+                    cur_count, cur_val = self._agg(model_obj, cur_d, sum_field)
+                    prev_count, prev_val = self._agg(model_obj, prev_d, sum_field)
+                    kpis[kpi_name] = self._kpi(cur_val if sum_field else cur_count,
+                                               prev_val if sum_field else prev_count)
+                module_kpis[mod_key] = kpis
+
+            total_employees = 0
+            if 'hr.employee' in request.env and self._check_model_access('hr.employee'):
+                total_employees = request.env['hr.employee'].search_count(
+                    [('active', '=', True)] + params['extra_domain'])
+
+            if 'hr' in module_kpis:
+                module_kpis['hr']['total_employees'] = {
+                    'current': total_employees, 'previous': None, 'delta': None, 'delta_percent': None
+                }
+
+            overdue = self._overdue_activities('crm.lead') + self._overdue_activities('sale.order')
+            alerts = []
+            if overdue > 0:
+                alerts.append({
+                    'type': 'warning',
+                    'title': 'Overdue activities',
+                    'message': f'{overdue} overdue follow-ups across CRM and Sales',
+                    'count': overdue,
+                })
+
+            return self._json_response(
+                data={
+                    'kpis': module_kpis,
+                    'accessible_modules': list(module_kpis.keys()),
+                    'alerts': alerts,
+                    'meta': self._analytics_meta(params),
+                },
+                message="Dashboard summary retrieved"
+            )
+
+        except Exception as e:
+            _logger.error("Dashboard analytics error: %s", str(e))
+            return self._error_response("Error retrieving dashboard analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/crm/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_crm(self):
+        """CRM analytics: leads, pipeline, revenue, win rate."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'crm.lead' not in request.env or not self._check_model_access('crm.lead'):
+                return self._error_response("CRM not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Lead = request.env['crm.lead']
+            cur_d = self._ddom('create_date', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('create_date', params['prev_from'], params['prev_to']) + params['extra_domain']
+
+            cur_count, cur_rev = self._agg(Lead, cur_d, 'expected_revenue')
+            prev_count, prev_rev = self._agg(Lead, prev_d, 'expected_revenue')
+
+            cur_won = Lead.search_count(cur_d + [('stage_id.is_won', '=', True)])
+            prev_won = Lead.search_count(prev_d + [('stage_id.is_won', '=', True)])
+            cur_wr = round(cur_won / cur_count * 100, 1) if cur_count else 0.0
+            prev_wr = round(prev_won / prev_count * 100, 1) if prev_count else 0.0
+
+            kpis = {
+                'total_leads': self._kpi(cur_count, prev_count),
+                'expected_revenue': self._kpi(cur_rev, prev_rev),
+                'won': self._kpi(cur_won, prev_won),
+                'win_rate': self._kpi(cur_wr, prev_wr),
+            }
+
+            stage_rg = Lead.read_group(cur_d, ['expected_revenue'], ['stage_id'])
+            chart_rg = Lead.read_group(cur_d, ['expected_revenue'], ['create_date:month'])
+
+            alerts = []
+            overdue = self._overdue_activities('crm.lead')
+            if overdue:
+                alerts.append({'type': 'warning', 'title': 'Overdue activities',
+                               'message': f'{overdue} overdue follow-ups on leads', 'count': overdue})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_stage': self._breakdown(stage_rg, 'stage_id', 'expected_revenue')},
+                'chart': self._chart_series(chart_rg, 'create_date:month', 'expected_revenue'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="CRM analytics retrieved")
+
+        except Exception as e:
+            _logger.error("CRM analytics error: %s", str(e))
+            return self._error_response("Error retrieving CRM analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/sales/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_sales(self):
+        """Sales analytics: orders, revenue, quotation conversion."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'sale.order' not in request.env or not self._check_model_access('sale.order'):
+                return self._error_response("Sales not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            SO = request.env['sale.order']
+            cur_d = self._ddom('date_order', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('date_order', params['prev_from'], params['prev_to']) + params['extra_domain']
+
+            cur_count, cur_rev = self._agg(SO, cur_d, 'amount_total')
+            prev_count, prev_rev = self._agg(SO, prev_d, 'amount_total')
+            cur_avg = round(cur_rev / cur_count, 2) if cur_count else 0.0
+            prev_avg = round(prev_rev / prev_count, 2) if prev_count else 0.0
+
+            cur_confirmed = SO.search_count(cur_d + [('state', '=', 'sale')])
+            prev_confirmed = SO.search_count(prev_d + [('state', '=', 'sale')])
+            cur_draft = SO.search_count(cur_d + [('state', '=', 'draft')])
+            prev_draft = SO.search_count(prev_d + [('state', '=', 'draft')])
+
+            kpis = {
+                'total_orders': self._kpi(cur_count, prev_count),
+                'total_revenue': self._kpi(cur_rev, prev_rev),
+                'avg_order_value': self._kpi(cur_avg, prev_avg),
+                'confirmed_orders': self._kpi(cur_confirmed, prev_confirmed),
+                'draft_quotations': self._kpi(cur_draft, prev_draft),
+            }
+
+            state_rg = SO.read_group(cur_d, ['amount_total'], ['state'])
+            chart_rg = SO.read_group(cur_d, ['amount_total'], ['date_order:month'])
+
+            alerts = []
+            overdue = self._overdue_activities('sale.order')
+            if overdue:
+                alerts.append({'type': 'warning', 'title': 'Overdue activities',
+                               'message': f'{overdue} overdue follow-ups on orders', 'count': overdue})
+            if cur_draft > 5:
+                alerts.append({'type': 'info', 'title': 'Pending quotations',
+                               'message': f'{cur_draft} draft quotations awaiting confirmation', 'count': cur_draft})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total')},
+                'chart': self._chart_series(chart_rg, 'date_order:month', 'amount_total'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="Sales analytics retrieved")
+
+        except Exception as e:
+            _logger.error("Sales analytics error: %s", str(e))
+            return self._error_response("Error retrieving sales analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/invoicing/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_invoicing(self):
+        """Invoicing analytics: invoices, revenue, payments, overdue."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'account.move' not in request.env or not self._check_model_access('account.move'):
+                return self._error_response("Invoicing not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Move = request.env['account.move']
+            inv_filter = [('move_type', 'in', ('out_invoice', 'out_refund'))]
+            cur_d = self._ddom('invoice_date', params['from_date'], params['to_date']) + params['extra_domain'] + inv_filter
+            prev_d = self._ddom('invoice_date', params['prev_from'], params['prev_to']) + params['extra_domain'] + inv_filter
+
+            cur_count, cur_total = self._agg(Move, cur_d, 'amount_total')
+            prev_count, prev_total = self._agg(Move, prev_d, 'amount_total')
+            _, cur_residual = self._agg(Move, cur_d + [('state', '=', 'posted')], 'amount_residual')
+            _, prev_residual = self._agg(Move, prev_d + [('state', '=', 'posted')], 'amount_residual')
+            cur_paid = cur_total - cur_residual
+            prev_paid = prev_total - prev_residual
+
+            kpis = {
+                'total_invoices': self._kpi(cur_count, prev_count),
+                'total_amount': self._kpi(cur_total, prev_total),
+                'amount_paid': self._kpi(cur_paid, prev_paid),
+                'amount_due': self._kpi(cur_residual, prev_residual),
+            }
+
+            state_rg = Move.read_group(cur_d + [('state', '=', 'posted')], ['amount_total'], ['payment_state'])
+            chart_rg = Move.read_group(cur_d, ['amount_total'], ['invoice_date:month'])
+
+            alerts = []
+            today_str = datetime.now().date().isoformat()
+            overdue_count = Move.search_count(inv_filter + [
+                ('state', '=', 'posted'),
+                ('payment_state', 'not in', ('paid', 'reversed')),
+                ('invoice_date_due', '<', today_str),
+            ] + params['extra_domain'])
+            if overdue_count:
+                alerts.append({'type': 'danger', 'title': 'Overdue invoices',
+                               'message': f'{overdue_count} invoices past due date', 'count': overdue_count})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_payment_state': self._breakdown(state_rg, 'payment_state', 'amount_total')},
+                'chart': self._chart_series(chart_rg, 'invoice_date:month', 'amount_total'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="Invoicing analytics retrieved")
+
+        except Exception as e:
+            _logger.error("Invoicing analytics error: %s", str(e))
+            return self._error_response("Error retrieving invoicing analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/inventory/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_inventory(self):
+        """Inventory analytics: transfers, late shipments, status breakdown."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'stock.picking' not in request.env or not self._check_model_access('stock.picking'):
+                return self._error_response("Inventory not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Pick = request.env['stock.picking']
+            cur_d = self._ddom('scheduled_date', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('scheduled_date', params['prev_from'], params['prev_to']) + params['extra_domain']
+
+            cur_count, _ = self._agg(Pick, cur_d)
+            prev_count, _ = self._agg(Pick, prev_d)
+            cur_done = Pick.search_count(cur_d + [('state', '=', 'done')])
+            prev_done = Pick.search_count(prev_d + [('state', '=', 'done')])
+            cur_waiting = Pick.search_count(cur_d + [('state', 'in', ('waiting', 'confirmed', 'assigned'))])
+            prev_waiting = Pick.search_count(prev_d + [('state', 'in', ('waiting', 'confirmed', 'assigned'))])
+
+            today_str = datetime.now().date().isoformat()
+            cur_late = Pick.search_count([
+                ('scheduled_date', '<', today_str),
+                ('state', 'not in', ('done', 'cancel')),
+            ] + params['extra_domain'])
+
+            kpis = {
+                'total_transfers': self._kpi(cur_count, prev_count),
+                'done': self._kpi(cur_done, prev_done),
+                'waiting': self._kpi(cur_waiting, prev_waiting),
+                'late': self._kpi(cur_late, 0),
+            }
+
+            state_rg = Pick.read_group(cur_d, [], ['state'])
+            chart_rg = Pick.read_group(cur_d, [], ['scheduled_date:month'])
+
+            alerts = []
+            if cur_late:
+                alerts.append({'type': 'danger', 'title': 'Late transfers',
+                               'message': f'{cur_late} transfers past scheduled date', 'count': cur_late})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state')},
+                'chart': self._chart_series(chart_rg, 'scheduled_date:month'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="Inventory analytics retrieved")
+
+        except Exception as e:
+            _logger.error("Inventory analytics error: %s", str(e))
+            return self._error_response("Error retrieving inventory analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/purchases/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_purchases(self):
+        """Purchase analytics: orders, amounts, status breakdown."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'purchase.order' not in request.env or not self._check_model_access('purchase.order'):
+                return self._error_response("Purchases not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            PO = request.env['purchase.order']
+            cur_d = self._ddom('date_order', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('date_order', params['prev_from'], params['prev_to']) + params['extra_domain']
+
+            cur_count, cur_total = self._agg(PO, cur_d, 'amount_total')
+            prev_count, prev_total = self._agg(PO, prev_d, 'amount_total')
+            cur_draft = PO.search_count(cur_d + [('state', '=', 'draft')])
+            prev_draft = PO.search_count(prev_d + [('state', '=', 'draft')])
+            cur_confirmed = PO.search_count(cur_d + [('state', '=', 'purchase')])
+            prev_confirmed = PO.search_count(prev_d + [('state', '=', 'purchase')])
+
+            kpis = {
+                'total_orders': self._kpi(cur_count, prev_count),
+                'total_amount': self._kpi(cur_total, prev_total),
+                'draft': self._kpi(cur_draft, prev_draft),
+                'confirmed': self._kpi(cur_confirmed, prev_confirmed),
+            }
+
+            state_rg = PO.read_group(cur_d, ['amount_total'], ['state'])
+            chart_rg = PO.read_group(cur_d, ['amount_total'], ['date_order:month'])
+
+            alerts = []
+            if cur_draft > 3:
+                alerts.append({'type': 'info', 'title': 'Pending RFQs',
+                               'message': f'{cur_draft} draft purchase orders awaiting confirmation', 'count': cur_draft})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total')},
+                'chart': self._chart_series(chart_rg, 'date_order:month', 'amount_total'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="Purchase analytics retrieved")
+
+        except Exception as e:
+            _logger.error("Purchase analytics error: %s", str(e))
+            return self._error_response("Error retrieving purchase analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/hr/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_hr(self):
+        """HR analytics: headcount, new hires, department breakdown."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'hr.employee' not in request.env or not self._check_model_access('hr.employee'):
+                return self._error_response("HR not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Emp = request.env['hr.employee']
+
+            total_active = Emp.search_count([('active', '=', True)] + params['extra_domain'])
+
+            cur_d = self._ddom('create_date', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('create_date', params['prev_from'], params['prev_to']) + params['extra_domain']
+            cur_new = Emp.search_count(cur_d)
+            prev_new = Emp.search_count(prev_d)
+
+            dept_count = 0
+            if 'hr.department' in request.env:
+                dept_count = request.env['hr.department'].search_count([])
+
+            kpis = {
+                'total_employees': {'current': total_active, 'previous': None, 'delta': None, 'delta_percent': None},
+                'new_hires': self._kpi(cur_new, prev_new),
+                'departments': {'current': dept_count, 'previous': None, 'delta': None, 'delta_percent': None},
+            }
+
+            dept_rg = Emp.read_group(
+                [('active', '=', True)] + params['extra_domain'], [], ['department_id'])
+            chart_rg = Emp.read_group(cur_d, [], ['create_date:month'])
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {'by_department': self._breakdown(dept_rg, 'department_id')},
+                'chart': self._chart_series(chart_rg, 'create_date:month'),
+                'alerts': [],
+                'meta': self._analytics_meta(params),
+            }, message="HR analytics retrieved")
+
+        except Exception as e:
+            _logger.error("HR analytics error: %s", str(e))
+            return self._error_response("Error retrieving HR analytics", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/projects/overview', type='http', auth='none', methods=['GET'], csrf=False)
+    def analytics_projects(self):
+        """Project analytics: tasks, status breakdown, overdue items."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        try:
+            if 'project.task' not in request.env or not self._check_model_access('project.task'):
+                return self._error_response("Projects not accessible", 403, "ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Task = request.env['project.task']
+            cur_d = self._ddom('create_date', params['from_date'], params['to_date']) + params['extra_domain']
+            prev_d = self._ddom('create_date', params['prev_from'], params['prev_to']) + params['extra_domain']
+
+            cur_count, _ = self._agg(Task, cur_d)
+            prev_count, _ = self._agg(Task, prev_d)
+
+            today_str = datetime.now().date().isoformat()
+            overdue_tasks = Task.search_count([
+                ('date_deadline', '<', today_str),
+                ('stage_id.fold', '=', False),
+            ] + params['extra_domain'])
+
+            closed_domain = [('stage_id.fold', '=', True)]
+            cur_closed = Task.search_count(cur_d + closed_domain)
+            prev_closed = Task.search_count(prev_d + closed_domain)
+
+            kpis = {
+                'total_tasks': self._kpi(cur_count, prev_count),
+                'closed': self._kpi(cur_closed, prev_closed),
+                'overdue': self._kpi(overdue_tasks, 0),
+            }
+
+            stage_rg = Task.read_group(cur_d, [], ['stage_id'])
+            project_rg = Task.read_group(cur_d, [], ['project_id'])
+            chart_rg = Task.read_group(cur_d, [], ['create_date:month'])
+
+            alerts = []
+            if overdue_tasks:
+                alerts.append({'type': 'danger', 'title': 'Overdue tasks',
+                               'message': f'{overdue_tasks} tasks past deadline', 'count': overdue_tasks})
+
+            return self._json_response(data={
+                'kpis': kpis,
+                'breakdowns': {
+                    'by_stage': self._breakdown(stage_rg, 'stage_id'),
+                    'by_project': self._breakdown(project_rg, 'project_id'),
+                },
+                'chart': self._chart_series(chart_rg, 'create_date:month'),
+                'alerts': alerts,
+                'meta': self._analytics_meta(params),
+            }, message="Project analytics retrieved")
+
+        except Exception as e:
+            _logger.error("Project analytics error: %s", str(e))
+            return self._error_response("Error retrieving project analytics", 500, "ANALYTICS_ERROR")

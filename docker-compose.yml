@@ -33,6 +33,7 @@ services:
     volumes:
       - odoo-filestore:/var/lib/odoo/filestore
       - odoo-logs:/var/log/odoo
+      - ./addons:/opt/odoo/addons
     environment:
       HOST: db
       USER: ${ODOO_DB_USER:-odoo}
