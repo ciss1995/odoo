@@ -253,7 +253,8 @@ The Docker setup uses these files:
 |------------------------|--------------------------------------------------|
 | `Dockerfile`           | Builds the Odoo image from source                |
 | `docker-compose.yml`   | Orchestrates Odoo + PostgreSQL services           |
-| `docker/odoo.conf`     | Odoo server configuration for Docker              |
+| `docker/odoo.conf`     | Odoo server configuration template for Docker     |
+| `docker/entrypoint.sh` | Entrypoint script (env-var substitution, CORS)    |
 | `.dockerignore`        | Excludes unnecessary files from the Docker build  |
 | `.env`                 | Optional overrides (database, users, init modules) |
 
@@ -262,6 +263,34 @@ To change Odoo settings (port, log level, worker count, etc.), edit `docker/odoo
 ```bash
 docker compose up -d --build
 ```
+
+### CORS Configuration
+
+The `base_api` module adds CORS headers to all `/api/v2/*` responses. By default, **all origins are allowed** (open access). To restrict access to specific origins, set the `ODOO_CORS_ALLOWED_ORIGINS` environment variable.
+
+**Local development** (no restriction needed — Vite proxy handles CORS):
+
+No env var needed. All origins are allowed by default.
+
+**Production / Railway** (restrict to your frontend origin):
+
+Set on your Odoo service:
+
+```
+ODOO_CORS_ALLOWED_ORIGINS=https://yiri-streamline-flow-production.up.railway.app
+```
+
+Multiple origins (comma-separated):
+
+```
+ODOO_CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
+```
+
+The CORS implementation:
+- Returns `204 No Content` for OPTIONS preflight requests on `/api/v2/*`
+- Adds `Access-Control-Allow-Origin` (explicit origin, not `*`), `Access-Control-Allow-Credentials: true`, and `Vary: Origin` on all API responses
+- Allowed headers: `Content-Type`, `session-token`, `Authorization`, `api-key`
+- Allowed methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
 
 ### Docker Volumes
 

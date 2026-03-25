@@ -2,3 +2,4 @@
 
 from . import res_users
 from . import api_session
+from . import cors
