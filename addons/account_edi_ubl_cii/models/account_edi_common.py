@@ -62,7 +62,7 @@ EAS_MAPPING = {
     'DK': {'0184': 'vat', '0198': 'vat'},
     'EE': {'9931': 'vat'},
     'ES': {'9920': 'vat'},
-    'FI': {'0216': None, '0213': 'vat'},
+    'FI': {'0216': None},
     'FR': {'0009': 'company_registry', '9957': 'vat', '0002': None},
     'SG': {'0195': 'l10n_sg_unique_entity_number'},
     'GB': {'9932': 'vat'},
@@ -111,6 +111,8 @@ EAS_MAPPING = {
     'TF': {'0009': 'siret', '9957': 'vat', '0002': None},  # French Southern and Antarctic Lands
     'WF': {'0009': 'siret', '9957': 'vat', '0002': None},  # Wallis and Futuna
     'YT': {'0009': 'siret', '9957': 'vat', '0002': None},  # Mayotte
+
+    'AX': {'0216': None},  # Åland Islands
 }
 
 # -------------------------------------------------------------------------
@@ -407,10 +409,8 @@ class AccountEdiCommon(models.AbstractModel):
         tax_category_code = self._get_tax_category_code(customer, supplier, tax)
         tax_exemption_reason = tax_exemption_reason_code = None
 
-        if not tax:
+        if not tax or tax_category_code == 'E':
             tax_exemption_reason = _("Exempt from tax")
-        elif tax_category_code == 'E':
-            tax_exemption_reason = _('Articles 226 items 11 to 15 Directive 2006/112/EN')
         elif tax_category_code == 'G':
             tax_exemption_reason = _('Export outside the EU')
             tax_exemption_reason_code = 'VATEX-EU-G'
