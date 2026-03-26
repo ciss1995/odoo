@@ -77,7 +77,7 @@ Scheduled action/task assigned to a user on a specific record.
 | `note` | html | Detailed description |
 | `date_deadline` | date | Due date |
 | `date_done` | date | Completion date |
-| `state` | selection | `overdue`, `today`, `planned` (computed field, not usable as a search filter) |
+| `state` | selection | `overdue`, `today`, `planned` (computed field — may not work reliably as a search filter; prefer filtering by `date_deadline` instead) |
 | `user_id` | many2one | Assigned user |
 | `activity_type_id` | many2one | Type (Email, Call, Meeting, To-Do, Document) |
 | `res_model` | char | Related model name |
@@ -647,20 +647,19 @@ curl -H "api-key: YOUR_API_KEY" \
   "http://localhost:8069/api/v2/search/mail.activity?user_id=7&fields=summary,date_deadline,activity_type_id,res_model,res_name,state"
 ```
 
-#### Filter: By state
+#### Filter: By deadline (recommended over `state`)
+
+The `state` field is computed and may not work as a search filter in all Odoo versions. Use `date_deadline` comparisons instead for reliable results:
 
 ```bash
-# Overdue activities
-curl -H "api-key: YOUR_API_KEY" \
-  "http://localhost:8069/api/v2/search/mail.activity?state=overdue&fields=summary,date_deadline,user_id,res_model,res_name"
+# Overdue activities (deadline before today) - use date_deadline filter
+# Note: The generic search only supports exact-match filters, so for
+# date range queries, fetch all activities and filter client-side,
+# or use the analytics endpoints which handle overdue detection.
 
-# Today's activities
+# All activities for a user (then filter by date_deadline client-side)
 curl -H "api-key: YOUR_API_KEY" \
-  "http://localhost:8069/api/v2/search/mail.activity?state=today&fields=summary,date_deadline,user_id,activity_type_id"
-
-# Planned (future) activities
-curl -H "api-key: YOUR_API_KEY" \
-  "http://localhost:8069/api/v2/search/mail.activity?state=planned&fields=summary,date_deadline,user_id,res_model,res_name"
+  "http://localhost:8069/api/v2/search/mail.activity?user_id=2&fields=summary,date_deadline,activity_type_id,res_model,res_name,state"
 ```
 
 #### Filter: By model
