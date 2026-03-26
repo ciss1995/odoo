@@ -380,7 +380,7 @@ const navItems = Object.entries(modules)
 
 ---
 
-### 3.8 Test Auth (API Key Only)
+### 3.7 Test Auth (API Key Only)
 
 Quick authentication validation. API key only.
 
@@ -407,7 +407,7 @@ GET /auth/test
 
 ---
 
-### 3.9 User Info (API Key Only)
+### 3.8 User Info (API Key Only)
 
 Get current user info and API metadata. API key only.
 
@@ -1008,6 +1008,64 @@ DELETE /delete/{model}/{record_id}
 ```
 
 **Error codes:** `MODEL_NOT_FOUND` (404), `RECORD_NOT_FOUND` (404), `ACCESS_DENIED` (403), `DELETE_ERROR` (400/500)
+
+---
+
+### 5.6 Inventory Adjustment
+
+Adjust inventory quantities for a product at a specific location. Creates proper stock moves via Odoo's inventory adjustment workflow.
+
+```
+POST /inventory/adjust
+```
+
+**Headers:** `Content-Type: application/json`
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `product_id` | integer | Yes | `product.product` ID |
+| `new_quantity` | number | Yes | Target quantity |
+| `location_id` | integer | No | Stock location ID (defaults to main warehouse stock location) |
+
+**Example:**
+
+```json
+{
+  "product_id": 23,
+  "new_quantity": 50,
+  "location_id": 8
+}
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "quant_id": 5,
+    "old_quantity": 30,
+    "new_quantity": 50,
+    "diff": 20,
+    "move": {
+      "id": 42,
+      "reference": "Product: Office Chair",
+      "quantity": 20,
+      "state": "done",
+      "date": "2026-03-22 10:00:00",
+      "location_id": [14, "Virtual Locations/Inventory Adjustment"],
+      "location_dest_id": [8, "WH/Stock"]
+    }
+  },
+  "message": "Inventory adjusted successfully"
+}
+```
+
+If the quantity is unchanged, returns `diff: 0` and `move: null` with the message "No adjustment needed".
+
+**Error codes:** `INVALID_CONTENT_TYPE` (400), `NO_DATA` (400), `INVALID_JSON` (400), `MISSING_FIELDS` (400), `PRODUCT_NOT_FOUND` (404), `NO_WAREHOUSE` (404), `LOCATION_NOT_FOUND` (404), `ACCESS_DENIED` (403), `INVENTORY_ADJUST_ERROR` (500)
 
 ---
 
@@ -2454,6 +2512,7 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 | `POST` | `/create/{model}` | Both | Create record |
 | `PUT` | `/update/{model}/{id}` | Both | Update record |
 | `DELETE` | `/delete/{model}/{id}` | Both | Delete record |
+| `POST` | `/inventory/adjust` | Both | Adjust inventory quantities |
 | `GET` | `/search/project.project` | Both | List/search projects |
 | `POST` | `/create/project.project` | Both | Create project |
 | `GET` | `/search/project.task` | Both | List/search tasks |

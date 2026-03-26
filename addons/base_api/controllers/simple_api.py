@@ -1361,6 +1361,141 @@ class SimpleApiController(http.Controller):
             _logger.error("Error updating %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error updating record", 500, "UPDATE_ERROR")
 
+    # ===== INVENTORY ADJUSTMENT =====
+
+    @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False)
+    def inventory_adjust(self):
+        """Adjust inventory for a product, creating proper stock moves."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+
+            try:
+                data = request.httprequest.get_json(force=True)
+                if not data:
+                    return self._error_response("No data provided", 400, "NO_DATA")
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            product_id = data.get('product_id')
+            new_quantity = data.get('new_quantity')
+            location_id = data.get('location_id')
+
+            if not product_id or new_quantity is None:
+                return self._error_response(
+                    "product_id and new_quantity are required", 400, "MISSING_FIELDS"
+                )
+
+            StockQuant = request.env['stock.quant'].sudo()
+            Product = request.env['product.product'].sudo()
+
+            product = Product.browse(int(product_id))
+            if not product.exists():
+                return self._error_response("Product not found", 404, "PRODUCT_NOT_FOUND")
+
+            if not location_id:
+                warehouse = request.env['stock.warehouse'].sudo().search([], limit=1)
+                if warehouse:
+                    location_id = warehouse.lot_stock_id.id
+                else:
+                    return self._error_response(
+                        "No warehouse found", 404, "NO_WAREHOUSE"
+                    )
+
+            location = request.env['stock.location'].sudo().browse(int(location_id))
+            if not location.exists():
+                return self._error_response("Location not found", 404, "LOCATION_NOT_FOUND")
+
+            quant = StockQuant.search([
+                ('product_id', '=', int(product_id)),
+                ('location_id', '=', int(location_id)),
+            ], limit=1)
+
+            if not quant:
+                quant = StockQuant.create({
+                    'product_id': int(product_id),
+                    'location_id': int(location_id),
+                    'quantity': 0,
+                })
+
+            old_quantity = quant.quantity
+            diff = float(new_quantity) - old_quantity
+
+            if diff == 0:
+                return self._json_response(
+                    data={
+                        'quant_id': quant.id,
+                        'old_quantity': old_quantity,
+                        'new_quantity': float(new_quantity),
+                        'diff': 0,
+                        'move_id': None,
+                    },
+                    message="No adjustment needed"
+                )
+
+            quant.with_context(inventory_mode=True).write({
+                'inventory_quantity': float(new_quantity),
+            })
+
+            try:
+                quant.action_apply_inventory()
+            except Exception as apply_err:
+                _logger.warning(
+                    "action_apply_inventory failed, falling back to direct write: %s",
+                    str(apply_err)
+                )
+                quant.with_context(inventory_mode=True).write({
+                    'quantity': float(new_quantity),
+                })
+
+            quant.invalidate_recordset()
+            product.invalidate_recordset()
+
+            moves = request.env['stock.move'].sudo().search([
+                ('product_id', '=', int(product_id)),
+                ('is_inventory', '=', True),
+                ('state', '=', 'done'),
+            ], order='id desc', limit=1)
+
+            move_data = None
+            if moves:
+                m = moves[0]
+                move_data = {
+                    'id': m.id,
+                    'reference': m.reference or m.name,
+                    'quantity': m.quantity,
+                    'state': m.state,
+                    'date': str(m.date),
+                    'location_id': [m.location_id.id, m.location_id.display_name],
+                    'location_dest_id': [m.location_dest_id.id, m.location_dest_id.display_name],
+                }
+
+            return self._json_response(
+                data={
+                    'quant_id': quant.id,
+                    'old_quantity': old_quantity,
+                    'new_quantity': quant.quantity,
+                    'diff': diff,
+                    'move': move_data,
+                },
+                message="Inventory adjusted successfully"
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Error adjusting inventory: %s", str(e))
+            return self._error_response(
+                f"Error adjusting inventory: {str(e)}", 500, "INVENTORY_ADJUST_ERROR"
+            )
+
     # ===== GENERIC CRUD: DELETE =====
 
     @http.route('/api/v2/delete/<string:model>/<int:record_id>', type='http', auth='none', methods=['DELETE'], csrf=False)

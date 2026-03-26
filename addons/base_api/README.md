@@ -56,6 +56,19 @@ curl -H "api-key: YOUR_API_KEY" \
 | PUT | `/api/v2/users/{id}/password` | Yes | Change password |
 | POST | `/api/v2/users/{id}/reset-password` | Admin | Reset password |
 | POST | `/api/v2/users/{id}/api-key` | Yes | Generate API key |
+| PUT | `/api/v2/update/{model}/{id}` | Yes | Update records |
+| DELETE | `/api/v2/delete/{model}/{id}` | Yes | Delete records |
+| GET | `/api/v2/models` | Yes | List accessible models |
+| GET | `/api/v2/modules/access` | Yes | Check module access |
+| POST | `/api/v2/inventory/adjust` | Yes | Adjust inventory quantities |
+| GET | `/api/v2/analytics/dashboard/summary` | Session | Cross-module KPI dashboard |
+| GET | `/api/v2/analytics/crm/overview` | Session | CRM analytics |
+| GET | `/api/v2/analytics/sales/overview` | Session | Sales analytics |
+| GET | `/api/v2/analytics/invoicing/overview` | Session | Invoicing analytics |
+| GET | `/api/v2/analytics/inventory/overview` | Session | Inventory analytics |
+| GET | `/api/v2/analytics/purchases/overview` | Session | Purchase analytics |
+| GET | `/api/v2/analytics/hr/overview` | Session | HR analytics |
+| GET | `/api/v2/analytics/projects/overview` | Session | Project analytics |
 
 ## 🔑 Authentication Options
 
@@ -110,11 +123,19 @@ curl -X POST "http://localhost:8069/api/v2/auth/logout" \
 - ✅ **Security model analysis** - How Odoo's security works with the API
 - ✅ **Test commands** - Verify your security implementation
 
-## 🧪 Test Everything
+## 🧪 Test API
 
 ```bash
-cd /Users/projects/odoo_o
-python3 test_complete_api.py
+# Health check (no auth needed)
+curl "http://localhost:8069/api/v2/test"
+
+# Test with API key
+curl -H "api-key: YOUR_API_KEY" "http://localhost:8069/api/v2/auth/test"
+
+# Test with session token
+curl -X POST "http://localhost:8069/api/v2/auth/login" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "admin"}'
 ```
 
 ## ✅ Status
@@ -122,19 +143,20 @@ python3 test_complete_api.py
 - ✅ **Production ready** - Used in live systems
 - ✅ **All endpoints working** - Fully tested and debugged
 - ✅ **Dual authentication** - Session-based & API key support
-- ✅ **Authentication fixed** - Proper Odoo 18 compatibility
-- ✅ **Complete CRUD** - Create, read, search, update
+- ✅ **Authentication fixed** - Proper Odoo 19 compatibility
+- ✅ **Complete CRUD** - Create, read, search, update, delete
 - ✅ **Any Odoo model** - Generic access to all models
 - ✅ **User management** - Create/manage users and sessions
+- ✅ **Analytics & Dashboards** - Cross-module KPI dashboards (session auth)
+- ✅ **Inventory adjustments** - Stock quant adjustments via API
 - ✅ **Comprehensive docs** - Including troubleshooting guide
 - ✅ **Role-based access control** - Proper user permissions enforced
 
-**Your separate API can now access the entire Odoo backend! 🚀**
-
-### Recent Updates (December 2024)
-- 🔧 **Fixed authentication issues** - Proper session.authenticate() implementation
-- 📚 **Added troubleshooting guide** - Common issues and solutions
+### Recent Updates (March 2026)
+- ✅ **Odoo 19 upgrade** - Full compatibility with Odoo 19
+- ✅ **Analytics endpoints** - Dashboard summary, CRM, Sales, Invoicing, Inventory, Purchases, HR, Projects
+- ✅ **Inventory adjustment** - `POST /api/v2/inventory/adjust` for stock quant management
+- ✅ **Module access check** - `GET /api/v2/modules/access` for frontend navigation
 - ✅ **Session-based auth** - More secure than API keys for web apps
-- 🗄️ **Database independence** - Clear module installation instructions
-- 👥 **Complete user management** - Full user lifecycle API
-- 🔐 **Enhanced security** - Role-based access control enforced
+- ✅ **Complete user management** - Full user lifecycle API
+- ✅ **Enhanced security** - Role-based access control enforced

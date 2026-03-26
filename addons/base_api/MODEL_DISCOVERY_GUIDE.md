@@ -93,7 +93,7 @@ curl -H "api-key: YOUR_API_KEY" \
 | `hr.attendance` | Attendance Records | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.attendance?limit=5"` |
 | `hr.leave` | Leave Requests | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.leave?limit=5"` |
 | `hr.leave.type` | Leave Types | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.leave.type?limit=5"` |
-| `hr.timesheet` | Timesheets | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.timesheet?limit=5"` |
+| `account.analytic.line` | Timesheets | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/account.analytic.line?limit=5"` |
 | `hr.expense` | Expense Records | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.expense?limit=5"` |
 | `hr.recruitment.applicant` | Job Applicants | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/hr.recruitment.applicant?limit=5"` |
 
@@ -208,9 +208,9 @@ curl -H "api-key: YOUR_API_KEY" \
 
 | Model | Description | Test Command |
 |-------|-------------|--------------|
-| `ir.attachment` | File Attachments | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.attachment?limit=5"` |
 | `mail.message` | Mail Messages | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.message?limit=5"` |
-| `mail.thread` | Mail Thread | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.thread?limit=5"` |
+
+> **Note:** `ir.attachment` is a [blocked model](#blocked-models) and cannot be accessed via the API. `mail.thread` is an abstract mixin and cannot be searched directly.
 
 ### **Website/E-commerce Models** (`website.*`)
 
@@ -329,7 +329,7 @@ curl -H "api-key: YOUR_API_KEY" \
 | `mail.activity.type` | Activity Types | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.activity.type?limit=5"` |
 | `mail.followers` | Followers | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.followers?limit=5"` |
 | `mail.alias` | Email Aliases | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.alias?limit=5"` |
-| `mail.channel` | Chat Channels | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/mail.channel?limit=5"` |
+| `discuss.channel` | Chat Channels | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/discuss.channel?limit=5"` |
 
 ### **System/Technical Models** (`ir.*`)
 
@@ -337,13 +337,12 @@ curl -H "api-key: YOUR_API_KEY" \
 |-------|-------------|--------------|
 | `ir.model` | Database Models | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.model?limit=5"` |
 | `ir.model.fields` | Model Fields | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.model.fields?limit=5"` |
-| `ir.attachment` | File Attachments | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.attachment?limit=5"` |
 | `ir.ui.view` | Views | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.ui.view?limit=5"` |
 | `ir.ui.menu` | Menu Items | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.ui.menu?limit=5"` |
 | `ir.actions.act_window` | Window Actions | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.actions.act_window?limit=5"` |
-| `ir.cron` | Scheduled Actions | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.cron?limit=5"` |
 | `ir.sequence` | Sequences | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.sequence?limit=5"` |
-| `ir.rule` | Record Rules | `curl -H "api-key: YOUR_KEY" "http://localhost:8069/api/v2/search/ir.rule?limit=5"` |
+
+> **Blocked models** (return `403 ACCESS_DENIED`): `ir.attachment`, `ir.cron`, `ir.rule`, `ir.model.access`, `api.session`, `res.users.apikeys`, `base.module.update`
 
 ## 📋 **Getting More Field Details**
 
@@ -478,66 +477,9 @@ curl -H "api-key: YOUR_KEY" \
      -d "limit=5"
 ```
 
-### 🔧 **API Enhancement for Field Support**
-
-To enhance the current API to support field specification, modify the `search_model` method in `controllers/simple_api.py`:
-
-```python
-@http.route('/api/v2/search/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
-def search_model(self, model):
-    """Search any model with authentication and field specification."""
-    is_valid, result = self._authenticate()
-    if not is_valid:
-        return result
-
-    try:
-        # Validate model
-        if model not in request.env:
-            return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
-        
-        model_obj = request.env[model]
-        
-        # Get parameters
-        limit = int(request.httprequest.args.get('limit', 10))
-        offset = int(request.httprequest.args.get('offset', 0))
-        fields_param = request.httprequest.args.get('fields', '')
-        
-        # Handle field specification
-        if fields_param:
-            requested_fields = [f.strip() for f in fields_param.split(',')]
-            # Add 'id' if not present (always needed)
-            if 'id' not in requested_fields:
-                requested_fields.insert(0, 'id')
-            # Validate fields exist in model
-            available_fields = [f for f in requested_fields if f in model_obj._fields]
-        else:
-            # Default basic fields
-            basic_fields = ['id', 'name', 'display_name']
-            available_fields = [f for f in basic_fields if f in model_obj._fields]
-        
-        # Basic domain
-        domain = []
-        if 'active' in model_obj._fields:
-            domain.append(('active', '=', True))
-        
-        # Search records
-        records = model_obj.search(domain, limit=limit, offset=offset, order='id')
-        
-        # Read specified fields
-        records_data = records.read(available_fields)
-        
-        return self._json_response(
-            data={
-                'records': records_data,
-                'count': len(records_data),
-                'model': model,
-                'fields': available_fields
-            },
-            message=f"Found {len(records_data)} records in {model}"
-        )
-```
-
 ### 📊 **Common Field Sets by Model**
+
+> **Note:** The API already supports field specification, dynamic filtering, blocked model checks, and dual authentication (session + API key). See [COMPLETE_API_GUIDE.md](COMPLETE_API_GUIDE.md) for full details.
 
 #### CRM Lead Fields
 ```
@@ -1175,7 +1117,6 @@ Regular users can update these fields on their own profile:
 - `name` - Full name
 - `email` - Email address  
 - `phone` - Phone number
-- `mobile` - Mobile number
 - `signature` - Email signature
 - `lang` - Language preference
 - `tz` - Timezone
