@@ -28,6 +28,8 @@
 17. [Appendix: Blocked Models](#17-appendix-blocked-models)
 18. [Appendix: Common Odoo Models](#18-appendix-common-odoo-models)
 19. [Analytics & Dashboards](#19-analytics--dashboards)
+20. [AI Context](#20-ai-context)
+21. [Debt Management](#21-debt-management)
 
 ---
 
@@ -1066,6 +1068,139 @@ POST /inventory/adjust
 If the quantity is unchanged, returns `diff: 0` and `move: null` with the message "No adjustment needed".
 
 **Error codes:** `INVALID_CONTENT_TYPE` (400), `NO_DATA` (400), `INVALID_JSON` (400), `MISSING_FIELDS` (400), `PRODUCT_NOT_FOUND` (404), `NO_WAREHOUSE` (404), `LOCATION_NOT_FOUND` (404), `ACCESS_DENIED` (403), `INVENTORY_ADJUST_ERROR` (500)
+
+---
+
+### 5.7 Inventory Decrement (Sale Fulfillment)
+
+Decrements stock for a product when a confirmed sale is fulfilled. Unlike the adjustment endpoint, this goes through Odoo's **full outgoing delivery pipeline**: it creates a `stock.picking` (delivery order) and a `stock.move` from the warehouse stock location to the customer location, then validates the transfer so that `stock.quant` quantities are properly reduced with a complete audit trail.
+
+Call this endpoint **after** a sale order has been confirmed (state = `sale`) to register that goods have left the warehouse.
+
+```
+POST /api/v2/inventory/decrement
+```
+
+**Authentication:** API key (`api-key` header) or session token (`session-token` header)
+
+**Headers:** `Content-Type: application/json`
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `product_id` | integer | Yes* | `product.product` ID |
+| `product_template_id` | integer | Yes* | `product.template` ID — resolved to its first variant when `product_id` is absent |
+| `quantity` | number | Yes | Positive quantity to subtract from stock |
+| `location_id` | integer | No | Source `stock.location` ID (defaults to the main warehouse stock location) |
+| `allow_negative` | boolean | No | If `true`, skip the insufficient-stock guard and allow the quantity to go negative (default: `false`) |
+
+\* Provide either `product_id` **or** `product_template_id`.
+
+**Example — decrement 3 units of product 16:**
+
+```bash
+curl -s -X POST \
+  -H "api-key: <your-api-key>" \
+  -H "Content-Type: application/json" \
+  http://localhost:8069/api/v2/inventory/decrement \
+  -d '{
+    "product_id": 16,
+    "quantity": 3
+  }'
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "quant_id": 1,
+    "product_id": 16,
+    "old_quantity": 1000.0,
+    "new_quantity": 997.0,
+    "decremented_by": 3.0,
+    "move": {
+      "id": 11,
+      "reference": "WH/OUT/00003",
+      "product_id": 16,
+      "quantity": 3.0,
+      "state": "done",
+      "date": "2026-03-27 02:27:53",
+      "location_id": [5, "WH/Stock"],
+      "location_dest_id": [2, "Customers"]
+    },
+    "picking": {
+      "id": 3,
+      "name": "WH/OUT/00003",
+      "state": "done",
+      "origin": "API Sale Decrement",
+      "date_done": "2026-03-27 02:27:53"
+    }
+  },
+  "message": "Inventory decremented successfully"
+}
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `quant_id` | ID of the updated `stock.quant` record |
+| `product_id` | Product ID that was decremented |
+| `old_quantity` | On-hand quantity **before** the operation |
+| `new_quantity` | On-hand quantity **after** the operation |
+| `decremented_by` | Quantity subtracted (equal to the `quantity` input) |
+| `move.id` | ID of the created `stock.move` |
+| `move.reference` | Delivery order reference (e.g. `WH/OUT/00003`) |
+| `move.state` | Should be `done` on success |
+| `move.location_id` | Source location (warehouse stock) |
+| `move.location_dest_id` | Destination location (Customers) |
+| `picking.id` | ID of the created `stock.picking` delivery order |
+| `picking.name` | Delivery order sequence number |
+| `picking.state` | Should be `done` on success |
+| `picking.date_done` | Timestamp the transfer was validated |
+
+**Insufficient stock — Response `400`:**
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Insufficient stock: available 2.0, requested 3.0",
+    "code": "INSUFFICIENT_STOCK"
+  }
+}
+```
+
+Pass `"allow_negative": true` in the request body to bypass this check (e.g. for backorder scenarios).
+
+**How it works internally:**
+
+1. Looks up the `stock.quant` for the product at the given location and checks available quantity.
+2. Creates a `stock.picking` of type *outgoing delivery* (`out_type_id`) from the warehouse.
+3. Creates a `stock.move` inside the picking for the requested quantity.
+4. Calls `action_confirm()` → `action_assign()` → sets done quantity → `button_validate()` (with `skip_backorder=True`, `skip_sms=True`, `skip_immediate=True`).
+5. Falls back to `move._action_done()` if the wizard-based validation raises an exception.
+6. Re-reads the `stock.quant` to return the verified final quantity.
+
+**Error codes:**
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `INVALID_CONTENT_TYPE` | 400 | `Content-Type` header is not `application/json` |
+| `NO_DATA` | 400 | Request body is empty |
+| `INVALID_JSON` | 400 | Request body is not valid JSON |
+| `MISSING_FIELDS` | 400 | `product_id`/`product_template_id` or `quantity` missing |
+| `INVALID_QUANTITY` | 400 | `quantity` is zero or negative |
+| `INSUFFICIENT_STOCK` | 400 | Not enough on-hand stock and `allow_negative` is false |
+| `PRODUCT_NOT_FOUND` | 404 | Product or template not found |
+| `NO_VARIANT` | 404 | Template has no product variant |
+| `NO_WAREHOUSE` | 404 | No warehouse configured |
+| `LOCATION_NOT_FOUND` | 404 | Provided `location_id` does not exist |
+| `ACCESS_DENIED` | 403 | Authenticated user lacks access |
+| `INVENTORY_DECREMENT_ERROR` | 500 | Unexpected server error |
 
 ---
 
@@ -2486,6 +2621,394 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 
 ---
 
+## 21. AI Context
+
+A single endpoint that returns everything an AI agent needs to understand the current user's environment in **one round-trip**, instead of making 3–4 separate calls to `/auth/me`, `/modules/access`, and individual model counts.
+
+```
+GET /api/v2/ai/context
+```
+
+**Authentication:** API key (`api-key` header) or session token (`session-token` header)
+
+**Query Parameters:** None
+
+**Example:**
+
+```bash
+curl -s \
+  -H "api-key: <your-api-key>" \
+  http://localhost:8069/api/v2/ai/context
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 2,
+      "name": "Administrator",
+      "login": "admin",
+      "email": "admin@example.com",
+      "company": "My Company"
+    },
+    "permissions": {
+      "is_admin": true,
+      "is_user": true,
+      "can_manage_users": true
+    },
+    "module_access": {
+      "crm":        { "accessible": true,  "label": "CRM",       "model": "crm.lead" },
+      "sales":      { "accessible": true,  "label": "Sales",     "model": "sale.order" },
+      "hr":         { "accessible": true,  "label": "Employees", "model": "hr.employee" },
+      "accounting": { "accessible": true,  "label": "Accounting","model": "account.move" },
+      "inventory":  { "accessible": true,  "label": "Inventory", "model": "stock.picking" },
+      "purchase":   { "accessible": false, "label": "Purchase",  "model": "purchase.order" },
+      "contacts":   { "accessible": true,  "label": "Contacts",  "model": "res.partner" },
+      "products":   { "accessible": true,  "label": "Products",  "model": "product.template" }
+    },
+    "accessible_modules": ["crm", "sales", "hr", "accounting", "inventory", "contacts", "products"],
+    "recent_summary": {
+      "crm":               { "new_this_week": 4 },
+      "sales":             { "new_this_week": 12 },
+      "accounting":        { "new_this_week": 7 },
+      "hr":                { "new_this_week": 1 },
+      "contacts":          { "new_this_week": 3 },
+      "overdue_activities": 2
+    }
+  },
+  "message": "AI context retrieved"
+}
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `user.id` | Authenticated user's database ID |
+| `user.name` | Full display name |
+| `user.login` | Login username |
+| `user.email` | Email address |
+| `user.company` | Primary company name |
+| `permissions.is_admin` | Member of `base.group_system` |
+| `permissions.is_user` | Member of `base.group_user` (internal user) |
+| `permissions.can_manage_users` | Member of `base.group_user_admin` |
+| `module_access` | Per-module accessibility map (same shape as `/modules/access`) |
+| `accessible_modules` | Flat list of module keys the user can access |
+| `recent_summary.<module>.new_this_week` | Records created in the last 7 days for that module |
+| `recent_summary.overdue_activities` | Count of the user's activities past their deadline |
+
+**Modules tracked in `recent_summary`:**
+
+| Module key | Model | Date field |
+|------------|-------|------------|
+| `crm` | `crm.lead` | `create_date` |
+| `sales` | `sale.order` | `date_order` |
+| `accounting` | `account.move` | `invoice_date` |
+| `hr` | `hr.employee` | `create_date` |
+| `contacts` | `res.partner` | `create_date` |
+
+Only modules the user has access to appear in `recent_summary`. Modules that are not installed or not accessible are silently omitted.
+
+**Why use this instead of separate calls?**
+
+| Approach | Requests | Round-trips |
+|----------|----------|-------------|
+| `/auth/me` + `/modules/access` + counts per module | 4–8 | 4–8 |
+| `/ai/context` | **1** | **1** |
+
+**Error codes:** `ACCESS_DENIED` (403), `AI_CONTEXT_ERROR` (500)
+
+---
+
+## 21. Debt Management
+
+> **Requires module:** `debt_management` (install alongside `base_api`)
+
+The debt management endpoints let you track customer debts, record payments, configure interest, set per-customer credit limits, and retrieve overdue/analytics data. All endpoints live under `/api/v2/debts/` and accept **both** session-token and API-key authentication.
+
+### 21.1 Create a Debt
+
+```
+POST /debts
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `partner_id` | integer | Yes | Customer (res.partner) ID |
+| `amount` | float | Yes | Principal amount |
+| `due_date` | string | Yes | Repayment deadline (`YYYY-MM-DD`) |
+| `issue_date` | string | No | Defaults to today |
+| `interest_rule_id` | integer | No | Link to an interest rule |
+| `sale_order_id` | integer | No | Link to a sale order |
+| `notes` | string | No | Free-text notes |
+
+**Request:**
+
+```json
+{
+  "partner_id": 42,
+  "amount": 1500.00,
+  "due_date": "2026-06-30",
+  "interest_rule_id": 1,
+  "notes": "Invoice #INV-2026-001"
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 7,
+    "name": "DEBT/0007",
+    "partner": { "id": 42, "name": "Acme Corp" },
+    "amount": 1500.00,
+    "amount_interest": 0.0,
+    "amount_paid": 0.0,
+    "amount_residual": 1500.00,
+    "amount_total": 1500.00,
+    "currency": "USD",
+    "issue_date": "2026-03-27",
+    "due_date": "2026-06-30",
+    "state": "active",
+    "interest_rule": {
+      "id": 1, "name": "Monthly 5%", "rate": 5.0,
+      "cycle": "monthly", "compound": false
+    },
+    "payment_count": 0,
+    "create_date": "2026-03-27 12:00:00"
+  },
+  "message": "Debt record created"
+}
+```
+
+If the customer has a debt limit enabled and the new amount would exceed it, a `DEBT_LIMIT_EXCEEDED` error (400) is returned.
+
+### 21.2 List Debts
+
+```
+GET /debts
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 20 | Page size |
+| `offset` | integer | 0 | Skip records |
+| `state` | string | – | Filter: `draft`, `active`, `paid`, `overdue`, `cancelled` |
+| `partner_id` | integer | – | Filter by customer |
+| `overdue` | string | – | Set to `true` to show only overdue |
+
+### 21.3 Get Debt Detail
+
+```
+GET /debts/{id}
+```
+
+Returns full debt record including `payments` array and last 10 `notifications`.
+
+### 21.4 Update Debt
+
+```
+PUT /debts/{id}
+```
+
+Updatable fields: `due_date`, `interest_rule_id`, `notes`, `state`.
+
+### 21.5 Cancel Debt
+
+```
+DELETE /debts/{id}
+```
+
+Sets the debt state to `cancelled`. Cannot cancel a fully-paid debt.
+
+### 21.6 Record a Payment
+
+```
+POST /debts/{id}/payments
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | float | Yes | Payment amount (must not exceed balance) |
+| `payment_date` | string | No | Defaults to today |
+| `reference` | string | No | External reference (e.g. receipt number) |
+| `notes` | string | No | – |
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "payment": { "id": 3, "amount": 500.00, "payment_date": "2026-03-27", "reference": "PAY-001" },
+    "debt_balance": 1000.00,
+    "debt_state": "active"
+  },
+  "message": "Payment recorded"
+}
+```
+
+When a payment brings the balance to zero, the debt state automatically changes to `paid`.
+
+### 21.7 List Payments
+
+```
+GET /debts/{id}/payments
+```
+
+Returns all payments for the debt, sorted by date (newest first), plus the current `debt_balance`.
+
+### 21.8 Customer Debts
+
+```
+GET /debts/customer/{partner_id}
+```
+
+Lists all debts for a customer. Supports `state`, `limit`, `offset` query parameters.
+
+### 21.9 Customer Debt Summary
+
+```
+GET /debts/customer/{partner_id}/summary
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `total_debts` | All-time debt count |
+| `active_debts` | Currently active (incl. overdue) |
+| `overdue_debts` | Past due date |
+| `paid_debts` | Fully paid |
+| `total_principal` | Sum of all principal amounts |
+| `total_interest` | Sum of all accrued interest |
+| `total_paid` | Sum of all payments |
+| `current_outstanding` | Active balance due |
+| `max_debt_limit` | Customer's limit (null if not enabled) |
+| `available_credit` | Remaining headroom (null if not enabled) |
+
+### 21.10 Set Customer Debt Limit
+
+```
+PUT /debts/customer/{partner_id}/limit
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `max_debt_limit` | float | Maximum total outstanding debt |
+| `use_debt_limit` | boolean | Enable/disable the limit |
+
+When enabled, new debts and debt-sale order confirmations are blocked if the customer's total outstanding would exceed this limit.
+
+### 21.11 Overdue Debts
+
+```
+GET /debts/overdue
+```
+
+Returns all overdue debts with an additional `days_overdue` field, sorted by due date (oldest first). Supports `limit`/`offset`.
+
+### 21.12 Debt Analytics
+
+```
+GET /debts/analytics/overview
+```
+
+**Response KPIs:**
+
+| KPI | Description |
+|-----|-------------|
+| `total_debts` | Non-cancelled debt count |
+| `active_debts` | Active + overdue |
+| `overdue_debts` | Past due |
+| `paid_debts` | Fully settled |
+| `total_principal` | Sum of principals |
+| `total_interest` | Sum of accrued interest |
+| `total_outstanding` | Active balance due |
+| `total_overdue_amount` | Overdue balance |
+| `total_collected` | Sum of payments |
+| `collection_rate` | `total_collected / (principal + interest) * 100` |
+
+Also returns `top_debtors` — the 10 customers with the highest outstanding balance.
+
+### 21.13 Notifications
+
+```
+GET /debts/notifications
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `partner_id` | integer | Filter by customer |
+| `type` | string | `reminder`, `overdue`, or `overdue_reminder` |
+| `limit` | integer | Page size (default 50) |
+| `offset` | integer | Skip records |
+
+The system generates notifications automatically via daily cron jobs:
+- **Reminder** — sent N days before due date (configurable via `debt.notify_days_before` system parameter, default 3)
+- **Overdue** — sent when a debt passes its due date
+- **Overdue reminder** — sent weekly for debts that remain overdue
+
+### 21.14 Interest Rules
+
+```
+GET /debts/interest-rules          List all active rules
+POST /debts/interest-rules         Create a new rule
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Rule name |
+| `rate` | float | Yes | Interest rate as a percentage (e.g. `5.0` = 5%) |
+| `cycle` | string | Yes | One of: `daily`, `weekly`, `biweekly`, `monthly`, `quarterly`, `yearly` |
+| `compound` | boolean | No | Compound interest (default false) |
+
+Interest is calculated by a daily cron job. On each cycle completion, the accrued interest is added to the debt record. Simple interest uses only the original principal as the base; compound interest uses principal + previously accrued interest.
+
+### 21.15 Sale Order Integration
+
+When a sale order has `is_debt_sale = true` and is confirmed:
+1. The system checks the customer's debt limit (if enabled) — blocks confirmation if it would be exceeded
+2. A `debt.record` is automatically created with `state = active`
+3. The `debt_due_date` and `debt_interest_rule_id` fields on the sale order are used if set; otherwise due date defaults to 30 days
+
+This works via the generic CRUD endpoint:
+
+```
+POST /create/sale.order
+```
+
+```json
+{
+  "partner_id": 42,
+  "is_debt_sale": true,
+  "debt_due_date": "2026-06-30",
+  "debt_interest_rule_id": 1,
+  "order_line": [[0, 0, { "product_id": 5, "product_uom_qty": 2, "price_unit": 100 }]]
+}
+```
+
+**Error codes (Debt Management):**
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `MISSING_FIELDS` | 400 | Required fields not provided |
+| `DEBT_LIMIT_EXCEEDED` | 400 | Customer's max debt limit would be exceeded |
+| `DEBT_NOT_FOUND` | 404 | Debt record does not exist |
+| `PARTNER_NOT_FOUND` | 404 | Customer does not exist |
+| `INVALID_STATE` | 400 | Operation not allowed in current debt state |
+| `EXCESS_PAYMENT` | 400 | Payment exceeds outstanding balance |
+| `INVALID_AMOUNT` | 400 | Amount is zero or negative |
+| `INVALID_CYCLE` | 400 | Unrecognized interest cycle |
+| `VALIDATION_ERROR` | 400 | Model-level validation failure |
+
+---
+
 ## Quick Reference: All Endpoints
 
 | Method | Endpoint | Auth | Description |
@@ -2513,6 +3036,7 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 | `PUT` | `/update/{model}/{id}` | Both | Update record |
 | `DELETE` | `/delete/{model}/{id}` | Both | Delete record |
 | `POST` | `/inventory/adjust` | Both | Adjust inventory quantities |
+| `POST` | `/inventory/decrement` | Both | Decrement stock on sale fulfillment (creates delivery picking + move) |
 | `GET` | `/search/project.project` | Both | List/search projects |
 | `POST` | `/create/project.project` | Both | Create project |
 | `GET` | `/search/project.task` | Both | List/search tasks |
@@ -2527,3 +3051,19 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 | `GET` | `/analytics/purchases/overview` | Session | Purchase orders, RFQs |
 | `GET` | `/analytics/hr/overview` | Session | Headcount, new hires, departments |
 | `GET` | `/analytics/projects/overview` | Session | Tasks, overdue, projects |
+| `GET` | `/ai/context` | Both | User info + permissions + module access + activity summary in one call |
+| `POST` | `/debts` | Both | Create a debt record |
+| `GET` | `/debts` | Both | List debts (filterable) |
+| `GET` | `/debts/{id}` | Both | Get debt detail with payments & notifications |
+| `PUT` | `/debts/{id}` | Both | Update debt record |
+| `DELETE` | `/debts/{id}` | Both | Cancel debt |
+| `POST` | `/debts/{id}/payments` | Both | Record a payment |
+| `GET` | `/debts/{id}/payments` | Both | List payments for a debt |
+| `GET` | `/debts/customer/{partner_id}` | Both | All debts for a customer |
+| `GET` | `/debts/customer/{partner_id}/summary` | Both | Customer debt summary & credit |
+| `PUT` | `/debts/customer/{partner_id}/limit` | Both | Set customer debt limit |
+| `GET` | `/debts/overdue` | Both | All overdue debts |
+| `GET` | `/debts/analytics/overview` | Both | Debt KPIs & top debtors |
+| `GET` | `/debts/notifications` | Both | Notification log |
+| `GET` | `/debts/interest-rules` | Both | List interest rules |
+| `POST` | `/debts/interest-rules` | Both | Create interest rule |
