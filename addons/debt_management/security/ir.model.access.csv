@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_debt_record_admin,debt.record.admin,model_debt_record,base.group_system,1,1,1,1
+access_debt_record_user,debt.record.user,model_debt_record,base.group_user,1,1,1,0
+access_debt_interest_rule_admin,debt.interest.rule.admin,model_debt_interest_rule,base.group_system,1,1,1,1
+access_debt_interest_rule_user,debt.interest.rule.user,model_debt_interest_rule,base.group_user,1,1,0,0
+access_debt_payment_admin,debt.payment.admin,model_debt_payment,base.group_system,1,1,1,1
+access_debt_payment_user,debt.payment.user,model_debt_payment,base.group_user,1,1,1,0
+access_debt_notification_log_admin,debt.notification.log.admin,model_debt_notification_log,base.group_system,1,1,1,1
+access_debt_notification_log_user,debt.notification.log.user,model_debt_notification_log,base.group_user,1,0,0,0

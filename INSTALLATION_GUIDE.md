@@ -54,14 +54,14 @@ Set `ODOO_INIT_MODULES` in your `.env` file to control which modules are install
 ODOO_INIT_MODULES=base,base_api
 ```
 
-**Standard** — core business apps + API:
+**Standard** — core business apps + API + debt management:
 ```
-ODOO_INIT_MODULES=base,base_api,sale,crm,hr,purchase,stock,account
+ODOO_INIT_MODULES=base,base_api,debt_management,sale,crm,hr,purchase,stock,account
 ```
 
 **Full** (default — matches local dev environment, 64 modules):
 ```
-ODOO_INIT_MODULES=base,base_api,api_doc,account,account_add_gln,account_edi_ubl_cii,account_payment,analytic,auth_passkey,auth_passkey_portal,auth_signup,auth_totp,auth_totp_mail,auth_totp_portal,base_import,base_import_module,base_install_request,base_setup,bus,calendar,certificate,contacts,crm,digest,google_gmail,hr,hr_calendar,hr_homeworking,hr_homeworking_calendar,hr_org_chart,hr_skills,html_editor,http_routing,l10n_fr,l10n_us,mail,mail_bot,mail_bot_hr,microsoft_outlook,onboarding,payment,phone_validation,portal,privacy_lookup,product,resource,resource_mail,rpc,sale,sale_crm,sale_edi_ubl,sale_management,sale_pdf_quote_builder,sales_team,spreadsheet,spreadsheet_account,spreadsheet_dashboard,spreadsheet_dashboard_account,spreadsheet_dashboard_sale,uom,utm,web,web_hierarchy,web_tour,web_unsplash
+ODOO_INIT_MODULES=base,base_api,debt_management,api_doc,account,account_add_gln,account_edi_ubl_cii,account_payment,analytic,auth_passkey,auth_passkey_portal,auth_signup,auth_totp,auth_totp_mail,auth_totp_portal,base_import,base_import_module,base_install_request,base_setup,bus,calendar,certificate,contacts,crm,digest,google_gmail,hr,hr_calendar,hr_homeworking,hr_homeworking_calendar,hr_org_chart,hr_skills,html_editor,http_routing,l10n_fr,l10n_us,mail,mail_bot,mail_bot_hr,microsoft_outlook,onboarding,payment,phone_validation,portal,privacy_lookup,product,resource,resource_mail,rpc,sale,sale_crm,sale_edi_ubl,sale_management,sale_pdf_quote_builder,sales_team,spreadsheet,spreadsheet_account,spreadsheet_dashboard,spreadsheet_dashboard_account,spreadsheet_dashboard_sale,uom,utm,web,web_hierarchy,web_tour,web_unsplash
 ```
 
 #### Adding More Modules
@@ -155,6 +155,12 @@ Below are the most useful uninstalled modules you can add. Use the module name i
 | `auth_oauth` | OAuth2 | OAuth2 login (Google, etc.) |
 | `auth_ldap` | LDAP | LDAP authentication |
 | `auth_password_policy` | Password Policy | Password strength rules |
+
+**Debt Management**
+
+| Module | Name | Description |
+|--------|------|-------------|
+| `debt_management` | Debt Management | Customer debt tracking, interest, payments, credit limits, notifications. REST API at `/api/v2/debts/*` |
 
 **Other Useful Modules**
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="seq_debt_record" model="ir.sequence">
+            <field name="name">Debt Record</field>
+            <field name="code">debt.record</field>
+            <field name="prefix">DEBT/</field>
+            <field name="padding">4</field>
+        </record>
+    </data>
+</odoo>

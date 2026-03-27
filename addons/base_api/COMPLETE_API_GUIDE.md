@@ -29,6 +29,7 @@
 18. [Appendix: Common Odoo Models](#18-appendix-common-odoo-models)
 19. [Analytics & Dashboards](#19-analytics--dashboards)
 20. [AI Context](#20-ai-context)
+21. [Debt Management](#21-debt-management)
 
 ---
 
@@ -2722,6 +2723,292 @@ Only modules the user has access to appear in `recent_summary`. Modules that are
 
 ---
 
+## 21. Debt Management
+
+> **Requires module:** `debt_management` (install alongside `base_api`)
+
+The debt management endpoints let you track customer debts, record payments, configure interest, set per-customer credit limits, and retrieve overdue/analytics data. All endpoints live under `/api/v2/debts/` and accept **both** session-token and API-key authentication.
+
+### 21.1 Create a Debt
+
+```
+POST /debts
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `partner_id` | integer | Yes | Customer (res.partner) ID |
+| `amount` | float | Yes | Principal amount |
+| `due_date` | string | Yes | Repayment deadline (`YYYY-MM-DD`) |
+| `issue_date` | string | No | Defaults to today |
+| `interest_rule_id` | integer | No | Link to an interest rule |
+| `sale_order_id` | integer | No | Link to a sale order |
+| `notes` | string | No | Free-text notes |
+
+**Request:**
+
+```json
+{
+  "partner_id": 42,
+  "amount": 1500.00,
+  "due_date": "2026-06-30",
+  "interest_rule_id": 1,
+  "notes": "Invoice #INV-2026-001"
+}
+```
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 7,
+    "name": "DEBT/0007",
+    "partner": { "id": 42, "name": "Acme Corp" },
+    "amount": 1500.00,
+    "amount_interest": 0.0,
+    "amount_paid": 0.0,
+    "amount_residual": 1500.00,
+    "amount_total": 1500.00,
+    "currency": "USD",
+    "issue_date": "2026-03-27",
+    "due_date": "2026-06-30",
+    "state": "active",
+    "interest_rule": {
+      "id": 1, "name": "Monthly 5%", "rate": 5.0,
+      "cycle": "monthly", "compound": false
+    },
+    "payment_count": 0,
+    "create_date": "2026-03-27 12:00:00"
+  },
+  "message": "Debt record created"
+}
+```
+
+If the customer has a debt limit enabled and the new amount would exceed it, a `DEBT_LIMIT_EXCEEDED` error (400) is returned.
+
+### 21.2 List Debts
+
+```
+GET /debts
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 20 | Page size |
+| `offset` | integer | 0 | Skip records |
+| `state` | string | – | Filter: `draft`, `active`, `paid`, `overdue`, `cancelled` |
+| `partner_id` | integer | – | Filter by customer |
+| `overdue` | string | – | Set to `true` to show only overdue |
+
+### 21.3 Get Debt Detail
+
+```
+GET /debts/{id}
+```
+
+Returns full debt record including `payments` array and last 10 `notifications`.
+
+### 21.4 Update Debt
+
+```
+PUT /debts/{id}
+```
+
+Updatable fields: `due_date`, `interest_rule_id`, `notes`, `state`.
+
+### 21.5 Cancel Debt
+
+```
+DELETE /debts/{id}
+```
+
+Sets the debt state to `cancelled`. Cannot cancel a fully-paid debt.
+
+### 21.6 Record a Payment
+
+```
+POST /debts/{id}/payments
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `amount` | float | Yes | Payment amount (must not exceed balance) |
+| `payment_date` | string | No | Defaults to today |
+| `reference` | string | No | External reference (e.g. receipt number) |
+| `notes` | string | No | – |
+
+**Response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "payment": { "id": 3, "amount": 500.00, "payment_date": "2026-03-27", "reference": "PAY-001" },
+    "debt_balance": 1000.00,
+    "debt_state": "active"
+  },
+  "message": "Payment recorded"
+}
+```
+
+When a payment brings the balance to zero, the debt state automatically changes to `paid`.
+
+### 21.7 List Payments
+
+```
+GET /debts/{id}/payments
+```
+
+Returns all payments for the debt, sorted by date (newest first), plus the current `debt_balance`.
+
+### 21.8 Customer Debts
+
+```
+GET /debts/customer/{partner_id}
+```
+
+Lists all debts for a customer. Supports `state`, `limit`, `offset` query parameters.
+
+### 21.9 Customer Debt Summary
+
+```
+GET /debts/customer/{partner_id}/summary
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `total_debts` | All-time debt count |
+| `active_debts` | Currently active (incl. overdue) |
+| `overdue_debts` | Past due date |
+| `paid_debts` | Fully paid |
+| `total_principal` | Sum of all principal amounts |
+| `total_interest` | Sum of all accrued interest |
+| `total_paid` | Sum of all payments |
+| `current_outstanding` | Active balance due |
+| `max_debt_limit` | Customer's limit (null if not enabled) |
+| `available_credit` | Remaining headroom (null if not enabled) |
+
+### 21.10 Set Customer Debt Limit
+
+```
+PUT /debts/customer/{partner_id}/limit
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `max_debt_limit` | float | Maximum total outstanding debt |
+| `use_debt_limit` | boolean | Enable/disable the limit |
+
+When enabled, new debts and debt-sale order confirmations are blocked if the customer's total outstanding would exceed this limit.
+
+### 21.11 Overdue Debts
+
+```
+GET /debts/overdue
+```
+
+Returns all overdue debts with an additional `days_overdue` field, sorted by due date (oldest first). Supports `limit`/`offset`.
+
+### 21.12 Debt Analytics
+
+```
+GET /debts/analytics/overview
+```
+
+**Response KPIs:**
+
+| KPI | Description |
+|-----|-------------|
+| `total_debts` | Non-cancelled debt count |
+| `active_debts` | Active + overdue |
+| `overdue_debts` | Past due |
+| `paid_debts` | Fully settled |
+| `total_principal` | Sum of principals |
+| `total_interest` | Sum of accrued interest |
+| `total_outstanding` | Active balance due |
+| `total_overdue_amount` | Overdue balance |
+| `total_collected` | Sum of payments |
+| `collection_rate` | `total_collected / (principal + interest) * 100` |
+
+Also returns `top_debtors` — the 10 customers with the highest outstanding balance.
+
+### 21.13 Notifications
+
+```
+GET /debts/notifications
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `partner_id` | integer | Filter by customer |
+| `type` | string | `reminder`, `overdue`, or `overdue_reminder` |
+| `limit` | integer | Page size (default 50) |
+| `offset` | integer | Skip records |
+
+The system generates notifications automatically via daily cron jobs:
+- **Reminder** — sent N days before due date (configurable via `debt.notify_days_before` system parameter, default 3)
+- **Overdue** — sent when a debt passes its due date
+- **Overdue reminder** — sent weekly for debts that remain overdue
+
+### 21.14 Interest Rules
+
+```
+GET /debts/interest-rules          List all active rules
+POST /debts/interest-rules         Create a new rule
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Rule name |
+| `rate` | float | Yes | Interest rate as a percentage (e.g. `5.0` = 5%) |
+| `cycle` | string | Yes | One of: `daily`, `weekly`, `biweekly`, `monthly`, `quarterly`, `yearly` |
+| `compound` | boolean | No | Compound interest (default false) |
+
+Interest is calculated by a daily cron job. On each cycle completion, the accrued interest is added to the debt record. Simple interest uses only the original principal as the base; compound interest uses principal + previously accrued interest.
+
+### 21.15 Sale Order Integration
+
+When a sale order has `is_debt_sale = true` and is confirmed:
+1. The system checks the customer's debt limit (if enabled) — blocks confirmation if it would be exceeded
+2. A `debt.record` is automatically created with `state = active`
+3. The `debt_due_date` and `debt_interest_rule_id` fields on the sale order are used if set; otherwise due date defaults to 30 days
+
+This works via the generic CRUD endpoint:
+
+```
+POST /create/sale.order
+```
+
+```json
+{
+  "partner_id": 42,
+  "is_debt_sale": true,
+  "debt_due_date": "2026-06-30",
+  "debt_interest_rule_id": 1,
+  "order_line": [[0, 0, { "product_id": 5, "product_uom_qty": 2, "price_unit": 100 }]]
+}
+```
+
+**Error codes (Debt Management):**
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| `MISSING_FIELDS` | 400 | Required fields not provided |
+| `DEBT_LIMIT_EXCEEDED` | 400 | Customer's max debt limit would be exceeded |
+| `DEBT_NOT_FOUND` | 404 | Debt record does not exist |
+| `PARTNER_NOT_FOUND` | 404 | Customer does not exist |
+| `INVALID_STATE` | 400 | Operation not allowed in current debt state |
+| `EXCESS_PAYMENT` | 400 | Payment exceeds outstanding balance |
+| `INVALID_AMOUNT` | 400 | Amount is zero or negative |
+| `INVALID_CYCLE` | 400 | Unrecognized interest cycle |
+| `VALIDATION_ERROR` | 400 | Model-level validation failure |
+
+---
+
 ## Quick Reference: All Endpoints
 
 | Method | Endpoint | Auth | Description |
@@ -2765,3 +3052,18 @@ Only modules the user has access to appear in `recent_summary`. Modules that are
 | `GET` | `/analytics/hr/overview` | Session | Headcount, new hires, departments |
 | `GET` | `/analytics/projects/overview` | Session | Tasks, overdue, projects |
 | `GET` | `/ai/context` | Both | User info + permissions + module access + activity summary in one call |
+| `POST` | `/debts` | Both | Create a debt record |
+| `GET` | `/debts` | Both | List debts (filterable) |
+| `GET` | `/debts/{id}` | Both | Get debt detail with payments & notifications |
+| `PUT` | `/debts/{id}` | Both | Update debt record |
+| `DELETE` | `/debts/{id}` | Both | Cancel debt |
+| `POST` | `/debts/{id}/payments` | Both | Record a payment |
+| `GET` | `/debts/{id}/payments` | Both | List payments for a debt |
+| `GET` | `/debts/customer/{partner_id}` | Both | All debts for a customer |
+| `GET` | `/debts/customer/{partner_id}/summary` | Both | Customer debt summary & credit |
+| `PUT` | `/debts/customer/{partner_id}/limit` | Both | Set customer debt limit |
+| `GET` | `/debts/overdue` | Both | All overdue debts |
+| `GET` | `/debts/analytics/overview` | Both | Debt KPIs & top debtors |
+| `GET` | `/debts/notifications` | Both | Notification log |
+| `GET` | `/debts/interest-rules` | Both | List interest rules |
+| `POST` | `/debts/interest-rules` | Both | Create interest rule |

@@ -152,6 +152,7 @@ class SimpleApiController(http.Controller):
         'products':   {'model': 'product.template',   'label': 'Products'},
         'project':    {'model': 'project.project',    'label': 'Project'},
         'calendar':   {'model': 'calendar.event',     'label': 'Calendar'},
+        'debt':       {'model': 'debt.record',        'label': 'Debt Management'},
     }
 
     def _get_module_access(self):
