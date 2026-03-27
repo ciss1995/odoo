@@ -1385,16 +1385,30 @@ class SimpleApiController(http.Controller):
                 return self._error_response("Invalid JSON", 400, "INVALID_JSON")
 
             product_id = data.get('product_id')
+            product_template_id = data.get('product_template_id')
             new_quantity = data.get('new_quantity')
             location_id = data.get('location_id')
 
-            if not product_id or new_quantity is None:
+            if not product_id and not product_template_id:
                 return self._error_response(
-                    "product_id and new_quantity are required", 400, "MISSING_FIELDS"
+                    "product_id or product_template_id is required", 400, "MISSING_FIELDS"
+                )
+            if new_quantity is None:
+                return self._error_response(
+                    "new_quantity is required", 400, "MISSING_FIELDS"
                 )
 
             StockQuant = request.env['stock.quant'].sudo()
             Product = request.env['product.product'].sudo()
+
+            if product_template_id and not product_id:
+                template = request.env['product.template'].sudo().browse(int(product_template_id))
+                if not template.exists():
+                    return self._error_response("Product template not found", 404, "PRODUCT_NOT_FOUND")
+                variant = template.product_variant_id
+                if not variant:
+                    return self._error_response("Product template has no variant", 404, "NO_VARIANT")
+                product_id = variant.id
 
             product = Product.browse(int(product_id))
             if not product.exists():
@@ -1469,7 +1483,7 @@ class SimpleApiController(http.Controller):
                 m = moves[0]
                 move_data = {
                     'id': m.id,
-                    'reference': m.reference or m.name,
+                    'reference': m.reference or m.origin or '',
                     'quantity': m.quantity,
                     'state': m.state,
                     'date': str(m.date),
@@ -1494,6 +1508,201 @@ class SimpleApiController(http.Controller):
             _logger.error("Error adjusting inventory: %s", str(e))
             return self._error_response(
                 f"Error adjusting inventory: {str(e)}", 500, "INVENTORY_ADJUST_ERROR"
+            )
+
+    @http.route('/api/v2/inventory/decrement', type='http', auth='none', methods=['POST'], csrf=False)
+    def inventory_decrement(self):
+        """Decrement inventory for a product when a sale is confirmed.
+
+        Creates a proper outgoing stock.picking with a stock.move from the
+        warehouse stock location to the customer location, then validates it
+        so that stock.quant quantities are decreased through Odoo's standard
+        inventory pipeline.
+
+        Body params:
+            product_id (int)            – product.product id  (or use product_template_id)
+            product_template_id (int)   – resolved to its first variant when product_id absent
+            quantity (float)            – positive qty to subtract
+            location_id (int, optional) – source stock.location; defaults to the main warehouse
+            allow_negative (bool)       – if true, skip the insufficient-stock guard
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+
+            try:
+                data = request.httprequest.get_json(force=True)
+                if not data:
+                    return self._error_response("No data provided", 400, "NO_DATA")
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            product_id = data.get('product_id')
+            product_template_id = data.get('product_template_id')
+            quantity = data.get('quantity')
+            location_id = data.get('location_id')
+            allow_negative = bool(data.get('allow_negative', False))
+
+            if not product_id and not product_template_id:
+                return self._error_response(
+                    "product_id or product_template_id is required", 400, "MISSING_FIELDS"
+                )
+            if quantity is None:
+                return self._error_response(
+                    "quantity is required", 400, "MISSING_FIELDS"
+                )
+
+            quantity = float(quantity)
+            if quantity <= 0:
+                return self._error_response(
+                    "quantity must be positive", 400, "INVALID_QUANTITY"
+                )
+
+            Product = request.env['product.product'].sudo()
+
+            if product_template_id and not product_id:
+                template = request.env['product.template'].sudo().browse(int(product_template_id))
+                if not template.exists():
+                    return self._error_response("Product template not found", 404, "PRODUCT_NOT_FOUND")
+                variant = template.product_variant_id
+                if not variant:
+                    return self._error_response("Product template has no variant", 404, "NO_VARIANT")
+                product_id = variant.id
+
+            product = Product.browse(int(product_id))
+            if not product.exists():
+                return self._error_response("Product not found", 404, "PRODUCT_NOT_FOUND")
+
+            warehouse = request.env['stock.warehouse'].sudo().search([], limit=1)
+            if not warehouse:
+                return self._error_response("No warehouse found", 404, "NO_WAREHOUSE")
+
+            if not location_id:
+                location_id = warehouse.lot_stock_id.id
+
+            source_location = request.env['stock.location'].sudo().browse(int(location_id))
+            if not source_location.exists():
+                return self._error_response("Source location not found", 404, "LOCATION_NOT_FOUND")
+
+            customer_location = request.env.ref('stock.stock_location_customers').sudo()
+
+            # ---- check current on-hand stock ----
+            StockQuant = request.env['stock.quant'].sudo()
+            quant = StockQuant.search([
+                ('product_id', '=', int(product_id)),
+                ('location_id', '=', int(location_id)),
+            ], limit=1)
+
+            old_quantity = quant.quantity if quant else 0.0
+
+            if not allow_negative and old_quantity < quantity:
+                return self._error_response(
+                    f"Insufficient stock: available {old_quantity}, requested {quantity}",
+                    400, "INSUFFICIENT_STOCK"
+                )
+
+            # ---- create an outgoing delivery picking ----
+            picking_type = warehouse.out_type_id
+            picking = request.env['stock.picking'].sudo().create({
+                'picking_type_id': picking_type.id,
+                'location_id': source_location.id,
+                'location_dest_id': customer_location.id,
+                'origin': 'API Sale Decrement',
+                'scheduled_date': datetime.now(),
+            })
+
+            move = request.env['stock.move'].sudo().create({
+                'product_id': int(product_id),
+                'product_uom_qty': quantity,
+                'product_uom': product.uom_id.id,
+                'picking_id': picking.id,
+                'location_id': source_location.id,
+                'location_dest_id': customer_location.id,
+                'origin': 'API Sale Decrement',
+                'description_picking': f"Sale Decrement: {product.display_name}",
+            })
+
+            # ---- confirm → reserve → set done qty → validate ----
+            picking.action_confirm()
+            picking.action_assign()
+
+            move.write({'quantity': quantity, 'picked': True})
+
+            try:
+                result = picking.with_context(
+                    skip_backorder=True,
+                    skip_sms=True,
+                    skip_immediate=True,
+                ).button_validate()
+                if isinstance(result, dict) and result.get('res_model'):
+                    wiz = (request.env[result['res_model']]
+                           .sudo()
+                           .with_context(**(result.get('context') or {}))
+                           .create({}))
+                    wiz.process()
+            except Exception as validate_err:
+                _logger.warning(
+                    "button_validate raised %s – falling back to move._action_done",
+                    validate_err,
+                )
+                move._action_done()
+
+            # ---- refresh caches and read back final state ----
+            for rec in (quant, product, move, picking):
+                if rec:
+                    rec.invalidate_recordset()
+
+            quant = StockQuant.search([
+                ('product_id', '=', int(product_id)),
+                ('location_id', '=', int(location_id)),
+            ], limit=1)
+            new_quantity = quant.quantity if quant else 0.0
+
+            move_data = {
+                'id': move.id,
+                'reference': move.reference or move.origin or '',
+                'product_id': move.product_id.id,
+                'quantity': move.quantity,
+                'state': move.state,
+                'date': str(move.date),
+                'location_id': [move.location_id.id, move.location_id.display_name],
+                'location_dest_id': [move.location_dest_id.id, move.location_dest_id.display_name],
+            }
+
+            picking_data = {
+                'id': picking.id,
+                'name': picking.name,
+                'state': picking.state,
+                'origin': picking.origin,
+                'date_done': str(picking.date_done) if picking.date_done else None,
+            }
+
+            return self._json_response(
+                data={
+                    'quant_id': quant.id if quant else None,
+                    'product_id': int(product_id),
+                    'old_quantity': old_quantity,
+                    'new_quantity': new_quantity,
+                    'decremented_by': quantity,
+                    'move': move_data,
+                    'picking': picking_data,
+                },
+                message="Inventory decremented successfully"
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Error decrementing inventory: %s", str(e))
+            return self._error_response(
+                f"Error decrementing inventory: {str(e)}", 500, "INVENTORY_DECREMENT_ERROR"
             )
 
     # ===== GENERIC CRUD: DELETE =====
@@ -1717,6 +1926,91 @@ class SimpleApiController(http.Controller):
             ])
         except Exception:
             return 0
+
+    # ===== AI CONTEXT =====
+
+    @http.route('/api/v2/ai/context', type='http', auth='none', methods=['GET'], csrf=False)
+    def ai_context(self):
+        """Return a compact context blob for the AI agent in a single call.
+
+        Combines: user info, permissions, module access, and a lightweight
+        activity summary so the agent doesn't need 3-4 separate requests.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            module_access = self._get_module_access()
+            accessible_modules = [
+                key for key, info in module_access.items() if info.get('accessible')
+            ]
+
+            # Lightweight recent activity summary
+            recent_summary = {}
+            today = datetime.now().date()
+            week_ago = today - timedelta(days=7)
+
+            # Count recent records per accessible module (last 7 days)
+            module_models = {
+                'crm': ('crm.lead', 'create_date'),
+                'sales': ('sale.order', 'date_order'),
+                'accounting': ('account.move', 'invoice_date'),
+                'hr': ('hr.employee', 'create_date'),
+                'contacts': ('res.partner', 'create_date'),
+            }
+
+            for mod_key, (model_name, date_field) in module_models.items():
+                if mod_key not in accessible_modules:
+                    continue
+                if model_name not in request.env:
+                    continue
+                try:
+                    count = request.env[model_name].search_count([
+                        (date_field, '>=', week_ago.isoformat()),
+                        (date_field, '<=', today.isoformat()),
+                    ])
+                    recent_summary[mod_key] = {'new_this_week': count}
+                except Exception:
+                    continue
+
+            # Overdue activities
+            try:
+                if 'mail.activity' in request.env:
+                    overdue_count = request.env['mail.activity'].search_count([
+                        ('date_deadline', '<', today.isoformat()),
+                        ('user_id', '=', user.id),
+                    ])
+                    recent_summary['overdue_activities'] = overdue_count
+            except Exception:
+                pass
+
+            return self._json_response(
+                data={
+                    'user': {
+                        'id': user.id,
+                        'name': user.name,
+                        'login': user.login,
+                        'email': user.email,
+                        'company': user.company_id.name if user.company_id else None,
+                    },
+                    'permissions': {
+                        'is_admin': user.has_group('base.group_system'),
+                        'is_user': user.has_group('base.group_user'),
+                        'can_manage_users': user.has_group('base.group_user_admin'),
+                    },
+                    'module_access': module_access,
+                    'accessible_modules': accessible_modules,
+                    'recent_summary': recent_summary,
+                },
+                message="AI context retrieved"
+            )
+
+        except Exception as e:
+            _logger.error("Error building AI context: %s", str(e))
+            return self._error_response("Error building AI context", 500, "AI_CONTEXT_ERROR")
 
     # ===== ANALYTICS ENDPOINTS =====
 

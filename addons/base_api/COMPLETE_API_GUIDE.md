@@ -28,6 +28,7 @@
 17. [Appendix: Blocked Models](#17-appendix-blocked-models)
 18. [Appendix: Common Odoo Models](#18-appendix-common-odoo-models)
 19. [Analytics & Dashboards](#19-analytics--dashboards)
+20. [AI Context](#20-ai-context)
 
 ---
 
@@ -1066,6 +1067,139 @@ POST /inventory/adjust
 If the quantity is unchanged, returns `diff: 0` and `move: null` with the message "No adjustment needed".
 
 **Error codes:** `INVALID_CONTENT_TYPE` (400), `NO_DATA` (400), `INVALID_JSON` (400), `MISSING_FIELDS` (400), `PRODUCT_NOT_FOUND` (404), `NO_WAREHOUSE` (404), `LOCATION_NOT_FOUND` (404), `ACCESS_DENIED` (403), `INVENTORY_ADJUST_ERROR` (500)
+
+---
+
+### 5.7 Inventory Decrement (Sale Fulfillment)
+
+Decrements stock for a product when a confirmed sale is fulfilled. Unlike the adjustment endpoint, this goes through Odoo's **full outgoing delivery pipeline**: it creates a `stock.picking` (delivery order) and a `stock.move` from the warehouse stock location to the customer location, then validates the transfer so that `stock.quant` quantities are properly reduced with a complete audit trail.
+
+Call this endpoint **after** a sale order has been confirmed (state = `sale`) to register that goods have left the warehouse.
+
+```
+POST /api/v2/inventory/decrement
+```
+
+**Authentication:** API key (`api-key` header) or session token (`session-token` header)
+
+**Headers:** `Content-Type: application/json`
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `product_id` | integer | Yes* | `product.product` ID |
+| `product_template_id` | integer | Yes* | `product.template` ID — resolved to its first variant when `product_id` is absent |
+| `quantity` | number | Yes | Positive quantity to subtract from stock |
+| `location_id` | integer | No | Source `stock.location` ID (defaults to the main warehouse stock location) |
+| `allow_negative` | boolean | No | If `true`, skip the insufficient-stock guard and allow the quantity to go negative (default: `false`) |
+
+\* Provide either `product_id` **or** `product_template_id`.
+
+**Example — decrement 3 units of product 16:**
+
+```bash
+curl -s -X POST \
+  -H "api-key: <your-api-key>" \
+  -H "Content-Type: application/json" \
+  http://localhost:8069/api/v2/inventory/decrement \
+  -d '{
+    "product_id": 16,
+    "quantity": 3
+  }'
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "quant_id": 1,
+    "product_id": 16,
+    "old_quantity": 1000.0,
+    "new_quantity": 997.0,
+    "decremented_by": 3.0,
+    "move": {
+      "id": 11,
+      "reference": "WH/OUT/00003",
+      "product_id": 16,
+      "quantity": 3.0,
+      "state": "done",
+      "date": "2026-03-27 02:27:53",
+      "location_id": [5, "WH/Stock"],
+      "location_dest_id": [2, "Customers"]
+    },
+    "picking": {
+      "id": 3,
+      "name": "WH/OUT/00003",
+      "state": "done",
+      "origin": "API Sale Decrement",
+      "date_done": "2026-03-27 02:27:53"
+    }
+  },
+  "message": "Inventory decremented successfully"
+}
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `quant_id` | ID of the updated `stock.quant` record |
+| `product_id` | Product ID that was decremented |
+| `old_quantity` | On-hand quantity **before** the operation |
+| `new_quantity` | On-hand quantity **after** the operation |
+| `decremented_by` | Quantity subtracted (equal to the `quantity` input) |
+| `move.id` | ID of the created `stock.move` |
+| `move.reference` | Delivery order reference (e.g. `WH/OUT/00003`) |
+| `move.state` | Should be `done` on success |
+| `move.location_id` | Source location (warehouse stock) |
+| `move.location_dest_id` | Destination location (Customers) |
+| `picking.id` | ID of the created `stock.picking` delivery order |
+| `picking.name` | Delivery order sequence number |
+| `picking.state` | Should be `done` on success |
+| `picking.date_done` | Timestamp the transfer was validated |
+
+**Insufficient stock — Response `400`:**
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "Insufficient stock: available 2.0, requested 3.0",
+    "code": "INSUFFICIENT_STOCK"
+  }
+}
+```
+
+Pass `"allow_negative": true` in the request body to bypass this check (e.g. for backorder scenarios).
+
+**How it works internally:**
+
+1. Looks up the `stock.quant` for the product at the given location and checks available quantity.
+2. Creates a `stock.picking` of type *outgoing delivery* (`out_type_id`) from the warehouse.
+3. Creates a `stock.move` inside the picking for the requested quantity.
+4. Calls `action_confirm()` → `action_assign()` → sets done quantity → `button_validate()` (with `skip_backorder=True`, `skip_sms=True`, `skip_immediate=True`).
+5. Falls back to `move._action_done()` if the wizard-based validation raises an exception.
+6. Re-reads the `stock.quant` to return the verified final quantity.
+
+**Error codes:**
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `INVALID_CONTENT_TYPE` | 400 | `Content-Type` header is not `application/json` |
+| `NO_DATA` | 400 | Request body is empty |
+| `INVALID_JSON` | 400 | Request body is not valid JSON |
+| `MISSING_FIELDS` | 400 | `product_id`/`product_template_id` or `quantity` missing |
+| `INVALID_QUANTITY` | 400 | `quantity` is zero or negative |
+| `INSUFFICIENT_STOCK` | 400 | Not enough on-hand stock and `allow_negative` is false |
+| `PRODUCT_NOT_FOUND` | 404 | Product or template not found |
+| `NO_VARIANT` | 404 | Template has no product variant |
+| `NO_WAREHOUSE` | 404 | No warehouse configured |
+| `LOCATION_NOT_FOUND` | 404 | Provided `location_id` does not exist |
+| `ACCESS_DENIED` | 403 | Authenticated user lacks access |
+| `INVENTORY_DECREMENT_ERROR` | 500 | Unexpected server error |
 
 ---
 
@@ -2486,6 +2620,108 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 
 ---
 
+## 21. AI Context
+
+A single endpoint that returns everything an AI agent needs to understand the current user's environment in **one round-trip**, instead of making 3–4 separate calls to `/auth/me`, `/modules/access`, and individual model counts.
+
+```
+GET /api/v2/ai/context
+```
+
+**Authentication:** API key (`api-key` header) or session token (`session-token` header)
+
+**Query Parameters:** None
+
+**Example:**
+
+```bash
+curl -s \
+  -H "api-key: <your-api-key>" \
+  http://localhost:8069/api/v2/ai/context
+```
+
+**Response `200`:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 2,
+      "name": "Administrator",
+      "login": "admin",
+      "email": "admin@example.com",
+      "company": "My Company"
+    },
+    "permissions": {
+      "is_admin": true,
+      "is_user": true,
+      "can_manage_users": true
+    },
+    "module_access": {
+      "crm":        { "accessible": true,  "label": "CRM",       "model": "crm.lead" },
+      "sales":      { "accessible": true,  "label": "Sales",     "model": "sale.order" },
+      "hr":         { "accessible": true,  "label": "Employees", "model": "hr.employee" },
+      "accounting": { "accessible": true,  "label": "Accounting","model": "account.move" },
+      "inventory":  { "accessible": true,  "label": "Inventory", "model": "stock.picking" },
+      "purchase":   { "accessible": false, "label": "Purchase",  "model": "purchase.order" },
+      "contacts":   { "accessible": true,  "label": "Contacts",  "model": "res.partner" },
+      "products":   { "accessible": true,  "label": "Products",  "model": "product.template" }
+    },
+    "accessible_modules": ["crm", "sales", "hr", "accounting", "inventory", "contacts", "products"],
+    "recent_summary": {
+      "crm":               { "new_this_week": 4 },
+      "sales":             { "new_this_week": 12 },
+      "accounting":        { "new_this_week": 7 },
+      "hr":                { "new_this_week": 1 },
+      "contacts":          { "new_this_week": 3 },
+      "overdue_activities": 2
+    }
+  },
+  "message": "AI context retrieved"
+}
+```
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `user.id` | Authenticated user's database ID |
+| `user.name` | Full display name |
+| `user.login` | Login username |
+| `user.email` | Email address |
+| `user.company` | Primary company name |
+| `permissions.is_admin` | Member of `base.group_system` |
+| `permissions.is_user` | Member of `base.group_user` (internal user) |
+| `permissions.can_manage_users` | Member of `base.group_user_admin` |
+| `module_access` | Per-module accessibility map (same shape as `/modules/access`) |
+| `accessible_modules` | Flat list of module keys the user can access |
+| `recent_summary.<module>.new_this_week` | Records created in the last 7 days for that module |
+| `recent_summary.overdue_activities` | Count of the user's activities past their deadline |
+
+**Modules tracked in `recent_summary`:**
+
+| Module key | Model | Date field |
+|------------|-------|------------|
+| `crm` | `crm.lead` | `create_date` |
+| `sales` | `sale.order` | `date_order` |
+| `accounting` | `account.move` | `invoice_date` |
+| `hr` | `hr.employee` | `create_date` |
+| `contacts` | `res.partner` | `create_date` |
+
+Only modules the user has access to appear in `recent_summary`. Modules that are not installed or not accessible are silently omitted.
+
+**Why use this instead of separate calls?**
+
+| Approach | Requests | Round-trips |
+|----------|----------|-------------|
+| `/auth/me` + `/modules/access` + counts per module | 4–8 | 4–8 |
+| `/ai/context` | **1** | **1** |
+
+**Error codes:** `ACCESS_DENIED` (403), `AI_CONTEXT_ERROR` (500)
+
+---
+
 ## Quick Reference: All Endpoints
 
 | Method | Endpoint | Auth | Description |
@@ -2513,6 +2749,7 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 | `PUT` | `/update/{model}/{id}` | Both | Update record |
 | `DELETE` | `/delete/{model}/{id}` | Both | Delete record |
 | `POST` | `/inventory/adjust` | Both | Adjust inventory quantities |
+| `POST` | `/inventory/decrement` | Both | Decrement stock on sale fulfillment (creates delivery picking + move) |
 | `GET` | `/search/project.project` | Both | List/search projects |
 | `POST` | `/create/project.project` | Both | Create project |
 | `GET` | `/search/project.task` | Both | List/search tasks |
@@ -2527,3 +2764,4 @@ curl -s -X POST 'http://localhost:8069/api/v2/create/project.task' \
 | `GET` | `/analytics/purchases/overview` | Session | Purchase orders, RFQs |
 | `GET` | `/analytics/hr/overview` | Session | Headcount, new hires, departments |
 | `GET` | `/analytics/projects/overview` | Session | Tasks, overdue, projects |
+| `GET` | `/ai/context` | Both | User info + permissions + module access + activity summary in one call |
