@@ -1341,7 +1341,7 @@ GET /partners
 
 ```
 GET    /search/res.partner?fields=name,email,phone,city,country_id&is_company=true
-GET    /search/res.partner/15?fields=name,email,phone,street,city,zip,country_id
+GET    /15?fields=name,email,phone,street,city,zip,country_id
 POST   /create/res.partner
 PUT    /update/res.partner/15
 DELETE /delete/res.partner/15
@@ -1470,6 +1470,101 @@ DELETE /delete/sale.order/5
 **Order states:** `draft` (Quotation), `sent` (Quotation Sent), `sale` (Sales Order), `done` (Locked), `cancel` (Cancelled)
 
 **Related models:** `sale.order.line`
+
+### 9.2 Create Invoice from Sale Order
+
+Create an invoice directly from a confirmed sale order. Uses Odoo's internal invoicing engine so taxes, fiscal positions, and accounts are computed automatically.
+
+```
+POST /sales/<order_id>/create-invoice
+```
+
+**Authentication:** `session-token` or `api-key` header required.
+
+**Optional JSON body:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `advance_payment_method` | string | `"delivered"` | `"delivered"` — invoice delivered/ordered qty; `"percentage"` — down-payment by %; `"fixed"` — down-payment fixed amount |
+| `amount` | number | — | Required when method is `"percentage"` or `"fixed"` |
+| `invoice_date` | string | today | Invoice date in `YYYY-MM-DD` format |
+| `invoice_date_due` | string | per payment terms | Due date in `YYYY-MM-DD` format |
+| `deposit_account_id` | integer | — | Override account for down-payment line (optional) |
+
+**Minimal example (invoice all ordered qty):**
+
+```http
+POST /api/v2/sales/42/create-invoice
+Content-Type: application/json
+session-token: <token>
+```
+
+No body needed — defaults to `"delivered"` method.
+
+**Down-payment example (50 %):**
+
+```http
+POST /api/v2/sales/42/create-invoice
+Content-Type: application/json
+session-token: <token>
+
+{
+  "advance_payment_method": "percentage",
+  "amount": 50.0
+}
+```
+
+**Success response (201):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "invoice": {
+      "id": 88,
+      "name": "INV/2026/00088",
+      "state": "draft",
+      "move_type": "out_invoice",
+      "partner_id": [162, "Cheick C"],
+      "invoice_date": "2026-03-30",
+      "invoice_date_due": "2026-04-30",
+      "amount_untaxed": 300.00,
+      "amount_tax": 45.00,
+      "amount_total": 345.00,
+      "amount_residual": 345.00,
+      "payment_state": "not_paid",
+      "currency_id": [1, "USD"],
+      "invoice_origin": "S00042",
+      "invoice_line_ids": [201, 202]
+    }
+  },
+  "message": "Invoice created from sale order"
+}
+```
+
+**Error codes:**
+
+| HTTP | Code | Cause |
+|------|------|-------|
+| 400 | `INVALID_STATE` | Order is not confirmed (`state != 'sale'`) |
+| 400 | `INVALID_PARAM` | Unknown `advance_payment_method` value |
+| 400 | `MISSING_PARAM` | `percentage`/`fixed` method without `amount` |
+| 400 | `NOTHING_TO_INVOICE` | All lines already invoiced |
+| 401 | `MISSING_SESSION_TOKEN` | No auth header |
+| 403 | `ACCESS_DENIED` | User lacks sale.order read or account.move create rights |
+| 404 | `NOT_FOUND` | Order ID does not exist |
+| 404 | `MODULE_NOT_FOUND` | Sales module not installed |
+
+**Typical workflow:**
+
+```
+1. POST /create/sale.order          → create quotation (returns order id)
+2. POST /create/sale.order.line     → add line items (repeat per line)
+3. POST /sales/<id>/create-invoice  → generate invoice from confirmed order
+4. GET  /search/account.move/<id>   → fetch the invoice details
+```
+
+> **Note:** Step 2 can be skipped if order lines are included inline during step 1 using the `order_line` field with `[[0, 0, {...}]]` syntax. The order must be confirmed (state = `sale`) before step 3 — confirmation currently requires the Odoo UI or XML-RPC.
 
 ---
 
@@ -2766,6 +2861,7 @@ POST /debts
     "id": 7,
     "name": "DEBT/0007",
     "partner": { "id": 42, "name": "Acme Corp" },
+    "sale_order": { "id": 49, "name": "S00051" },
     "amount": 1500.00,
     "amount_interest": 0.0,
     "amount_paid": 0.0,
@@ -2779,11 +2875,15 @@ POST /debts
       "id": 1, "name": "Monthly 5%", "rate": 5.0,
       "cycle": "monthly", "compound": false
     },
+    "notes": "Invoice #INV-2026-001",
     "payment_count": 0,
     "create_date": "2026-03-27 12:00:00"
   },
   "message": "Debt record created"
 }
+```
+
+> **Note:** The `sale_order` field is `null` for standalone debts and `{"id": ..., "name": ...}` for debts linked to a sale order. This field appears on **all** debt responses (create, list, detail, update).
 ```
 
 If the customer has a debt limit enabled and the new amount would exceed it, a `DEBT_LIMIT_EXCEEDED` error (400) is returned.
@@ -2970,14 +3070,19 @@ POST /debts/interest-rules         Create a new rule
 
 Interest is calculated by a daily cron job. On each cycle completion, the accrued interest is added to the debt record. Simple interest uses only the original principal as the base; compound interest uses principal + previously accrued interest.
 
-### 21.15 Sale Order Integration
+### 21.15 Sale Order → Debt Integration
 
-When a sale order has `is_debt_sale = true` and is confirmed:
+When a sale order has `is_debt_sale = true` and is confirmed, the system automatically creates a linked debt record. The debt's `sale_order` field will contain the sale order reference.
+
+**How it works:**
 1. The system checks the customer's debt limit (if enabled) — blocks confirmation if it would be exceeded
-2. A `debt.record` is automatically created with `state = active`
-3. The `debt_due_date` and `debt_interest_rule_id` fields on the sale order are used if set; otherwise due date defaults to 30 days
+2. A `debt.record` is automatically created with `state = active` and `sale_order_id` pointing back to the order
+3. The `debt_due_date` and `debt_interest_rule_id` fields on the sale order are used if set; otherwise due date defaults to 30 days from confirmation
+4. The debt `amount` equals the sale order's `amount_total` (including taxes)
 
-This works via the generic CRUD endpoint:
+**Step-by-step flow:**
+
+**Step 1 — Create the sale order as a credit sale:**
 
 ```
 POST /create/sale.order
@@ -2985,11 +3090,104 @@ POST /create/sale.order
 
 ```json
 {
-  "partner_id": 42,
+  "partner_id": 160,
   "is_debt_sale": true,
   "debt_due_date": "2026-06-30",
-  "debt_interest_rule_id": 1,
-  "order_line": [[0, 0, { "product_id": 5, "product_uom_qty": 2, "price_unit": 100 }]]
+  "debt_interest_rule_id": 1
+}
+```
+
+Response returns the order `id` (e.g. `49`).
+
+**Step 2 — Add order lines:**
+
+```
+POST /create/sale.order.line
+```
+
+```json
+{
+  "order_id": 49,
+  "product_id": 16,
+  "product_uom_qty": 10,
+  "price_unit": 1299.99
+}
+```
+
+Repeat for each product line.
+
+**Step 3 — Confirm the sale order:**
+
+Confirm via the Odoo backend or programmatically. On confirmation:
+- A `debt.record` is auto-created with the order total
+- The debt is linked to the sale order (`sale_order_id = 49`)
+- The sale order's `debt_record_id` field is set to the new debt
+
+**Step 4 — Retrieve the debt (includes sale order reference):**
+
+```
+GET /debts/{debt_id}
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": 3,
+    "name": "DEBT/0003",
+    "partner": { "id": 160, "name": "Greenleaf Industries" },
+    "sale_order": { "id": 49, "name": "S00051" },
+    "amount": 14949.89,
+    "amount_interest": 0.0,
+    "amount_paid": 0.0,
+    "amount_residual": 14949.89,
+    "amount_total": 14949.89,
+    "currency": "USD",
+    "issue_date": "2026-03-28",
+    "due_date": "2026-06-30",
+    "state": "active",
+    "interest_rule": {
+      "id": 1, "name": "Standard Monthly 5%", "rate": 5.0,
+      "cycle": "monthly", "compound": false
+    },
+    "notes": null,
+    "payment_count": 0,
+    "payments": [],
+    "notifications": []
+  }
+}
+```
+
+The `sale_order` field appears on all debt endpoints (`POST /debts`, `GET /debts`, `GET /debts/{id}`, `PUT /debts/{id}`). It is `null` for standalone debts (created directly via `POST /debts`) and `{"id": ..., "name": ...}` for debts created from sale orders.
+
+**Sale order fields reference:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `is_debt_sale` | boolean | Mark the order as a credit sale |
+| `debt_due_date` | string | Due date for the auto-created debt (default: 30 days from confirmation) |
+| `debt_interest_rule_id` | integer | Interest rule to apply to the auto-created debt |
+| `debt_record_id` | integer | (read-only) Set automatically after confirmation — the linked debt record ID |
+
+**Checking the sale order after confirmation:**
+
+```
+GET /search/sale.order/49?fields=id,name,state,amount_total,is_debt_sale,debt_record_id
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "record": {
+      "id": 49,
+      "name": "S00051",
+      "state": "sale",
+      "amount_total": 14949.89,
+      "is_debt_sale": true,
+      "debt_record_id": [3, "DEBT/0003"]
+    }
+  }
 }
 ```
 

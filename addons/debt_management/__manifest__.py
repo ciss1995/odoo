@@ -22,6 +22,9 @@
         'data/sequence_data.xml',
         'data/cron_data.xml',
     ],
+    'demo': [
+        'demo/demo_data.xml',
+    ],
     'installable': True,
     'auto_install': False,
     'application': True,

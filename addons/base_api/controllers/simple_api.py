@@ -7,7 +7,7 @@ import string
 from datetime import datetime, timedelta
 from odoo import http
 from odoo.http import request
-from odoo.exceptions import AccessError, MissingError, ValidationError
+from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -141,6 +141,40 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return False
 
+    def _get_model_base_domain(self, model_name):
+        """Return model-specific base domain filters.
+
+        For res.partner: exclude internal employees and the current company
+        so the endpoint only returns external partners. Employees and the
+        company are accessible via hr.employee / hr endpoints instead.
+
+        Supports ``partner_type`` query parameter for res.partner:
+        - ``customer``  → customer_rank > 0
+        - ``vendor``    → supplier_rank > 0
+        - ``contact``   → customer_rank = 0 AND supplier_rank = 0
+        """
+        if model_name == 'res.partner':
+            domain = []
+            model_obj = request.env[model_name]
+            # Exclude employee-linked partners (field added by hr module)
+            if 'employee' in model_obj._fields:
+                domain.append(('employee', '=', False))
+            # Exclude the current user's company partner record
+            company_partner = request.env.company.partner_id
+            if company_partner:
+                domain.append(('id', '!=', company_partner.id))
+            # Filter by partner type if requested
+            partner_type = request.httprequest.args.get('partner_type', '').lower()
+            if partner_type == 'customer':
+                domain.append(('customer_rank', '>', 0))
+            elif partner_type == 'vendor':
+                domain.append(('supplier_rank', '>', 0))
+            elif partner_type == 'contact':
+                domain.append(('customer_rank', '=', 0))
+                domain.append(('supplier_rank', '=', 0))
+            return domain
+        return []
+
     MODULE_ACCESS_MAP = {
         'crm':        {'model': 'crm.lead',          'label': 'CRM'},
         'sales':      {'model': 'sale.order',         'label': 'Sales'},
@@ -171,6 +205,21 @@ class SimpleApiController(http.Controller):
                 'model': model_name,
             }
         return result
+
+    # ===== CORS PREFLIGHT =====
+
+    @http.route(
+        ['/api/v2/<path:subpath>'],
+        type='http', auth='none', methods=['OPTIONS'], csrf=False,
+    )
+    def cors_preflight(self, subpath=None):
+        """Handle CORS preflight for all /api/v2/* endpoints."""
+        from odoo.addons.base_api.models.cors import _origin_allowed, _set_cors_headers
+        origin = request.httprequest.headers.get('Origin', '')
+        resp = request.make_response('', status=204)
+        if _origin_allowed(origin):
+            _set_cors_headers(resp, origin)
+        return resp
 
     # ===== WORKING ENDPOINTS =====
 
@@ -367,14 +416,14 @@ class SimpleApiController(http.Controller):
                 basic_fields = ['id', 'name', 'display_name']
                 available_fields = [f for f in basic_fields if f in model_obj._fields]
             
-            # Basic domain
-            domain = []
-            
+            # Model-specific base domain (e.g. res.partner excludes employees)
+            domain = self._get_model_base_domain(model)
+
             # Handle additional filtering parameters from URL first
             has_custom_filters = False
             for param_key, param_value in request.httprequest.args.items():
                 # Skip special parameters
-                if param_key in ['limit', 'offset', 'fields']:
+                if param_key in ['limit', 'offset', 'fields', 'partner_type']:
                     continue
                 
                 # Add domain filter for other parameters
@@ -534,7 +583,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error getting fields for %s: %s", model, str(e))
             return self._error_response("Error retrieving model fields", 500, "FIELDS_ERROR")
 
-    @http.route('/api/v2/auth/login', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/auth/login', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def user_login(self):
         """Authenticate user with username/password and create session."""
         try:
@@ -609,7 +658,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Login error: %s", str(e))
             return self._error_response("Login failed", 500, "LOGIN_ERROR")
 
-    @http.route('/api/v2/auth/refresh', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/auth/refresh', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def refresh_session(self):
         """Refresh session token to extend expiration."""
         session_token = request.httprequest.headers.get('session-token')
@@ -659,7 +708,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Session refresh error: %s", str(e))
             return self._error_response("Session refresh failed", 500, "REFRESH_ERROR")
 
-    @http.route('/api/v2/auth/logout', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/auth/logout', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def user_logout(self):
         """Logout user and invalidate session."""
         is_valid, result = self._authenticate_session()
@@ -768,7 +817,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error getting groups: %s", str(e))
             return self._error_response("Error retrieving groups", 500, "GROUPS_ERROR")
 
-    @http.route('/api/v2/create/<string:model>', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/create/<string:model>', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def create_record(self, model):
         """Create a record with authentication."""
         # Try session authentication first, then API key
@@ -807,7 +856,19 @@ class SimpleApiController(http.Controller):
             # Special handling for user creation with groups
             if model == 'res.users':
                 return self._create_user_with_groups(data)
-            
+
+            # Special handling for employee creation with job/department
+            if model == 'hr.employee':
+                return self._create_employee(data)
+
+            # Convenience: map partner_type to Odoo rank fields
+            if model == 'res.partner':
+                partner_type = data.pop('partner_type', None)
+                if partner_type == 'customer':
+                    data.setdefault('customer_rank', 1)
+                elif partner_type == 'vendor':
+                    data.setdefault('supplier_rank', 1)
+
             # Create record
             new_record = model_obj.create(data)
 
@@ -837,18 +898,36 @@ class SimpleApiController(http.Controller):
             return self._error_response("Error creating record", 500, "CREATE_ERROR")
 
     def _create_user_with_groups(self, data):
-        """Special method to create users with proper group handling."""
+        """Create a user with groups and optionally set up employee info.
+
+        Accepts employee convenience fields alongside user fields:
+        - department_name  → looked up to department_id on the employee
+        - job_title        → free-text job title on the employee
+        - job_name         → looked up in hr.job to set job_id
+        - parent_name      → looked up in hr.employee to set parent_id (manager)
+        - work_phone       → work phone on the employee
+
+        Odoo auto-creates an hr.employee record when a user gets internal
+        access, so we find that record and update it with the HR fields.
+        """
         try:
+            # -- Extract employee-specific fields before user creation --
+            employee_fields = {}
+            for key in ('department_name', 'job_title', 'job_name', 'parent_name', 'work_phone'):
+                val = data.pop(key, None)
+                if val is not None:
+                    employee_fields[key] = val
+
             group_names = data.pop('group_names', [])
             group_ids_param = data.pop('group_ids', [])
             auto_generate_credentials = data.pop('auto_generate_credentials', True)
-            
+
             if 'password' not in data and auto_generate_credentials:
                 temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
                 data['password'] = temp_password
             else:
                 temp_password = data.get('password', None)
-            
+
             # Resolve group IDs before create so they can be set atomically
             resolved_group_ids = []
             if group_names:
@@ -860,12 +939,12 @@ class SimpleApiController(http.Controller):
                 default_group = request.env.ref('base.group_user', raise_if_not_found=False)
                 if default_group:
                     resolved_group_ids = [default_group.id]
-            
+
             if resolved_group_ids:
                 data['group_ids'] = [(6, 0, resolved_group_ids)]
-            
+
             user = request.env['res.users'].sudo().create(data)
-            
+
             api_key = None
             if auto_generate_credentials:
                 try:
@@ -878,7 +957,57 @@ class SimpleApiController(http.Controller):
                 except Exception as e:
                     _logger.warning("Could not generate API key for user %s: %s", user.login, str(e))
                     api_key = None
-            
+
+            # -- Update the auto-created employee record with HR fields --
+            employee_data = None
+            if employee_fields and 'hr.employee' in request.env:
+                employee = request.env['hr.employee'].sudo().search(
+                    [('user_id', '=', user.id)], limit=1)
+                if employee:
+                    emp_vals = {}
+
+                    # Resolve department by name
+                    dept_name = employee_fields.get('department_name')
+                    if dept_name:
+                        dept = request.env['hr.department'].sudo().search(
+                            [('name', '=ilike', dept_name)], limit=1)
+                        if dept:
+                            emp_vals['department_id'] = dept.id
+
+                    # Resolve job position by name
+                    job_name = employee_fields.get('job_name')
+                    if job_name:
+                        job = request.env['hr.job'].sudo().search(
+                            [('name', '=ilike', job_name)], limit=1)
+                        if job:
+                            emp_vals['job_id'] = job.id
+
+                    # Resolve manager by name
+                    parent_name = employee_fields.get('parent_name')
+                    if parent_name:
+                        manager = request.env['hr.employee'].sudo().search(
+                            [('name', '=ilike', parent_name)], limit=1)
+                        if manager:
+                            emp_vals['parent_id'] = manager.id
+
+                    # Direct fields
+                    if employee_fields.get('job_title'):
+                        emp_vals['job_title'] = employee_fields['job_title']
+                    if employee_fields.get('work_phone'):
+                        emp_vals['work_phone'] = employee_fields['work_phone']
+
+                    if emp_vals:
+                        employee.write(emp_vals)
+
+                    employee_data = {
+                        'id': employee.id,
+                        'job_title': employee.job_title or False,
+                        'job_id': {'id': employee.job_id.id, 'name': employee.job_id.name} if employee.job_id else False,
+                        'department_id': {'id': employee.department_id.id, 'name': employee.department_id.name} if employee.department_id else False,
+                        'parent_id': {'id': employee.parent_id.id, 'name': employee.parent_id.name} if employee.parent_id else False,
+                        'work_phone': employee.work_phone or False,
+                    }
+
             # Prepare response data
             response_data = {
                 'id': user.id,
@@ -889,7 +1018,10 @@ class SimpleApiController(http.Controller):
                 'active': user.active,
                 'create_date': user.create_date.isoformat() if user.create_date else None
             }
-            
+
+            if employee_data:
+                response_data['employee'] = employee_data
+
             # Add credentials if auto-generated
             if auto_generate_credentials:
                 credentials = {}
@@ -897,11 +1029,11 @@ class SimpleApiController(http.Controller):
                     credentials['temporary_password'] = temp_password
                 if api_key:
                     credentials['api_key'] = api_key
-                
+
                 if credentials:
                     response_data['credentials'] = credentials
                     response_data['credentials']['note'] = "Store these credentials securely - they won't be shown again"
-            
+
             if auto_generate_credentials:
                 return self._json_response_sensitive(
                     data=response_data,
@@ -913,12 +1045,82 @@ class SimpleApiController(http.Controller):
                 message="User created successfully",
                 status_code=201
             )
-            
+
         except Exception as e:
             _logger.error("Error creating user: %s", str(e))
             return self._error_response("Error creating user", 500, "USER_CREATE_ERROR")
 
-    @http.route('/api/v2/users/<int:user_id>/password', type='http', auth='none', methods=['PUT'], csrf=False)
+    def _create_employee(self, data):
+        """Create an employee with job title, department, and optional user link.
+
+        Accepted convenience fields (resolved by name when given as strings):
+        - department_name  → looked up to department_id
+        - job_title        → stored directly (free-text on hr.employee)
+        - job_name         → looked up in hr.job to set job_id
+        - parent_name      → looked up in hr.employee to set parent_id (manager)
+        - user_login       → looked up in res.users to set user_id
+        """
+        try:
+            Emp = request.env['hr.employee']
+
+            # Resolve department by name
+            dept_name = data.pop('department_name', None)
+            if dept_name and 'department_id' not in data:
+                dept = request.env['hr.department'].search([('name', '=ilike', dept_name)], limit=1)
+                if dept:
+                    data['department_id'] = dept.id
+                else:
+                    return self._error_response(
+                        f"Department '{dept_name}' not found", 400, "DEPARTMENT_NOT_FOUND")
+
+            # Resolve job position by name
+            job_name = data.pop('job_name', None)
+            if job_name and 'job_id' not in data:
+                job = request.env['hr.job'].search([('name', '=ilike', job_name)], limit=1)
+                if job:
+                    data['job_id'] = job.id
+                else:
+                    return self._error_response(
+                        f"Job position '{job_name}' not found", 400, "JOB_NOT_FOUND")
+
+            # Resolve manager by name
+            parent_name = data.pop('parent_name', None)
+            if parent_name and 'parent_id' not in data:
+                manager = Emp.search([('name', '=ilike', parent_name)], limit=1)
+                if manager:
+                    data['parent_id'] = manager.id
+
+            # Resolve linked user by login
+            user_login = data.pop('user_login', None)
+            if user_login and 'user_id' not in data:
+                user = request.env['res.users'].search([('login', '=', user_login)], limit=1)
+                if user:
+                    data['user_id'] = user.id
+
+            employee = Emp.create(data)
+
+            response_data = {
+                'id': employee.id,
+                'name': employee.name,
+                'job_title': employee.job_title or False,
+                'job_id': {'id': employee.job_id.id, 'name': employee.job_id.name} if employee.job_id else False,
+                'department_id': {'id': employee.department_id.id, 'name': employee.department_id.name} if employee.department_id else False,
+                'parent_id': {'id': employee.parent_id.id, 'name': employee.parent_id.name} if employee.parent_id else False,
+                'work_email': employee.work_email or False,
+                'create_date': employee.create_date.isoformat() if employee.create_date else None,
+            }
+
+            return self._json_response(
+                data=response_data,
+                message="Employee created successfully",
+                status_code=201
+            )
+
+        except Exception as e:
+            _logger.error("Error creating employee: %s", str(e))
+            return self._error_response("Error creating employee", 500, "EMPLOYEE_CREATE_ERROR")
+
+    @http.route('/api/v2/users/<int:user_id>/password', type='http', auth='none', methods=['PUT'], csrf=False, readonly=False)
     def change_user_password(self, user_id):
         """Change user password (admin or own password)."""
         # Try session authentication first, then API key
@@ -990,7 +1192,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error changing password for user %s: %s", user_id, str(e))
             return self._error_response("Error changing password", 500, "PASSWORD_CHANGE_ERROR")
 
-    @http.route('/api/v2/users/<int:user_id>', type='http', auth='none', methods=['PUT'], csrf=False)
+    @http.route('/api/v2/users/<int:user_id>', type='http', auth='none', methods=['PUT'], csrf=False, readonly=False)
     def update_user(self, user_id):
         """Update user information."""
         # Try session authentication first, then API key
@@ -1140,7 +1342,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error getting user %s: %s", user_id, str(e))
             return self._error_response("Error retrieving user", 500, "USER_GET_ERROR")
 
-    @http.route('/api/v2/users/<int:user_id>/reset-password', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/users/<int:user_id>/reset-password', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def reset_user_password(self, user_id):
         """Reset user password (admin only) - generates a temporary password."""
         # Try session authentication first, then API key
@@ -1256,7 +1458,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error listing users: %s", str(e))
             return self._error_response("Error retrieving users", 500, "USERS_LIST_ERROR")
 
-    @http.route('/api/v2/users/<int:user_id>/api-key', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/users/<int:user_id>/api-key', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def generate_user_api_key(self, user_id):
         """Generate API key for a user (admin only or own API key)."""
         # Try session authentication first, then API key
@@ -1307,7 +1509,7 @@ class SimpleApiController(http.Controller):
 
     # ===== GENERIC CRUD: UPDATE =====
 
-    @http.route('/api/v2/update/<string:model>/<int:record_id>', type='http', auth='none', methods=['PUT'], csrf=False)
+    @http.route('/api/v2/update/<string:model>/<int:record_id>', type='http', auth='none', methods=['PUT'], csrf=False, readonly=False)
     def update_record(self, model, record_id):
         """Update a record in any accessible model."""
         is_valid, user = self._authenticate_session()
@@ -1362,9 +1564,140 @@ class SimpleApiController(http.Controller):
             _logger.error("Error updating %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error updating record", 500, "UPDATE_ERROR")
 
+    # ===== SALE → INVOICE =====
+
+    @http.route('/api/v2/sales/<int:order_id>/create-invoice', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def create_invoice_from_sale(self, order_id):
+        """Create an invoice from a confirmed sale order.
+
+        Uses Odoo's ``_create_invoices()`` so taxes, fiscal positions,
+        accounts and quantities are computed correctly.
+
+        Optional JSON body::
+
+            {
+                "advance_payment_method": "delivered"  // or "percentage", "fixed"
+                "amount": 50.0,          // required when method is percentage/fixed
+                "deposit_account_id": 5  // optional override for down-payment account
+            }
+
+        ``advance_payment_method`` values:
+        - ``delivered`` (default) – invoice only delivered qty
+        - ``percentage`` – down-payment invoice for *amount* %
+        - ``fixed`` – down-payment invoice for a fixed *amount*
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            # --- access checks ---
+            if 'sale.order' not in request.env:
+                return self._error_response("Sales module not installed", 404, "MODULE_NOT_FOUND")
+            if not self._check_model_access('sale.order', 'read'):
+                return self._error_response("Access denied for sale.order", 403, "ACCESS_DENIED")
+            if not self._check_model_access('account.move', 'create'):
+                return self._error_response("Access denied for account.move", 403, "ACCESS_DENIED")
+
+            order = request.env['sale.order'].browse(order_id)
+            if not order.exists():
+                return self._error_response(f"Sale order {order_id} not found", 404, "NOT_FOUND")
+
+            if order.state != 'sale':
+                return self._error_response(
+                    f"Order is in state '{order.state}'. Only confirmed orders (state='sale') can be invoiced.",
+                    400, "INVALID_STATE",
+                )
+
+            # --- optional params ---
+            body = {}
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' in content_type:
+                try:
+                    body = request.httprequest.get_json(force=True) or {}
+                except Exception:
+                    body = {}
+
+            method = body.get('advance_payment_method', 'delivered')
+            if method not in ('delivered', 'percentage', 'fixed'):
+                return self._error_response(
+                    "advance_payment_method must be 'delivered', 'percentage', or 'fixed'",
+                    400, "INVALID_PARAM",
+                )
+
+            if method in ('percentage', 'fixed') and not body.get('amount'):
+                return self._error_response(
+                    f"'amount' is required when advance_payment_method is '{method}'",
+                    400, "MISSING_PARAM",
+                )
+
+            # --- create invoice ---
+            if method == 'delivered':
+                invoices = order._create_invoices()
+            else:
+                wizard_vals = {
+                    'advance_payment_method': method,
+                    'amount': body.get('amount', 0),
+                }
+                if body.get('deposit_account_id'):
+                    wizard_vals['deposit_account_id'] = body['deposit_account_id']
+
+                wiz_env = request.env['sale.advance.payment.inv'].with_context(
+                    active_model='sale.order',
+                    active_ids=[order.id],
+                    active_id=order.id,
+                )
+                wiz = wiz_env.create(wizard_vals)
+                wiz.create_invoices()
+                invoices = order.invoice_ids.sorted('id', reverse=True)[:1]
+
+            if not invoices:
+                return self._error_response(
+                    "No invoice was created. All lines may already be invoiced.",
+                    400, "NOTHING_TO_INVOICE",
+                )
+
+            inv = invoices[0] if len(invoices) > 1 else invoices
+
+            # Apply optional date overrides
+            date_vals = {}
+            if body.get('invoice_date'):
+                date_vals['invoice_date'] = body['invoice_date']
+            if body.get('invoice_date_due'):
+                date_vals['invoice_date_due'] = body['invoice_date_due']
+            if date_vals:
+                inv.write(date_vals)
+
+            inv_data = inv.read([
+                'id', 'name', 'state', 'move_type',
+                'partner_id', 'invoice_date', 'invoice_date_due',
+                'amount_untaxed', 'amount_tax', 'amount_total',
+                'amount_residual', 'payment_state', 'currency_id',
+                'invoice_origin', 'invoice_line_ids',
+            ])[0]
+
+            return self._json_response(
+                data={'invoice': inv_data},
+                message="Invoice created from sale order",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "NOTHING_TO_INVOICE")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "INVOICE_CREATE_ERROR")
+        except Exception as e:
+            _logger.error("Error creating invoice from SO %s: %s", order_id, str(e))
+            return self._error_response("Error creating invoice", 500, "INVOICE_CREATE_ERROR")
+
     # ===== INVENTORY ADJUSTMENT =====
 
-    @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def inventory_adjust(self):
         """Adjust inventory for a product, creating proper stock moves."""
         is_valid, user = self._authenticate_session()
@@ -1511,7 +1844,7 @@ class SimpleApiController(http.Controller):
                 f"Error adjusting inventory: {str(e)}", 500, "INVENTORY_ADJUST_ERROR"
             )
 
-    @http.route('/api/v2/inventory/decrement', type='http', auth='none', methods=['POST'], csrf=False)
+    @http.route('/api/v2/inventory/decrement', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def inventory_decrement(self):
         """Decrement inventory for a product when a sale is confirmed.
 
@@ -1708,7 +2041,7 @@ class SimpleApiController(http.Controller):
 
     # ===== GENERIC CRUD: DELETE =====
 
-    @http.route('/api/v2/delete/<string:model>/<int:record_id>', type='http', auth='none', methods=['DELETE'], csrf=False)
+    @http.route('/api/v2/delete/<string:model>/<int:record_id>', type='http', auth='none', methods=['DELETE'], csrf=False, readonly=False)
     def delete_record(self, model, record_id):
         """Delete a record from any accessible model."""
         is_valid, user = self._authenticate_session()
