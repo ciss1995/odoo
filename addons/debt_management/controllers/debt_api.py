@@ -76,6 +76,10 @@ class DebtApiController(http.Controller):
                 return False, self._error_response(
                     "Invalid or expired session", 401, "INVALID_SESSION",
                 )
+            try:
+                session.sudo().write({'last_activity': datetime.now()})
+            except Exception:
+                pass  # keep auth successful even if timestamp update fails
             request.update_env(user=session.user_id.id)
             return True, session.user_id
         except Exception as e:
@@ -85,11 +89,15 @@ class DebtApiController(http.Controller):
             )
 
     def _auth(self):
-        """Try session token first, fall back to API key."""
-        ok, result = self._authenticate_session()
-        if not ok:
-            ok, result = self._authenticate()
-        return ok, result
+        """Try session token first, fall back to API key.
+
+        If a session-token header is present, use session auth exclusively
+        — don't fall back to API key, so the caller sees the real session
+        error instead of a misleading "Missing API key".
+        """
+        if request.httprequest.headers.get('session-token'):
+            return self._authenticate_session()
+        return self._authenticate()
 
     def _parse_json(self):
         ct = request.httprequest.headers.get('Content-Type', '')
@@ -158,7 +166,7 @@ class DebtApiController(http.Controller):
     # ==================================================================
 
     @http.route('/api/v2/debts', type='http', auth='none',
-                methods=['GET', 'POST'], csrf=False)
+                methods=['GET', 'POST'], csrf=False, readonly=False)
     def handle_debts(self):
         if request.httprequest.method == 'POST':
             return self._create_debt()
@@ -266,7 +274,7 @@ class DebtApiController(http.Controller):
     # ------------------------------------------------------------------
 
     @http.route('/api/v2/debts/<int:debt_id>', type='http', auth='none',
-                methods=['GET', 'PUT', 'DELETE'], csrf=False)
+                methods=['GET', 'PUT', 'DELETE'], csrf=False, readonly=False)
     def handle_debt(self, debt_id):
         if request.httprequest.method == 'PUT':
             return self._update_debt(debt_id)
@@ -353,7 +361,7 @@ class DebtApiController(http.Controller):
     # ==================================================================
 
     @http.route('/api/v2/debts/<int:debt_id>/payments', type='http',
-                auth='none', methods=['GET', 'POST'], csrf=False)
+                auth='none', methods=['GET', 'POST'], csrf=False, readonly=False)
     def handle_payments(self, debt_id):
         if request.httprequest.method == 'POST':
             return self._record_payment(debt_id)
@@ -537,7 +545,7 @@ class DebtApiController(http.Controller):
             )
 
     @http.route('/api/v2/debts/customer/<int:partner_id>/limit', type='http',
-                auth='none', methods=['PUT'], csrf=False)
+                auth='none', methods=['PUT'], csrf=False, readonly=False)
     def set_customer_limit(self, partner_id):
         ok, user = self._auth()
         if not ok:
@@ -726,7 +734,7 @@ class DebtApiController(http.Controller):
     # ==================================================================
 
     @http.route('/api/v2/debts/interest-rules', type='http', auth='none',
-                methods=['GET', 'POST'], csrf=False)
+                methods=['GET', 'POST'], csrf=False, readonly=False)
     def handle_interest_rules(self):
         if request.httprequest.method == 'POST':
             return self._create_interest_rule()

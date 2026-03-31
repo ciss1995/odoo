@@ -1,0 +1,1133 @@
+2026-03-25 18:09:00,393 5239 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 18:09:00,455 5239 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.06s) 
+2026-03-25 18:09:00,466 5239 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 18:09:00,474 5239 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-25 19:08:54,585 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 19:08:54,617 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.03s) 
+2026-03-25 19:08:54,628 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 19:08:54,635 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-25 20:15:43,612 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 20:15:43,687 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.08s) 
+2026-03-25 20:15:43,709 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 20:15:43,729 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.02s) 
+2026-03-25 20:24:42,540 121 ERROR odoo19_db odoo.service.server: WorkerCron (5239) timeout after 1200s 
+2026-03-25 20:24:43,194 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-25 20:24:43,202 90433 INFO odoo19_db odoo.service.server: Worker WorkerCron (90433) alive 
+2026-03-25 21:08:50,983 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 21:08:51,036 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-25 21:08:51,046 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 21:08:51,055 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-25 22:08:44,437 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 22:08:44,477 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-25 22:08:44,484 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 22:08:44,495 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-25 23:09:34,607 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-25 23:09:34,636 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.03s) 
+2026-03-25 23:09:34,642 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-25 23:09:34,652 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 00:08:41,279 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 00:08:41,306 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.03s) 
+2026-03-26 00:08:41,311 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 00:08:41,321 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 01:08:48,087 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 01:08:48,132 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-26 01:08:48,140 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 01:08:48,153 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 02:00:54,119 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Account: Post draft entries with auto_post enabled and accounting date up to today' (15) starting 
+2026-03-26 02:00:54,215 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Account: Post draft entries with auto_post enabled and accounting date up to today' (15) fully done (#loop 1; done 0; remaining 0; duration 0.10s) 
+2026-03-26 02:08:55,161 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 02:08:55,180 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.02s) 
+2026-03-26 02:08:55,185 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 02:08:55,195 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 03:09:02,101 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 03:09:02,131 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.03s) 
+2026-03-26 03:09:02,137 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 03:09:02,148 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 04:09:08,627 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 04:09:08,672 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-26 04:09:08,679 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 04:09:08,689 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:08:15,516 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Base: Auto-vacuum internal data' (1) starting 
+2026-03-26 05:08:15,712 5240 INFO odoo19_db odoo.addons.base.models.res_users: GC'd 0 user log entries 
+2026-03-26 05:08:15,745 5240 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-26 05:08:15,747 5240 INFO odoo19_db odoo.addons.base.models.res_users: GC 'res.users.apikeys' delete 0 entries 
+2026-03-26 05:08:15,792 5240 INFO odoo19_db odoo.addons.api_doc.models.ir_attachment: GC'd 0 /doc cached index 
+2026-03-26 05:08:15,833 5240 INFO odoo19_db odoo.addons.base.models.res_device: GC device logs delete 0 entries 
+2026-03-26 05:08:15,841 5240 INFO odoo19_db odoo.addons.base.models.res_users: GC 'auth_totp.device' delete 0 entries 
+2026-03-26 05:08:15,842 5240 INFO odoo19_db odoo.addons.base.models.res_device: GC device logs delete 0 entries 
+2026-03-26 05:08:15,849 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Base: Auto-vacuum internal data' (1) fully done (#loop 1; done 102; remaining 0; duration 0.33s) 
+2026-03-26 05:08:15,852 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Base: Portal Users Deletion' (2) starting 
+2026-03-26 05:08:15,856 5240 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Base: Portal Users Deletion' (2) fully done (#loop 1; done 0; remaining 0; duration 0.00s) 
+2026-03-26 05:09:02,199 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Post scheduled messages' (7) starting 
+2026-03-26 05:09:02,232 90433 INFO odoo19_db odoo.addons.mail.models.mail_scheduled_message: Posting 0 scheduled messages 
+2026-03-26 05:09:02,235 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Post scheduled messages' (7) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-26 05:09:02,241 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 05:09:02,249 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,251 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: send web push notification' (9) starting 
+2026-03-26 05:09:02,260 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: send web push notification' (9) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,262 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Discuss: channel member unmute' (10) starting 
+2026-03-26 05:09:02,270 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Discuss: channel member unmute' (10) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,272 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Calendar: Event Reminder' (12) starting 
+2026-03-26 05:09:02,284 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Calendar: Event Reminder' (12) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,287 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Send invoices automatically' (16) starting 
+2026-03-26 05:09:02,299 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Send invoices automatically' (16) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,301 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'HR Employee: Notify Expiring Contract or Work Permit' (19) starting 
+2026-03-26 05:09:02,325 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'HR Employee: Notify Expiring Contract or Work Permit' (19) fully done (#loop 1; done 0; remaining 0; duration 0.02s) 
+2026-03-26 05:09:02,328 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'HR Employee: Update Current Version' (20) starting 
+2026-03-26 05:09:02,345 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'HR Employee: Update Current Version' (20) fully done (#loop 1; done 0; remaining 0; duration 0.02s) 
+2026-03-26 05:09:02,348 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Skills: Add an activity to employees with missing or expiring certifications' (21) starting 
+2026-03-26 05:09:02,358 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Skills: Add an activity to employees with missing or expiring certifications' (21) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,361 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 05:09:02,372 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 05:09:02,374 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Users: Notify About Unregistered Users' (11) starting 
+2026-03-26 05:09:02,510 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Users: Notify About Unregistered Users' (11) fully done (#loop 1; done 1; remaining 0; duration 0.14s) 
+2026-03-26 06:08:55,847 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 06:08:55,885 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-26 06:08:55,891 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 06:08:55,952 90433 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.06s) 
+2026-03-26 07:11:55,069 121 ERROR odoo19_db odoo.service.server: WorkerCron (5240) timeout after 1200s 
+2026-03-26 07:11:55,993 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 07:11:56,003 50268 INFO odoo19_db odoo.service.server: Worker WorkerCron (50268) alive 
+2026-03-26 07:29:50,233 121 ERROR odoo19_db odoo.service.server: WorkerCron (90433) timeout after 1200s 
+2026-03-26 07:29:50,244 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 07:29:50,247 50406 INFO odoo19_db odoo.service.server: Worker WorkerCron (50406) alive 
+2026-03-26 07:46:43,857 121 ERROR odoo19_db odoo.service.server: WorkerCron (50268) timeout after 1200s 
+2026-03-26 07:46:44,200 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 07:46:44,203 50504 INFO odoo19_db odoo.service.server: Worker WorkerCron (50504) alive 
+2026-03-26 08:02:16,696 121 ERROR odoo19_db odoo.service.server: WorkerCron (50406) timeout after 1200s 
+2026-03-26 08:02:16,707 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 08:02:16,709 51078 INFO odoo19_db odoo.service.server: Worker WorkerCron (51078) alive 
+2026-03-26 08:02:53,292 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 08:02:53,340 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-26 08:02:53,349 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Digest Emails' (13) starting 
+2026-03-26 08:02:53,357 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Digest Emails' (13) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 08:02:53,358 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 08:02:53,366 50504 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 08:36:00,382 121 ERROR odoo19_db odoo.service.server: WorkerCron (50504) timeout after 1200s 
+2026-03-26 08:36:00,383 121 ERROR odoo19_db odoo.service.server: WorkerCron (51078) timeout after 1200s 
+2026-03-26 08:36:00,399 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 08:36:00,404 51822 INFO odoo19_db odoo.service.server: Worker WorkerCron (51822) alive 
+2026-03-26 08:36:00,404 51821 INFO odoo19_db odoo.service.server: Worker WorkerCron (51821) alive 
+2026-03-26 09:09:30,271 121 ERROR odoo19_db odoo.service.server: WorkerCron (51821) timeout after 1200s 
+2026-03-26 09:09:30,272 121 ERROR odoo19_db odoo.service.server: WorkerCron (51822) timeout after 1200s 
+2026-03-26 09:09:30,281 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 09:09:30,287 52460 INFO odoo19_db odoo.service.server: Worker WorkerCron (52460) alive 
+2026-03-26 09:09:30,288 52461 INFO odoo19_db odoo.service.server: Worker WorkerCron (52461) alive 
+2026-03-26 09:30:55,070 121 ERROR odoo19_db odoo.service.server: WorkerCron (52460) timeout after 1200s 
+2026-03-26 09:30:55,345 121 ERROR odoo19_db odoo.service.server: WorkerCron (52461) timeout after 1200s 
+2026-03-26 09:30:55,490 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 09:30:55,493 53403 INFO odoo19_db odoo.service.server: Worker WorkerCron (53403) alive 
+2026-03-26 09:30:55,493 53404 INFO odoo19_db odoo.service.server: Worker WorkerCron (53404) alive 
+2026-03-26 09:55:16,914 121 ERROR odoo19_db odoo.service.server: WorkerCron (53403) timeout after 1200s 
+2026-03-26 09:55:16,964 121 ERROR odoo19_db odoo.service.server: WorkerCron (53404) timeout after 1200s 
+2026-03-26 09:55:17,146 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 09:55:17,150 54028 INFO odoo19_db odoo.service.server: Worker WorkerCron (54028) alive 
+2026-03-26 09:55:17,151 54029 INFO odoo19_db odoo.service.server: Worker WorkerCron (54029) alive 
+2026-03-26 10:30:53,226 121 ERROR odoo19_db odoo.service.server: WorkerCron (54028) timeout after 1200s 
+2026-03-26 10:30:53,228 121 ERROR odoo19_db odoo.service.server: WorkerCron (54029) timeout after 1200s 
+2026-03-26 10:30:53,238 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 10:30:53,242 54726 INFO odoo19_db odoo.service.server: Worker WorkerCron (54726) alive 
+2026-03-26 10:30:53,243 54727 INFO odoo19_db odoo.service.server: Worker WorkerCron (54727) alive 
+2026-03-26 10:54:21,734 121 ERROR odoo19_db odoo.service.server: WorkerCron (54726) timeout after 1200s 
+2026-03-26 10:54:21,943 121 ERROR odoo19_db odoo.service.server: WorkerCron (54727) timeout after 1200s 
+2026-03-26 10:54:22,111 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 10:54:22,115 55540 INFO odoo19_db odoo.service.server: Worker WorkerCron (55540) alive 
+2026-03-26 10:54:22,116 55541 INFO odoo19_db odoo.service.server: Worker WorkerCron (55541) alive 
+2026-03-26 11:27:40,022 121 ERROR odoo19_db odoo.service.server: WorkerCron (55540) timeout after 1200s 
+2026-03-26 11:27:40,023 121 ERROR odoo19_db odoo.service.server: WorkerCron (55541) timeout after 1200s 
+2026-03-26 11:27:40,034 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 11:27:40,040 55795 INFO odoo19_db odoo.service.server: Worker WorkerCron (55795) alive 
+2026-03-26 11:27:40,042 55796 INFO odoo19_db odoo.service.server: Worker WorkerCron (55796) alive 
+2026-03-26 11:55:27,010 121 ERROR odoo19_db odoo.service.server: WorkerCron (55795) timeout after 1200s 
+2026-03-26 11:55:27,012 121 ERROR odoo19_db odoo.service.server: WorkerCron (55796) timeout after 1200s 
+2026-03-26 11:55:27,101 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 11:55:27,104 56754 INFO odoo19_db odoo.service.server: Worker WorkerCron (56754) alive 
+2026-03-26 11:55:27,106 56755 INFO odoo19_db odoo.service.server: Worker WorkerCron (56755) alive 
+2026-03-26 12:17:01,353 121 ERROR odoo19_db odoo.service.server: WorkerCron (56754) timeout after 1200s 
+2026-03-26 12:17:01,354 121 ERROR odoo19_db odoo.service.server: WorkerCron (56755) timeout after 1200s 
+2026-03-26 12:17:01,369 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 12:17:01,374 56990 INFO odoo19_db odoo.service.server: Worker WorkerCron (56990) alive 
+2026-03-26 12:17:01,376 56991 INFO odoo19_db odoo.service.server: Worker WorkerCron (56991) alive 
+2026-03-26 12:40:00,786 121 ERROR odoo19_db odoo.service.server: WorkerCron (56990) timeout after 1200s 
+2026-03-26 12:40:00,788 121 ERROR odoo19_db odoo.service.server: WorkerCron (56991) timeout after 1200s 
+2026-03-26 12:40:00,805 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 12:40:00,811 57847 INFO odoo19_db odoo.service.server: Worker WorkerCron (57847) alive 
+2026-03-26 12:40:00,811 57846 INFO odoo19_db odoo.service.server: Worker WorkerCron (57846) alive 
+2026-03-26 13:13:37,964 121 ERROR odoo19_db odoo.service.server: WorkerCron (57846) timeout after 1200s 
+2026-03-26 13:13:37,965 121 ERROR odoo19_db odoo.service.server: WorkerCron (57847) timeout after 1200s 
+2026-03-26 13:13:37,994 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 13:13:37,996 58072 INFO odoo19_db odoo.service.server: Worker WorkerCron (58072) alive 
+2026-03-26 13:13:37,997 58073 INFO odoo19_db odoo.service.server: Worker WorkerCron (58073) alive 
+2026-03-26 13:41:00,350 121 ERROR odoo19_db odoo.service.server: WorkerCron (58072) timeout after 1200s 
+2026-03-26 13:41:00,351 121 ERROR odoo19_db odoo.service.server: WorkerCron (58073) timeout after 1200s 
+2026-03-26 13:41:00,370 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 13:41:00,374 58781 INFO odoo19_db odoo.service.server: Worker WorkerCron (58781) alive 
+2026-03-26 13:41:00,374 58780 INFO odoo19_db odoo.service.server: Worker WorkerCron (58780) alive 
+2026-03-26 13:49:34,589 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 13:49:34,660 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 13:49:34,674 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 13:49:34,683 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 14:08:54,855 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 14:08:54,903 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-26 14:08:54,917 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 14:08:54,925 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 15:08:43,732 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 15:08:43,772 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-26 15:08:43,778 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 15:08:43,790 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 16:08:50,720 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 16:08:50,767 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.05s) 
+2026-03-26 16:08:50,774 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 16:08:50,786 58780 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 17:23:07,056 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 17:23:07,093 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-26 17:23:07,113 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 17:23:07,117 58781 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.00s) 
+2026-03-26 17:23:07,121 121 ERROR odoo19_db odoo.service.server: WorkerCron (58780) timeout after 1200s 
+2026-03-26 17:23:07,143 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 17:23:07,149 76030 INFO odoo19_db odoo.service.server: Worker WorkerCron (76030) alive 
+2026-03-26 17:54:27,631 121 ERROR odoo19_db odoo.service.server: WorkerCron (58781) timeout after 1200s 
+2026-03-26 17:54:27,633 121 ERROR odoo19_db odoo.service.server: WorkerCron (76030) timeout after 1200s 
+2026-03-26 17:54:27,752 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 17:54:27,755 76589 INFO odoo19_db odoo.service.server: Worker WorkerCron (76589) alive 
+2026-03-26 17:54:27,756 76590 INFO odoo19_db odoo.service.server: Worker WorkerCron (76590) alive 
+2026-03-26 18:10:54,724 76589 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 18:10:54,796 76589 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 18:10:54,809 76589 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 18:10:54,820 76589 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 18:27:51,856 121 ERROR odoo19_db odoo.service.server: WorkerCron (76590) timeout after 1200s 
+2026-03-26 18:27:51,867 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 18:27:51,869 89789 INFO odoo19_db odoo.service.server: Worker WorkerCron (89789) alive 
+2026-03-26 18:46:29,890 121 ERROR odoo19_db odoo.service.server: WorkerCron (76589) timeout after 1200s 
+2026-03-26 18:46:29,905 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 18:46:29,910 90558 INFO odoo19_db odoo.service.server: Worker WorkerCron (90558) alive 
+2026-03-26 19:01:36,215 121 ERROR odoo19_db odoo.service.server: WorkerCron (89789) timeout after 1200s 
+2026-03-26 19:01:36,319 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 19:01:36,329 90647 INFO odoo19_db odoo.service.server: Worker WorkerCron (90647) alive 
+2026-03-26 19:08:00,163 121 ERROR odoo19_db odoo.service.server: WorkerCron (90558) timeout after 1200s 
+2026-03-26 19:08:00,174 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 19:08:00,176 91245 INFO odoo19_db odoo.service.server: Worker WorkerCron (91245) alive 
+2026-03-26 19:12:42,314 90647 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 19:12:42,379 90647 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 19:12:42,387 90647 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 19:12:42,394 90647 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 20:09:35,368 91245 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 20:09:35,442 91245 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 20:09:35,457 91245 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 20:09:35,467 91245 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 21:12:03,297 121 ERROR odoo19_db odoo.service.server: WorkerCron (90647) timeout after 1200s 
+2026-03-26 21:12:03,331 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 21:12:03,336 80713 INFO odoo19_db odoo.service.server: Worker WorkerCron (80713) alive 
+2026-03-26 21:27:09,174 121 ERROR odoo19_db odoo.service.server: WorkerCron (91245) timeout after 1200s 
+2026-03-26 21:27:09,219 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 21:27:09,225 80820 INFO odoo19_db odoo.service.server: Worker WorkerCron (80820) alive 
+2026-03-26 21:45:04,910 121 ERROR odoo19_db odoo.service.server: WorkerCron (80713) timeout after 1200s 
+2026-03-26 21:45:04,962 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 21:45:04,965 81695 INFO odoo19_db odoo.service.server: Worker WorkerCron (81695) alive 
+2026-03-26 21:45:17,581 80820 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 21:45:17,681 80820 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.10s) 
+2026-03-26 21:45:17,694 80820 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 21:45:17,707 80820 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 22:13:26,481 121 ERROR odoo19_db odoo.service.server: WorkerCron (80820) timeout after 1200s 
+2026-03-26 22:13:26,482 121 ERROR odoo19_db odoo.service.server: WorkerCron (81695) timeout after 1200s 
+2026-03-26 22:13:26,495 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 22:13:26,497 84101 INFO odoo19_db odoo.service.server: Worker WorkerCron (84101) alive 
+2026-03-26 22:13:26,498 84102 INFO odoo19_db odoo.service.server: Worker WorkerCron (84102) alive 
+2026-03-26 22:44:32,107 121 ERROR odoo19_db odoo.service.server: WorkerCron (84101) timeout after 1200s 
+2026-03-26 22:44:32,111 121 ERROR odoo19_db odoo.service.server: WorkerCron (84102) timeout after 1200s 
+2026-03-26 22:44:32,130 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 22:44:32,139 85054 INFO odoo19_db odoo.service.server: Worker WorkerCron (85054) alive 
+2026-03-26 22:44:32,140 85055 INFO odoo19_db odoo.service.server: Worker WorkerCron (85055) alive 
+2026-03-26 22:45:51,344 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 22:45:51,414 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 22:45:51,423 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 22:45:51,430 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 23:11:56,028 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 23:11:56,064 85054 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.04s) 
+2026-03-26 23:11:56,080 121 ERROR odoo19_db odoo.service.server: WorkerCron (85054) timeout after 1200s 
+2026-03-26 23:11:56,082 121 ERROR odoo19_db odoo.service.server: WorkerCron (85055) timeout after 1200s 
+2026-03-26 23:11:56,098 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 23:11:56,105 91367 INFO odoo19_db odoo.service.server: Worker WorkerCron (91367) alive 
+2026-03-26 23:11:56,106 91368 INFO odoo19_db odoo.service.server: Worker WorkerCron (91368) alive 
+2026-03-26 23:13:10,351 91367 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-26 23:13:10,420 91367 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-26 23:13:10,434 91367 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-26 23:13:10,443 91367 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-26 23:57:11,455 121 ERROR odoo19_db odoo.service.server: WorkerCron (91367) timeout after 1200s 
+2026-03-26 23:57:11,457 121 ERROR odoo19_db odoo.service.server: WorkerCron (91368) timeout after 1200s 
+2026-03-26 23:57:11,474 121 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-26 23:57:11,478 94131 INFO odoo19_db odoo.service.server: Worker WorkerCron (94131) alive 
+2026-03-26 23:57:11,478 94132 INFO odoo19_db odoo.service.server: Worker WorkerCron (94132) alive 
+2026-03-27 00:23:46,470 94131 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-27 00:23:46,540 94131 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-27 00:23:46,553 94131 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-27 00:23:46,562 94131 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-27 01:09:06,855 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-27 01:09:06,924 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.07s) 
+2026-03-27 01:09:06,938 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-27 01:09:06,946 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-27 02:00:48,522 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Account: Post draft entries with auto_post enabled and accounting date up to today' (15) starting 
+2026-03-27 02:00:48,600 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Account: Post draft entries with auto_post enabled and accounting date up to today' (15) fully done (#loop 1; done 0; remaining 0; duration 0.08s) 
+2026-03-27 02:09:04,849 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) starting 
+2026-03-27 02:09:04,881 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Notification: Notify scheduled messages' (8) fully done (#loop 1; done 0; remaining 0; duration 0.03s) 
+2026-03-27 02:09:04,893 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) starting 
+2026-03-27 02:09:04,908 94132 INFO odoo19_db odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) fully done (#loop 1; done 0; remaining 0; duration 0.01s) 
+2026-03-27 02:19:51,713 226 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-27 02:19:51,811 226 INFO odoo19_db werkzeug: 127.0.0.1 - - [27/Mar/2026 02:19:51] "GET /api/v2/auth/test HTTP/1.1" 200 - 10 0.040 0.110
+2026-03-27 02:19:52,866 224 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-27 02:19:52,891 224 INFO odoo19_db werkzeug: 127.0.0.1 - - [27/Mar/2026 02:19:52] "GET /api/v2/auth/test HTTP/1.1" 200 - 10 0.012 0.032
+2026-03-27 02:20:19,805 121 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-27 02:20:19,817 94131 INFO odoo19_db odoo.service.server: Worker (94131) exiting. request_count: 113, registry count: 1. 
+2026-03-27 02:20:19,827 94132 INFO odoo19_db odoo.service.server: Worker (94132) exiting. request_count: 111, registry count: 1. 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,585 32043 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:24,586 32043 INFO ? odoo: Odoo version 19.0 
+2026-03-27 02:20:24,586 32043 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-27 02:20:24,586 32043 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-27 02:20:24,586 32043 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-27 02:20:24,995 32043 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8070 
+2026-03-27 02:20:25,046 32043 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-27 02:20:25,048 32043 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.00s, 0 queries (+0 extra) 
+2026-03-27 02:20:25,062 32043 INFO odoo19_db odoo.modules.loading: updating modules list 
+2026-03-27 02:20:25,064 32043 INFO odoo19_db odoo.addons.base.models.ir_module: ALLOW access to module.update_list on [] to user __system__ #1 via n/a 
+2026-03-27 02:20:25,613 32043 INFO odoo19_db odoo.addons.base.models.ir_module: ALLOW access to module.button_upgrade on ['Base REST API'] to user __system__ #1 via n/a 
+2026-03-27 02:20:25,613 32043 INFO odoo19_db odoo.addons.base.models.ir_module: ALLOW access to module.update_list on ['Base REST API'] to user __system__ #1 via n/a 
+2026-03-27 02:20:25,883 32043 INFO odoo19_db odoo.addons.base.models.ir_module: ALLOW access to module.button_install on [] to user __system__ #1 via n/a 
+2026-03-27 02:20:25,902 32043 INFO odoo19_db odoo.modules.loading: loading 65 modules... 
+2026-03-27 02:20:26,222 32043 INFO odoo19_db odoo.modules.loading: Loading module base_api (60/65) 
+2026-03-27 02:20:26,308 32043 INFO odoo19_db odoo.registry: module base_api: creating or updating database tables 
+2026-03-27 02:20:26,384 32043 INFO odoo19_db odoo.modules.loading: loading base_api/security/ir.model.access.csv 
+2026-03-27 02:20:26,389 32043 INFO odoo19_db odoo.modules.loading: loading base_api/views/res_users_views.xml 
+2026-03-27 02:20:26,429 32043 INFO odoo19_db odoo.modules.loading: Module base_api loaded in 0.21s, 108 queries (+108 other) 
+2026-03-27 02:20:26,439 32043 INFO odoo19_db odoo.modules.loading: 65 modules loaded in 0.54s, 108 queries (+108 extra) 
+2026-03-27 02:20:26,731 32043 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-27 02:20:26,737 32043 INFO odoo19_db odoo.registry: Registry changed, signaling through the database 
+2026-03-27 02:20:26,737 32043 INFO odoo19_db odoo.registry: Registry loaded in 1.742s 
+2026-03-27 02:20:26,737 32043 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-27 02:20:26,740 32043 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-27 02:20:26,744 32180 INFO odoo19_db odoo.service.server: Worker WorkerHTTP (32180) alive 
+2026-03-27 02:20:26,745 32181 INFO odoo19_db odoo.service.server: Worker WorkerHTTP (32181) alive 
+2026-03-27 02:20:26,746 32182 INFO odoo19_db odoo.service.server: Worker WorkerHTTP (32182) alive 
+2026-03-27 02:20:26,748 32183 INFO odoo19_db odoo.service.server: Worker WorkerHTTP (32183) alive 
+2026-03-27 02:20:26,752 32185 INFO odoo19_db odoo.service.server: Worker WorkerCron (32185) alive 
+2026-03-27 02:20:26,754 32186 INFO odoo19_db odoo.service.server: Worker WorkerCron (32186) alive 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-27 02:20:26,970 32184 INFO ? odoo: Odoo version 19.0 
+2026-03-27 02:20:26,970 32184 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-27 02:20:26,970 32184 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-27 02:20:26,970 32184 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-27 02:20:27,103 32184 INFO ? odoo.service.server: Evented Service (longpolling) running on 127.0.0.1:8072 
+2026-03-27 02:21:17,817 32043 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-27 02:21:17,873 32185 INFO odoo19_db odoo.service.server: Worker (32185) exiting. request_count: 0, registry count: 1. 
+2026-03-27 02:21:17,879 32186 INFO odoo19_db odoo.service.server: Worker (32186) exiting. request_count: 0, registry count: 1. 
+2026-03-31 00:30:51,561 25340 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:30:51,562 25340 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:30:51,562 25340 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:30:51,562 25340 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:30:51,562 25340 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:30:51,890 25340 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:30:51,916 25340 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:30:51,958 25340 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:30:52,060 25340 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.10s, 0 queries (+0 extra) 
+2026-03-31 00:30:52,076 25340 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:30:52,405 25340 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.33s, 0 queries (+0 extra) 
+2026-03-31 00:30:52,478 25340 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:30:52,518 25340 INFO odoo19_db odoo.registry: Registry loaded in 0.628s 
+2026-03-31 00:30:52,518 25340 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:30:52,535 25340 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:30:53,686 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/554866f/mail.assets_public.min.js (id:773) 
+2026-03-31 00:30:53,688 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Deleting attachments [725] (matching /web/assets/_______/mail.assets_public.min.js) because it was replaced with /web/assets/554866f/mail.assets_public.min.js 
+2026-03-31 00:30:55,289 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/fd40658/web.assets_unit_tests_setup.min.js (id:774) 
+2026-03-31 00:30:55,290 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Deleting attachments [739] (matching /web/assets/_______/web.assets_unit_tests_setup.min.js) because it was replaced with /web/assets/fd40658/web.assets_unit_tests_setup.min.js 
+2026-03-31 00:30:56,542 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/f2c909a/web.assets_web.min.js (id:775) 
+2026-03-31 00:30:56,542 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Deleting attachments [740] (matching /web/assets/_______/web.assets_web.min.js) because it was replaced with /web/assets/f2c909a/web.assets_web.min.js 
+2026-03-31 00:30:58,194 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Generating a new asset bundle attachment /web/assets/4de9980/web.tests_assets.min.js (id:776) 
+2026-03-31 00:30:58,195 25340 INFO odoo19_db odoo.addons.base.models.assetsbundle: Deleting attachments [745] (matching /web/assets/_______/web.tests_assets.min.js) because it was replaced with /web/assets/4de9980/web.tests_assets.min.js 
+2026-03-31 00:30:58,198 25340 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 5.3361101150512695 seconds 
+2026-03-31 00:30:58,408 25340 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.21006178855895996 seconds 
+2026-03-31 00:30:58,422 25340 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:30:58,423 25340 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:30:58,424 25340 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 4 checked, 0 removed 
+2026-03-31 00:30:58,438 25340 INFO odoo19_db odoo.service.server: 0 post-tests in 5.92s, 266 queries 
+2026-03-31 00:30:58,438 25340 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.02s 1 queries 
+2026-03-31 00:30:58,438 25340 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:01,929 25722 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:01,930 25722 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:01,930 25722 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:01,930 25722 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:01,930 25722 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:02,077 25722 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:02,077 25722 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:02,088 25722 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:02,103 25722 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:02,157 25722 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:02,166 25722 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:02,377 25722 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.21s, 0 queries (+0 extra) 
+2026-03-31 00:31:02,442 25722 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:02,471 25722 INFO odoo19_db odoo.registry: Registry loaded in 0.394s 
+2026-03-31 00:31:02,471 25722 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:02,488 25722 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:03,027 25722 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.39600491523742676 seconds 
+2026-03-31 00:31:03,198 25722 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17167282104492188 seconds 
+2026-03-31 00:31:03,200 25722 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:03,200 25722 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:03,201 25722 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:03,213 25722 INFO odoo19_db odoo.service.server: 0 post-tests in 0.74s, 237 queries 
+2026-03-31 00:31:03,213 25722 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.01s 0 queries 
+2026-03-31 00:31:03,213 25722 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:06,369 25960 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:06,369 25960 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:06,369 25960 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:06,369 25960 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:06,487 25960 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:06,487 25960 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:06,497 25960 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:06,512 25960 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:06,565 25960 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:06,573 25960 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:06,781 25960 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.21s, 0 queries (+0 extra) 
+2026-03-31 00:31:06,845 25960 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:06,876 25960 INFO odoo19_db odoo.registry: Registry loaded in 0.388s 
+2026-03-31 00:31:06,876 25960 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:06,893 25960 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:07,424 25960 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.39241480827331543 seconds 
+2026-03-31 00:31:07,597 25960 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17223501205444336 seconds 
+2026-03-31 00:31:07,598 25960 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:07,598 25960 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:07,599 25960 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:07,612 25960 INFO odoo19_db odoo.service.server: 0 post-tests in 0.74s, 237 queries 
+2026-03-31 00:31:07,612 25960 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.01s 0 queries 
+2026-03-31 00:31:07,612 25960 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:11,089 26166 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:11,089 26166 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:11,089 26166 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:11,089 26166 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:11,208 26166 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:11,209 26166 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:11,219 26166 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:11,232 26166 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:11,285 26166 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:11,293 26166 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:11,505 26166 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.21s, 0 queries (+0 extra) 
+2026-03-31 00:31:11,570 26166 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:11,600 26166 INFO odoo19_db odoo.registry: Registry loaded in 0.391s 
+2026-03-31 00:31:11,600 26166 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:11,617 26166 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:12,166 26166 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.409714937210083 seconds 
+2026-03-31 00:31:12,336 26166 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.1706230640411377 seconds 
+2026-03-31 00:31:12,338 26166 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:12,338 26166 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:12,339 26166 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:12,352 26166 INFO odoo19_db odoo.service.server: 0 post-tests in 0.75s, 237 queries 
+2026-03-31 00:31:12,353 26166 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.02s 0 queries 
+2026-03-31 00:31:12,353 26166 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:15,611 26396 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:15,611 26396 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:15,611 26396 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:15,611 26396 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:15,733 26396 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:15,734 26396 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:15,744 26396 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:15,758 26396 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:15,812 26396 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:15,821 26396 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:16,044 26396 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.22s, 0 queries (+0 extra) 
+2026-03-31 00:31:16,109 26396 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:16,138 26396 INFO odoo19_db odoo.registry: Registry loaded in 0.405s 
+2026-03-31 00:31:16,139 26396 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:16,155 26396 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:16,698 26396 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.39676976203918457 seconds 
+2026-03-31 00:31:16,874 26396 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17585086822509766 seconds 
+2026-03-31 00:31:16,876 26396 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:16,876 26396 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:16,877 26396 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:16,891 26396 INFO odoo19_db odoo.service.server: 0 post-tests in 0.75s, 237 queries 
+2026-03-31 00:31:16,891 26396 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.02s 0 queries 
+2026-03-31 00:31:16,891 26396 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:20,694 26627 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:20,694 26627 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:20,694 26627 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:20,694 26627 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:20,814 26627 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:20,814 26627 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:20,825 26627 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:20,840 26627 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:20,893 26627 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:20,902 26627 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:21,117 26627 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.21s, 0 queries (+0 extra) 
+2026-03-31 00:31:21,182 26627 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:21,214 26627 INFO odoo19_db odoo.registry: Registry loaded in 0.399s 
+2026-03-31 00:31:21,214 26627 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:21,231 26627 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:21,779 26627 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.4058849811553955 seconds 
+2026-03-31 00:31:21,957 26627 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17777085304260254 seconds 
+2026-03-31 00:31:21,959 26627 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:21,959 26627 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:21,960 26627 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:21,973 26627 INFO odoo19_db odoo.service.server: 0 post-tests in 0.76s, 237 queries 
+2026-03-31 00:31:21,973 26627 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.02s 0 queries 
+2026-03-31 00:31:21,973 26627 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:26,041 26856 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:26,042 26856 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:26,042 26856 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:26,042 26856 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:26,042 26856 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:26,160 26856 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:26,160 26856 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:26,170 26856 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:26,184 26856 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:26,238 26856 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:26,246 26856 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:26,460 26856 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.21s, 0 queries (+0 extra) 
+2026-03-31 00:31:26,524 26856 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:26,556 26856 INFO odoo19_db odoo.registry: Registry loaded in 0.395s 
+2026-03-31 00:31:26,556 26856 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:26,573 26856 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:27,114 26856 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.4013826847076416 seconds 
+2026-03-31 00:31:27,288 26856 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17365789413452148 seconds 
+2026-03-31 00:31:27,289 26856 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:27,289 26856 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:27,290 26856 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:27,302 26856 INFO odoo19_db odoo.service.server: 0 post-tests in 0.75s, 237 queries 
+2026-03-31 00:31:27,302 26856 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.01s 0 queries 
+2026-03-31 00:31:27,302 26856 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:31,399 27112 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:31,399 27112 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:31,399 27112 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:31,399 27112 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:31,520 27112 WARNING ? odoo.service.server: Unit testing in workers mode could fail; use --workers 0. 
+2026-03-31 00:31:31,520 27112 INFO ? odoo.service.server: HTTP service (werkzeug) running on 127.0.0.1:8069 
+2026-03-31 00:31:31,530 27112 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:31,543 27112 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:31,596 27112 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:31,604 27112 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:31,830 27112 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.23s, 0 queries (+0 extra) 
+2026-03-31 00:31:31,900 27112 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:31,931 27112 INFO odoo19_db odoo.registry: Registry loaded in 0.411s 
+2026-03-31 00:31:31,931 27112 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:31,949 27112 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:32,560 27112 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.4557068347930908 seconds 
+2026-03-31 00:31:32,764 27112 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.20408391952514648 seconds 
+2026-03-31 00:31:32,766 27112 INFO odoo19_db odoo.tests.suite: ====================================================================== 
+2026-03-31 00:31:32,766 27112 ERROR odoo19_db odoo.tests.suite: ERROR: setUpClass (odoo.addons.base_api.tests.test_sale_invoice.TestSaleCreateInvoice)
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 15, in setUpClass
+    super().setUpClass()
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2211, in setUpClass
+    ICP.set_param('web.base.url', cls.base_url())
+                                  ^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2219, in base_url
+    return f"http://{HOST}:{cls.http_port():d}"
+                            ^^^^^^^^^^^^^^^
+  File "/Users/cheickcisse/Projects/odoo/odoo/tests/common.py", line 2225, in http_port
+    return odoo.service.server.server.httpd.server_port
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PreforkServer' object has no attribute 'httpd'
+ 
+2026-03-31 00:31:32,767 27112 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:32,781 27112 INFO odoo19_db odoo.service.server: 0 post-tests in 0.85s, 237 queries 
+2026-03-31 00:31:32,781 27112 INFO odoo19_db odoo.tests.stats: base_api: 2 tests 0.02s 0 queries 
+2026-03-31 00:31:32,781 27112 INFO odoo19_db odoo.service.server: Stopping workers gracefully 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:31:41,817 27493 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:31:41,817 27493 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:31:41,817 27493 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:31:41,817 27493 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:31:41,954 27493 INFO ? odoo.service.server: HTTP service (werkzeug) running on 1.0.0.127.in-addr.arpa:8069 
+2026-03-31 00:31:41,964 27493 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:31:41,978 27493 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:31:42,032 27493 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:31:42,041 27493 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:31:42,265 27493 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.22s, 0 queries (+0 extra) 
+2026-03-31 00:31:42,331 27493 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:31:42,363 27493 INFO odoo19_db odoo.registry: Registry loaded in 0.409s 
+2026-03-31 00:31:42,364 27493 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:31:42,381 27493 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:31:42,926 27493 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.40227580070495605 seconds 
+2026-03-31 00:31:43,096 27493 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.1702897548675537 seconds 
+2026-03-31 00:31:43,255 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_already_fully_invoiced ... 
+2026-03-31 00:31:43,352 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:43,366 27493 WARNING odoo19_db py.warnings: /Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py:139: DeprecationWarning: check_access_rights() is deprecated since 18.0; use check_access() instead.
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2825, in __call__
+    response = request._serve_db()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2298, in _serve_db
+    return service_model.retrying(serve_func, env=self.env)
+  File "/Users/cheickcisse/Projects/odoo/odoo/service/model.py", line 188, in retrying
+    result = func()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2353, in _serve_ir_http
+    response = self.dispatcher.dispatch(rule.endpoint, args)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2475, in dispatch
+    return self.request.registry['ir.http']._dispatch(endpoint)
+  File "/Users/cheickcisse/Projects/odoo/odoo/addons/base/models/ir_http.py", line 355, in _dispatch
+    result = endpoint(**request.params)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 808, in route_wrapper
+    result = endpoint(self, *args, **params_ok)
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 1600, in create_invoice_from_sale
+    if not self._check_model_access('sale.order', 'read'):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 139, in _check_model_access
+    model.check_access_rights(operation)
+ 
+2026-03-31 00:31:43,670 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:43] "POST /api/v2/sales/14/create-invoice HTTP/1.1" 201 - 156 0.154 0.174
+2026-03-31 00:31:43,686 27493 ERROR odoo19_db odoo.addons.base_api.controllers.simple_api: Error creating invoice from SO 14: Cannot create an invoice. No items are available to invoice.
+
+To resolve this issue, please ensure that:
+   • The products have been delivered before attempting to invoice them.
+   • The invoicing policy of the product is configured correctly.
+
+If you want to invoice based on ordered quantities instead:
+   • For consumable or storable products, open the product, go to the 'General Information' tab and change the 'Invoicing Policy' from 'Delivered Quantities' to 'Ordered Quantities'.
+   • For services (and other products), change the 'Invoicing Policy' to 'Prepaid/Fixed Price'.
+ 
+2026-03-31 00:31:43,686 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:43] "POST /api/v2/sales/14/create-invoice HTTP/1.1" 500 - 13 0.007 0.008
+2026-03-31 00:31:43,688 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_delivered_default ... 
+2026-03-31 00:31:43,728 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:43,866 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:43] "POST /api/v2/sales/15/create-invoice HTTP/1.1" 201 - 156 0.081 0.063
+2026-03-31 00:31:43,868 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_explicit_delivered ... 
+2026-03-31 00:31:43,912 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,057 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/16/create-invoice HTTP/1.1" 201 - 156 0.084 0.068
+2026-03-31 00:31:44,058 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_draft_order_rejected ... 
+2026-03-31 00:31:44,103 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,121 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/17/create-invoice HTTP/1.1" 400 - 16 0.009 0.016
+2026-03-31 00:31:44,121 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_fixed_without_amount_rejected ... 
+2026-03-31 00:31:44,161 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,178 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/18/create-invoice HTTP/1.1" 400 - 16 0.008 0.015
+2026-03-31 00:31:44,178 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invalid_method_rejected ... 
+2026-03-31 00:31:44,215 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,231 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/19/create-invoice HTTP/1.1" 400 - 16 0.008 0.015
+2026-03-31 00:31:44,232 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_amounts_match_order ... 
+2026-03-31 00:31:44,269 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,410 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/20/create-invoice HTTP/1.1" 201 - 156 0.084 0.064
+2026-03-31 00:31:44,410 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: ====================================================================== 
+2026-03-31 00:31:44,410 27493 ERROR odoo19_db odoo.addons.base_api.tests.test_sale_invoice: FAIL: TestSaleCreateInvoice.test_invoice_amounts_match_order
+Traceback (most recent call last):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/tests/test_sale_invoice.py", line 121, in test_invoice_amounts_match_order
+    self.assertAlmostEqual(inv['amount_total'], 300.0, places=2)
+AssertionError: 345.0 != 300.0 within 2 places (45.0 difference)
+ 
+2026-03-31 00:31:44,411 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_response_fields ... 
+2026-03-31 00:31:44,454 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,597 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/21/create-invoice HTTP/1.1" 201 - 156 0.083 0.068
+2026-03-31 00:31:44,598 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_order_not_found ... 
+2026-03-31 00:31:44,611 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,629 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/999999/create-invoice HTTP/1.1" 404 - 18 0.008 0.017
+2026-03-31 00:31:44,630 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_percentage_without_amount_rejected ... 
+2026-03-31 00:31:44,673 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,690 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/22/create-invoice HTTP/1.1" 400 - 16 0.008 0.016
+2026-03-31 00:31:44,691 27493 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_requires_auth ... 
+2026-03-31 00:31:44,727 27493 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:31:44,736 27493 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:31:44] "POST /api/v2/sales/23/create-invoice HTTP/1.1" 401 - 3 0.002 0.013
+2026-03-31 00:31:44,738 27493 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:31:44,752 27493 INFO odoo19_db odoo.service.server: 11 post-tests in 2.39s, 1829 queries 
+2026-03-31 00:31:44,753 27493 INFO odoo19_db odoo.tests.stats: base_api: 13 tests 1.65s 1592 queries 
+2026-03-31 00:31:44,753 27493 ERROR odoo19_db odoo.tests.result: 1 failed, 0 error(s) of 11 tests when loading database 'odoo19_db' 
+2026-03-31 00:31:44,753 27493 INFO odoo19_db odoo.service.server: Initiating shutdown 
+2026-03-31 00:31:44,753 27493 INFO odoo19_db odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-31 00:31:45,221 27493 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,789 29102 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 00:32:34,790 29102 INFO ? odoo: Odoo version 19.0 
+2026-03-31 00:32:34,790 29102 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 00:32:34,790 29102 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 00:32:34,790 29102 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 00:32:34,916 29102 INFO ? odoo.service.server: HTTP service (werkzeug) running on 1.0.0.127.in-addr.arpa:8069 
+2026-03-31 00:32:34,926 29102 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 00:32:34,938 29102 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 00:32:34,992 29102 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.05s, 0 queries (+0 extra) 
+2026-03-31 00:32:35,001 29102 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 00:32:35,229 29102 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.23s, 0 queries (+0 extra) 
+2026-03-31 00:32:35,293 29102 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 00:32:35,323 29102 INFO odoo19_db odoo.registry: Registry loaded in 0.407s 
+2026-03-31 00:32:35,323 29102 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 00:32:35,340 29102 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 00:32:35,899 29102 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.3985860347747803 seconds 
+2026-03-31 00:32:36,079 29102 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17989301681518555 seconds 
+2026-03-31 00:32:36,190 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_already_fully_invoiced ... 
+2026-03-31 00:32:36,249 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:36,260 29102 WARNING odoo19_db py.warnings: /Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py:139: DeprecationWarning: check_access_rights() is deprecated since 18.0; use check_access() instead.
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2825, in __call__
+    response = request._serve_db()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2298, in _serve_db
+    return service_model.retrying(serve_func, env=self.env)
+  File "/Users/cheickcisse/Projects/odoo/odoo/service/model.py", line 188, in retrying
+    result = func()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2353, in _serve_ir_http
+    response = self.dispatcher.dispatch(rule.endpoint, args)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2475, in dispatch
+    return self.request.registry['ir.http']._dispatch(endpoint)
+  File "/Users/cheickcisse/Projects/odoo/odoo/addons/base/models/ir_http.py", line 355, in _dispatch
+    result = endpoint(**request.params)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 808, in route_wrapper
+    result = endpoint(self, *args, **params_ok)
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 1600, in create_invoice_from_sale
+    if not self._check_model_access('sale.order', 'read'):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 139, in _check_model_access
+    model.check_access_rights(operation)
+ 
+2026-03-31 00:32:36,517 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:36] "POST /api/v2/sales/24/create-invoice HTTP/1.1" 201 - 156 0.102 0.173
+2026-03-31 00:32:36,530 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:36] "POST /api/v2/sales/24/create-invoice HTTP/1.1" 400 - 13 0.005 0.007
+2026-03-31 00:32:36,531 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_delivered_default ... 
+2026-03-31 00:32:36,566 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:36,701 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:36] "POST /api/v2/sales/25/create-invoice HTTP/1.1" 201 - 156 0.080 0.060
+2026-03-31 00:32:36,702 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_explicit_delivered ... 
+2026-03-31 00:32:36,745 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:36,885 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:36] "POST /api/v2/sales/26/create-invoice HTTP/1.1" 201 - 156 0.083 0.065
+2026-03-31 00:32:36,886 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_draft_order_rejected ... 
+2026-03-31 00:32:36,932 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:36,949 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:36] "POST /api/v2/sales/27/create-invoice HTTP/1.1" 400 - 16 0.008 0.016
+2026-03-31 00:32:36,950 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_fixed_without_amount_rejected ... 
+2026-03-31 00:32:36,990 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,006 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/28/create-invoice HTTP/1.1" 400 - 16 0.007 0.016
+2026-03-31 00:32:37,007 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invalid_method_rejected ... 
+2026-03-31 00:32:37,043 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,058 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/29/create-invoice HTTP/1.1" 400 - 16 0.007 0.016
+2026-03-31 00:32:37,059 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_amounts_match_order ... 
+2026-03-31 00:32:37,096 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,232 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/30/create-invoice HTTP/1.1" 201 - 156 0.080 0.063
+2026-03-31 00:32:37,233 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_response_fields ... 
+2026-03-31 00:32:37,276 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,417 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/31/create-invoice HTTP/1.1" 201 - 156 0.084 0.065
+2026-03-31 00:32:37,418 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_order_not_found ... 
+2026-03-31 00:32:37,430 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,449 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/999999/create-invoice HTTP/1.1" 404 - 18 0.010 0.016
+2026-03-31 00:32:37,449 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_percentage_without_amount_rejected ... 
+2026-03-31 00:32:37,493 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,511 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/32/create-invoice HTTP/1.1" 400 - 16 0.009 0.016
+2026-03-31 00:32:37,512 29102 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_requires_auth ... 
+2026-03-31 00:32:37,549 29102 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 00:32:37,557 29102 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 00:32:37] "POST /api/v2/sales/33/create-invoice HTTP/1.1" 401 - 3 0.002 0.013
+2026-03-31 00:32:37,560 29102 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 00:32:37,574 29102 INFO odoo19_db odoo.service.server: 11 post-tests in 2.25s, 1829 queries 
+2026-03-31 00:32:37,574 29102 INFO odoo19_db odoo.tests.stats: base_api: 13 tests 1.49s 1592 queries 
+2026-03-31 00:32:37,574 29102 INFO odoo19_db odoo.tests.result: 0 failed, 0 error(s) of 11 tests when loading database 'odoo19_db' 
+2026-03-31 00:32:37,574 29102 INFO odoo19_db odoo.service.server: Initiating shutdown 
+2026-03-31 00:32:37,574 29102 INFO odoo19_db odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-31 00:32:38,042 29102 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
+2026-03-31 01:57:54,093 74251 WARNING ? odoo.tools.config: unknown option 'longpolling_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'session_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'session_cookie_httponly' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'session_cookie_secure' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'log_rotate' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: option log_db reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'worker_class' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'max_requests' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'max_requests_jitter' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: option dev_mode reads 'False' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf but isn't a boolean option, skip 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'debug_mode' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'limit_upload_file_size' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'worker_timeout' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'keepalive' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'db_retry' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'xmlrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'xmlrpc_interface' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'xmlrpc_port' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'jsonrpc' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 WARNING ? odoo.tools.config: unknown option 'enable_cache' in the config file at /Users/cheickcisse/Projects/odoo/production-updated.conf, option stored as-is, without parsing 
+2026-03-31 01:57:54,094 74251 INFO ? odoo: Odoo version 19.0 
+2026-03-31 01:57:54,094 74251 INFO ? odoo: Using configuration file at /Users/cheickcisse/Projects/odoo/production-updated.conf 
+2026-03-31 01:57:54,094 74251 INFO ? odoo: addons paths: _NamespacePath(['/Users/cheickcisse/Projects/odoo/odoo/addons', '/Users/cheickcisse/Projects/odoo/.odoo-data/addons/19.0', '/Users/cheickcisse/Projects/odoo/addons']) 
+2026-03-31 01:57:54,094 74251 INFO ? odoo: database: cheickcisse@default:5432 
+2026-03-31 01:57:54,314 74251 INFO ? odoo.service.server: HTTP service (werkzeug) running on 1.0.0.127.in-addr.arpa:8069 
+2026-03-31 01:57:54,332 74251 INFO odoo19_db odoo.tests.common: Importing test framework 
+2026-03-31 01:57:54,350 74251 INFO odoo19_db odoo.modules.loading: loading 1 modules... 
+2026-03-31 01:57:54,447 74251 INFO odoo19_db odoo.modules.loading: 1 modules loaded in 0.10s, 0 queries (+0 extra) 
+2026-03-31 01:57:54,455 74251 INFO odoo19_db odoo.modules.loading: loading 66 modules... 
+2026-03-31 01:57:54,765 74251 INFO odoo19_db odoo.modules.loading: 66 modules loaded in 0.31s, 0 queries (+0 extra) 
+2026-03-31 01:57:54,834 74251 INFO odoo19_db odoo.modules.loading: Modules loaded. 
+2026-03-31 01:57:54,865 74251 INFO odoo19_db odoo.registry: Registry loaded in 0.551s 
+2026-03-31 01:57:54,865 74251 INFO odoo19_db odoo.service.server: Starting post tests 
+2026-03-31 01:57:54,882 74251 INFO odoo19_db odoo.addons.base.models.ir_qweb: Pregenerating assets bundles 
+2026-03-31 01:57:55,589 74251 INFO odoo19_db odoo.addons.base.models.ir_qweb: JS Assets bundles generated in 0.3988380432128906 seconds 
+2026-03-31 01:57:55,763 74251 INFO odoo19_db odoo.addons.base.models.ir_qweb: CSS Assets bundles generated in 0.17424392700195312 seconds 
+2026-03-31 01:57:55,902 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_already_fully_invoiced ... 
+2026-03-31 01:57:55,950 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:55,964 74251 WARNING odoo19_db py.warnings: /Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py:139: DeprecationWarning: check_access_rights() is deprecated since 18.0; use check_access() instead.
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2825, in __call__
+    response = request._serve_db()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2298, in _serve_db
+    return service_model.retrying(serve_func, env=self.env)
+  File "/Users/cheickcisse/Projects/odoo/odoo/service/model.py", line 188, in retrying
+    result = func()
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2353, in _serve_ir_http
+    response = self.dispatcher.dispatch(rule.endpoint, args)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 2475, in dispatch
+    return self.request.registry['ir.http']._dispatch(endpoint)
+  File "/Users/cheickcisse/Projects/odoo/odoo/addons/base/models/ir_http.py", line 355, in _dispatch
+    result = endpoint(**request.params)
+  File "/Users/cheickcisse/Projects/odoo/odoo/http.py", line 808, in route_wrapper
+    result = endpoint(self, *args, **params_ok)
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 1600, in create_invoice_from_sale
+    if not self._check_model_access('sale.order', 'read'):
+  File "/Users/cheickcisse/Projects/odoo/addons/base_api/controllers/simple_api.py", line 139, in _check_model_access
+    model.check_access_rights(operation)
+ 
+2026-03-31 01:57:56,211 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/34/create-invoice HTTP/1.1" 201 - 156 0.105 0.160
+2026-03-31 01:57:56,225 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/34/create-invoice HTTP/1.1" 400 - 13 0.007 0.006
+2026-03-31 01:57:56,227 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_delivered_default ... 
+2026-03-31 01:57:56,276 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,414 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/35/create-invoice HTTP/1.1" 201 - 156 0.080 0.064
+2026-03-31 01:57:56,415 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_explicit_delivered ... 
+2026-03-31 01:57:56,454 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,583 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/36/create-invoice HTTP/1.1" 201 - 156 0.076 0.061
+2026-03-31 01:57:56,584 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_create_invoice_with_dates ... 
+2026-03-31 01:57:56,621 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,749 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/37/create-invoice HTTP/1.1" 201 - 164 0.069 0.064
+2026-03-31 01:57:56,750 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_draft_order_rejected ... 
+2026-03-31 01:57:56,781 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,795 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/38/create-invoice HTTP/1.1" 400 - 16 0.007 0.012
+2026-03-31 01:57:56,796 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_fixed_without_amount_rejected ... 
+2026-03-31 01:57:56,830 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,844 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/39/create-invoice HTTP/1.1" 400 - 16 0.006 0.014
+2026-03-31 01:57:56,844 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invalid_method_rejected ... 
+2026-03-31 01:57:56,872 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:56,886 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:56] "POST /api/v2/sales/40/create-invoice HTTP/1.1" 400 - 16 0.007 0.013
+2026-03-31 01:57:56,887 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_amounts_match_order ... 
+2026-03-31 01:57:56,917 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:57,033 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:57] "POST /api/v2/sales/41/create-invoice HTTP/1.1" 201 - 156 0.065 0.057
+2026-03-31 01:57:57,034 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_invoice_response_fields ... 
+2026-03-31 01:57:57,073 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:57,211 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:57] "POST /api/v2/sales/42/create-invoice HTTP/1.1" 201 - 156 0.082 0.062
+2026-03-31 01:57:57,212 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_order_not_found ... 
+2026-03-31 01:57:57,221 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:57,239 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:57] "POST /api/v2/sales/999999/create-invoice HTTP/1.1" 404 - 18 0.008 0.016
+2026-03-31 01:57:57,240 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_percentage_without_amount_rejected ... 
+2026-03-31 01:57:57,281 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:57,296 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:57] "POST /api/v2/sales/43/create-invoice HTTP/1.1" 400 - 16 0.007 0.014
+2026-03-31 01:57:57,296 74251 INFO odoo19_db odoo.addons.base_api.tests.test_sale_invoice: Starting TestSaleCreateInvoice.test_requires_auth ... 
+2026-03-31 01:57:57,328 74251 INFO odoo19_db odoo.addons.base.models.ir_http: Generating routing map for key None 
+2026-03-31 01:57:57,359 74251 INFO odoo19_db werkzeug: 127.0.0.1 - - [31/Mar/2026 01:57:57] "POST /api/v2/sales/44/create-invoice HTTP/1.1" 401 - 3 0.002 0.035
+2026-03-31 01:57:57,365 74251 INFO odoo19_db odoo.addons.base.models.ir_attachment: filestore gc 0 checked, 0 removed 
+2026-03-31 01:57:57,377 74251 INFO odoo19_db odoo.service.server: 12 post-tests in 2.51s, 2058 queries 
+2026-03-31 01:57:57,377 74251 INFO odoo19_db odoo.tests.stats: base_api: 14 tests 1.61s 1821 queries 
+2026-03-31 01:57:57,377 74251 INFO odoo19_db odoo.tests.result: 0 failed, 0 error(s) of 12 tests when loading database 'odoo19_db' 
+2026-03-31 01:57:57,377 74251 INFO odoo19_db odoo.service.server: Initiating shutdown 
+2026-03-31 01:57:57,377 74251 INFO odoo19_db odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-31 01:57:57,823 74251 INFO odoo19_db odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  

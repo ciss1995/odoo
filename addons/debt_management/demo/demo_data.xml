@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ============================================================ -->
+        <!-- Interest Rules                                                -->
+        <!-- ============================================================ -->
+        <record id="interest_rule_monthly_5" model="debt.interest.rule">
+            <field name="name">Standard Monthly 5%</field>
+            <field name="rate">5.0</field>
+            <field name="cycle">monthly</field>
+            <field name="compound" eval="False"/>
+        </record>
+
+        <record id="interest_rule_weekly_1" model="debt.interest.rule">
+            <field name="name">Weekly 1%</field>
+            <field name="rate">1.0</field>
+            <field name="cycle">weekly</field>
+            <field name="compound" eval="False"/>
+        </record>
+
+        <record id="interest_rule_quarterly_8_compound" model="debt.interest.rule">
+            <field name="name">Quarterly 8% Compound</field>
+            <field name="rate">8.0</field>
+            <field name="cycle">quarterly</field>
+            <field name="compound" eval="True"/>
+        </record>
+
+        <record id="interest_rule_yearly_12" model="debt.interest.rule">
+            <field name="name">Yearly 12%</field>
+            <field name="rate">12.0</field>
+            <field name="cycle">yearly</field>
+            <field name="compound" eval="False"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Partners (Customers with debts)                               -->
+        <!-- ============================================================ -->
+        <record id="partner_greenleaf" model="res.partner">
+            <field name="name">Greenleaf Industries</field>
+            <field name="email">accounting@greenleaf.example.com</field>
+            <field name="phone">+1 555-0201</field>
+            <field name="is_company" eval="True"/>
+            <field name="customer_rank">1</field>
+            <field name="city">Austin</field>
+            <field name="use_debt_limit" eval="True"/>
+            <field name="max_debt_limit">50000.00</field>
+        </record>
+
+        <record id="partner_bluesky" model="res.partner">
+            <field name="name">BlueSky Trading Co.</field>
+            <field name="email">finance@bluesky.example.com</field>
+            <field name="phone">+1 555-0302</field>
+            <field name="is_company" eval="True"/>
+            <field name="customer_rank">1</field>
+            <field name="city">Denver</field>
+            <field name="use_debt_limit" eval="True"/>
+            <field name="max_debt_limit">25000.00</field>
+        </record>
+
+        <record id="partner_redstone" model="res.partner">
+            <field name="name">Redstone Supplies LLC</field>
+            <field name="email">ap@redstone.example.com</field>
+            <field name="phone">+1 555-0403</field>
+            <field name="is_company" eval="True"/>
+            <field name="customer_rank">1</field>
+            <field name="city">Chicago</field>
+            <field name="use_debt_limit" eval="False"/>
+        </record>
+
+        <record id="partner_summit" model="res.partner">
+            <field name="name">Summit Logistics</field>
+            <field name="email">billing@summit.example.com</field>
+            <field name="phone">+1 555-0504</field>
+            <field name="is_company" eval="True"/>
+            <field name="customer_rank">1</field>
+            <field name="city">Seattle</field>
+        </record>
+
+        <record id="partner_maria" model="res.partner">
+            <field name="name">Maria Chen</field>
+            <field name="email">maria.chen@example.com</field>
+            <field name="phone">+1 555-0605</field>
+            <field name="is_company" eval="False"/>
+            <field name="customer_rank">1</field>
+            <field name="city">Portland</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Debt Records                                                  -->
+        <!-- ============================================================ -->
+
+        <!-- Greenleaf: active debt with interest, partially paid -->
+        <record id="debt_greenleaf_01" model="debt.record">
+            <field name="partner_id" ref="partner_greenleaf"/>
+            <field name="amount">15000.00</field>
+            <field name="amount_interest">750.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=60)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=30)).strftime('%Y-%m-%d')"/>
+            <field name="interest_rule_id" ref="interest_rule_monthly_5"/>
+            <field name="last_interest_date" eval="(DateTime.today() - timedelta(days=1)).strftime('%Y-%m-%d')"/>
+            <field name="state">active</field>
+            <field name="notes">Bulk materials order — net 90 terms agreed by sales team.</field>
+        </record>
+
+        <!-- Greenleaf: second active debt, no interest -->
+        <record id="debt_greenleaf_02" model="debt.record">
+            <field name="partner_id" ref="partner_greenleaf"/>
+            <field name="amount">8500.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=15)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=45)).strftime('%Y-%m-%d')"/>
+            <field name="state">active</field>
+            <field name="notes">Follow-up order, interest-free as per loyalty agreement.</field>
+        </record>
+
+        <!-- BlueSky: overdue debt -->
+        <record id="debt_bluesky_01" model="debt.record">
+            <field name="partner_id" ref="partner_bluesky"/>
+            <field name="amount">12000.00</field>
+            <field name="amount_interest">360.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=90)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() - timedelta(days=20)).strftime('%Y-%m-%d')"/>
+            <field name="interest_rule_id" ref="interest_rule_monthly_5"/>
+            <field name="last_interest_date" eval="(DateTime.today() - timedelta(days=5)).strftime('%Y-%m-%d')"/>
+            <field name="state">overdue</field>
+            <field name="notes">Payment has been promised multiple times — escalate if no payment by end of week.</field>
+        </record>
+
+        <!-- Redstone: fully paid debt -->
+        <record id="debt_redstone_01" model="debt.record">
+            <field name="partner_id" ref="partner_redstone"/>
+            <field name="amount">5000.00</field>
+            <field name="amount_interest">0.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=45)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() - timedelta(days=15)).strftime('%Y-%m-%d')"/>
+            <field name="state">paid</field>
+            <field name="notes">Paid in full ahead of schedule.</field>
+        </record>
+
+        <!-- Redstone: active debt with compound interest -->
+        <record id="debt_redstone_02" model="debt.record">
+            <field name="partner_id" ref="partner_redstone"/>
+            <field name="amount">22000.00</field>
+            <field name="amount_interest">1760.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=100)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=80)).strftime('%Y-%m-%d')"/>
+            <field name="interest_rule_id" ref="interest_rule_quarterly_8_compound"/>
+            <field name="last_interest_date" eval="(DateTime.today() - timedelta(days=10)).strftime('%Y-%m-%d')"/>
+            <field name="state">active</field>
+            <field name="notes">Large equipment order — quarterly compound interest agreed in contract.</field>
+        </record>
+
+        <!-- Summit: overdue debt, long outstanding -->
+        <record id="debt_summit_01" model="debt.record">
+            <field name="partner_id" ref="partner_summit"/>
+            <field name="amount">9500.00</field>
+            <field name="amount_interest">950.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=120)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() - timedelta(days=45)).strftime('%Y-%m-%d')"/>
+            <field name="interest_rule_id" ref="interest_rule_monthly_5"/>
+            <field name="last_interest_date" eval="(DateTime.today() - timedelta(days=3)).strftime('%Y-%m-%d')"/>
+            <field name="state">overdue</field>
+            <field name="notes">45+ days overdue. Customer claims cash flow issues — partial payment plan under discussion.</field>
+        </record>
+
+        <!-- Summit: draft debt, not yet confirmed -->
+        <record id="debt_summit_02" model="debt.record">
+            <field name="partner_id" ref="partner_summit"/>
+            <field name="amount">3200.00</field>
+            <field name="issue_date" eval="DateTime.today().strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=60)).strftime('%Y-%m-%d')"/>
+            <field name="state">draft</field>
+            <field name="notes">Pending sales manager approval before activation.</field>
+        </record>
+
+        <!-- Maria: small active debt -->
+        <record id="debt_maria_01" model="debt.record">
+            <field name="partner_id" ref="partner_maria"/>
+            <field name="amount">1800.00</field>
+            <field name="amount_interest">18.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=30)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=5)).strftime('%Y-%m-%d')"/>
+            <field name="interest_rule_id" ref="interest_rule_weekly_1"/>
+            <field name="last_interest_date" eval="(DateTime.today() - timedelta(days=2)).strftime('%Y-%m-%d')"/>
+            <field name="state">active</field>
+            <field name="notes">Individual customer — due soon, send courtesy reminder.</field>
+        </record>
+
+        <!-- Maria: cancelled debt -->
+        <record id="debt_maria_02" model="debt.record">
+            <field name="partner_id" ref="partner_maria"/>
+            <field name="amount">600.00</field>
+            <field name="issue_date" eval="(DateTime.today() - timedelta(days=20)).strftime('%Y-%m-%d')"/>
+            <field name="due_date" eval="(DateTime.today() + timedelta(days=10)).strftime('%Y-%m-%d')"/>
+            <field name="state">cancelled</field>
+            <field name="notes">Order was returned — debt voided.</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Payments                                                      -->
+        <!-- ============================================================ -->
+
+        <!-- Greenleaf partial payments on debt 01 -->
+        <record id="payment_greenleaf_01a" model="debt.payment">
+            <field name="debt_id" ref="debt_greenleaf_01"/>
+            <field name="amount">5000.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=30)).strftime('%Y-%m-%d')"/>
+            <field name="reference">CHK-4521</field>
+            <field name="notes">First installment — check payment.</field>
+        </record>
+
+        <record id="payment_greenleaf_01b" model="debt.payment">
+            <field name="debt_id" ref="debt_greenleaf_01"/>
+            <field name="amount">3000.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=10)).strftime('%Y-%m-%d')"/>
+            <field name="reference">WIRE-8833</field>
+            <field name="notes">Second installment — wire transfer.</field>
+        </record>
+
+        <!-- BlueSky partial payment on overdue debt -->
+        <record id="payment_bluesky_01a" model="debt.payment">
+            <field name="debt_id" ref="debt_bluesky_01"/>
+            <field name="amount">2000.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=15)).strftime('%Y-%m-%d')"/>
+            <field name="reference">ACH-1190</field>
+            <field name="notes">Partial payment received after first overdue notice.</field>
+        </record>
+
+        <!-- Redstone: full payment on paid debt -->
+        <record id="payment_redstone_01a" model="debt.payment">
+            <field name="debt_id" ref="debt_redstone_01"/>
+            <field name="amount">5000.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=18)).strftime('%Y-%m-%d')"/>
+            <field name="reference">WIRE-6670</field>
+            <field name="notes">Full payment — early settlement.</field>
+        </record>
+
+        <!-- Redstone: partial payment on compound interest debt -->
+        <record id="payment_redstone_02a" model="debt.payment">
+            <field name="debt_id" ref="debt_redstone_02"/>
+            <field name="amount">7000.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=40)).strftime('%Y-%m-%d')"/>
+            <field name="reference">CHK-9102</field>
+            <field name="notes">First scheduled payment.</field>
+        </record>
+
+        <!-- Summit: small payment on overdue debt -->
+        <record id="payment_summit_01a" model="debt.payment">
+            <field name="debt_id" ref="debt_summit_01"/>
+            <field name="amount">1500.00</field>
+            <field name="payment_date" eval="(DateTime.today() - timedelta(days=25)).strftime('%Y-%m-%d')"/>
+            <field name="reference">ACH-3345</field>
+            <field name="notes">Goodwill partial payment.</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Notification Logs                                             -->
+        <!-- ============================================================ -->
+
+        <!-- BlueSky overdue notification -->
+        <record id="notif_bluesky_overdue" model="debt.notification.log">
+            <field name="debt_id" ref="debt_bluesky_01"/>
+            <field name="partner_id" ref="partner_bluesky"/>
+            <field name="notification_type">overdue</field>
+            <field name="channel">internal</field>
+            <field name="message">Debt DEBT/0003 is now overdue. Balance: $10,360.00. Due date was 20 days ago.</field>
+            <field name="status">sent</field>
+        </record>
+
+        <record id="notif_bluesky_reminder" model="debt.notification.log">
+            <field name="debt_id" ref="debt_bluesky_01"/>
+            <field name="partner_id" ref="partner_bluesky"/>
+            <field name="notification_type">overdue_reminder</field>
+            <field name="channel">internal</field>
+            <field name="message">Overdue reminder (13d): Debt DEBT/0003. Balance: $10,360.00</field>
+            <field name="status">sent</field>
+        </record>
+
+        <!-- Summit overdue notification -->
+        <record id="notif_summit_overdue" model="debt.notification.log">
+            <field name="debt_id" ref="debt_summit_01"/>
+            <field name="partner_id" ref="partner_summit"/>
+            <field name="notification_type">overdue</field>
+            <field name="channel">internal</field>
+            <field name="message">Debt DEBT/0006 is now overdue. Balance: $8,950.00. Due date was 45 days ago.</field>
+            <field name="status">sent</field>
+        </record>
+
+        <record id="notif_summit_reminder_1" model="debt.notification.log">
+            <field name="debt_id" ref="debt_summit_01"/>
+            <field name="partner_id" ref="partner_summit"/>
+            <field name="notification_type">overdue_reminder</field>
+            <field name="channel">internal</field>
+            <field name="message">Overdue reminder (38d): Debt DEBT/0006. Balance: $8,950.00</field>
+            <field name="status">sent</field>
+        </record>
+
+        <record id="notif_summit_reminder_2" model="debt.notification.log">
+            <field name="debt_id" ref="debt_summit_01"/>
+            <field name="partner_id" ref="partner_summit"/>
+            <field name="notification_type">overdue_reminder</field>
+            <field name="channel">internal</field>
+            <field name="message">Overdue reminder (45d): Debt DEBT/0006. Balance: $8,950.00</field>
+            <field name="status">sent</field>
+        </record>
+
+        <!-- Maria upcoming reminder -->
+        <record id="notif_maria_reminder" model="debt.notification.log">
+            <field name="debt_id" ref="debt_maria_01"/>
+            <field name="partner_id" ref="partner_maria"/>
+            <field name="notification_type">reminder</field>
+            <field name="channel">internal</field>
+            <field name="message">Reminder: Debt DEBT/0008 is due in 5 days. Balance: $1,818.00</field>
+            <field name="status">sent</field>
+        </record>
+
+    </data>
+</odoo>
