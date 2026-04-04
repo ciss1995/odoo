@@ -1695,6 +1695,303 @@ class SimpleApiController(http.Controller):
             _logger.error("Error creating invoice from SO %s: %s", order_id, str(e))
             return self._error_response("Error creating invoice", 500, "INVOICE_CREATE_ERROR")
 
+    # ===== IN-STORE PURCHASE (one-shot) =====
+
+    @http.route('/api/v2/sales/in-store-purchase', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def in_store_purchase(self):
+        """One-shot in-store purchase: create SO, confirm, deliver, invoice,
+        post invoice, and register payment – all in a single API call.
+
+        Because the sale happens at the counter, delivery is instant and
+        payment is collected immediately.
+
+        JSON body::
+
+            {
+                "partner_id": 7,                     // optional – defaults to "Walk-In Store Customer"
+                "order_lines": [                     // required, at least one
+                    {
+                        "product_id": 12,
+                        "quantity": 2,
+                        "price_unit": 50.0           // optional, defaults to product list price
+                    }
+                ],
+                "warehouse_id": 1,                   // optional – warehouse (must be ship_only)
+                "journal_id": 4,                     // optional – payment journal (bank/cash)
+                "payment_date": "2026-04-04",        // optional, defaults to today
+                "invoice_date": "2026-04-04"         // optional, defaults to today
+            }
+
+        Returns the sale order, invoice, payment, and stock-picking data.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        try:
+            # --- parse body ---
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response(
+                    "Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+
+            try:
+                body = request.httprequest.get_json(force=True)
+                if not body:
+                    return self._error_response("No data provided", 400, "NO_DATA")
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            # --- validate required fields ---
+            order_lines = body.get('order_lines')
+            if not order_lines or not isinstance(order_lines, list):
+                return self._error_response(
+                    "'order_lines' is required and must be a non-empty list", 400, "MISSING_PARAM")
+
+            # --- resolve customer partner ---
+            # If partner_id is provided and is a real customer, use it.
+            # Otherwise fall back to a default "Walk-In Store Customer".
+            partner_id = body.get('partner_id')
+            company_partner_id = request.env.company.partner_id.id
+
+            if partner_id and partner_id != company_partner_id:
+                partner = request.env['res.partner'].browse(partner_id)
+                if not partner.exists():
+                    return self._error_response(
+                        f"Partner {partner_id} not found", 404, "NOT_FOUND")
+            else:
+                # Use or create a default walk-in customer
+                partner = request.env['res.partner'].sudo().search([
+                    ('name', '=', 'Walk-In Store Customer'),
+                    ('company_id', 'in', [request.env.company.id, False]),
+                ], limit=1)
+                if not partner:
+                    partner = request.env['res.partner'].sudo().create({
+                        'name': 'Walk-In Store Customer',
+                        'company_id': request.env.company.id,
+                        'customer_rank': 1,
+                    })
+                partner_id = partner.id
+
+            # --- validate products ---
+            sol_vals = []
+            for idx, line in enumerate(order_lines):
+                pid = line.get('product_id')
+                if not pid:
+                    return self._error_response(
+                        f"order_lines[{idx}]: 'product_id' is required",
+                        400, "MISSING_PARAM")
+
+                product = request.env['product.product'].browse(pid)
+                if not product.exists():
+                    return self._error_response(
+                        f"Product {pid} not found", 404, "NOT_FOUND")
+
+                qty = line.get('quantity', 1)
+                if qty <= 0:
+                    return self._error_response(
+                        f"order_lines[{idx}]: 'quantity' must be > 0",
+                        400, "INVALID_PARAM")
+
+                sol_vals.append((0, 0, {
+                    'product_id': pid,
+                    'product_uom_qty': qty,
+                    'price_unit': line.get('price_unit', product.list_price),
+                }))
+
+            # =============================================================
+            # Step 1 – Resolve a one-step warehouse for instant delivery
+            # =============================================================
+            Warehouse = request.env['stock.warehouse']
+            company_id = request.env.company.id
+
+            if body.get('warehouse_id'):
+                warehouse = Warehouse.browse(body['warehouse_id'])
+                if not warehouse.exists():
+                    return self._error_response(
+                        f"Warehouse {body['warehouse_id']} not found", 404, "NOT_FOUND")
+                if warehouse.delivery_steps != 'ship_only':
+                    return self._error_response(
+                        f"Warehouse '{warehouse.name}' uses multi-step delivery "
+                        f"({warehouse.delivery_steps}). In-store purchases require "
+                        "a warehouse with one-step delivery (ship_only).",
+                        400, "INVALID_WAREHOUSE")
+            else:
+                # Prefer the first ship_only warehouse for this company
+                warehouse = Warehouse.search([
+                    ('company_id', '=', company_id),
+                    ('delivery_steps', '=', 'ship_only'),
+                ], limit=1)
+                if not warehouse:
+                    # Fall back: take the default warehouse and temporarily
+                    # won't work if none exists at all.
+                    warehouse = Warehouse.search([
+                        ('company_id', '=', company_id),
+                    ], limit=1)
+                    if not warehouse:
+                        return self._error_response(
+                            "No warehouse found for the current company.",
+                            400, "NO_WAREHOUSE")
+                    if warehouse.delivery_steps != 'ship_only':
+                        # Switch it to one-step for a clean in-store flow
+                        warehouse.sudo().write({'delivery_steps': 'ship_only'})
+
+            # =============================================================
+            # Step 2 – Create & confirm the sale order
+            # =============================================================
+            order = request.env['sale.order'].create({
+                'partner_id': partner_id,
+                'warehouse_id': warehouse.id,
+                'order_line': sol_vals,
+            })
+
+            # Clear any routes on order lines so procurement does not
+            # try to use multi-step routes configured on the line.
+            order.order_line.write({'route_ids': [(5, 0, 0)]})
+
+            # Procurement also reads routes directly from the product
+            # and its category (stock_rule.py _get_rule line ~608).
+            # Temporarily strip product & category routes so the
+            # warehouse's simple ship_only route is used instead.
+            products = order.order_line.mapped('product_id')
+            saved_product_routes = {p.id: p.route_ids for p in products}
+            saved_categ_routes = {}
+            categs = products.mapped('categ_id')
+            for categ in categs:
+                saved_categ_routes[categ.id] = categ.route_ids
+                categ.sudo().write({'route_ids': [(5, 0, 0)]})
+            products.sudo().write({'route_ids': [(5, 0, 0)]})
+
+            try:
+                order.action_confirm()
+            finally:
+                # Restore original routes on products and categories
+                for p in products:
+                    if saved_product_routes.get(p.id):
+                        p.sudo().write({'route_ids': [(6, 0, saved_product_routes[p.id].ids)]})
+                for categ in categs:
+                    if saved_categ_routes.get(categ.id):
+                        categ.sudo().write({'route_ids': [(6, 0, saved_categ_routes[categ.id].ids)]})
+
+            # =============================================================
+            # Step 3 – Instant delivery: validate all pickings
+            # =============================================================
+            pickings_data = []
+            for picking in order.picking_ids.filtered(lambda p: p.state not in ('done', 'cancel')):
+                for move in picking.move_ids:
+                    move.write({'quantity': move.product_uom_qty, 'picked': True})
+                picking.button_validate()
+                pickings_data.append({
+                    'id': picking.id,
+                    'name': picking.name,
+                    'state': picking.state,
+                })
+
+            # =============================================================
+            # Step 4 – Create & post the invoice
+            # =============================================================
+            invoices = order._create_invoices()
+            if not invoices:
+                return self._error_response(
+                    "No invoice could be created. Check product invoice policies.",
+                    400, "NOTHING_TO_INVOICE")
+
+            invoice = invoices[0] if len(invoices) > 1 else invoices
+
+            date_vals = {}
+            if body.get('invoice_date'):
+                date_vals['invoice_date'] = body['invoice_date']
+            if date_vals:
+                invoice.write(date_vals)
+
+            invoice.action_post()
+
+            # =============================================================
+            # Step 5 – Register payment (instant, full amount)
+            # =============================================================
+            ctx = {
+                'active_model': 'account.move',
+                'active_ids': invoice.ids,
+            }
+            wizard_vals = {}
+            if body.get('journal_id'):
+                wizard_vals['journal_id'] = body['journal_id']
+            if body.get('payment_date'):
+                wizard_vals['payment_date'] = body['payment_date']
+
+            pay_wizard = request.env['account.payment.register'] \
+                .with_context(**ctx).create(wizard_vals)
+            pay_wizard.action_create_payments()
+
+            invoice.invalidate_recordset()
+            order.invalidate_recordset()
+
+            # --- read payment record ---
+            payment = request.env['account.payment'].search([
+                ('reconciled_invoice_ids', 'in', invoice.ids),
+            ], limit=1, order='id desc')
+
+            # =============================================================
+            # Build response
+            # =============================================================
+            inv_data = invoice.read([
+                'id', 'name', 'state', 'move_type',
+                'partner_id', 'invoice_date', 'invoice_date_due',
+                'amount_untaxed', 'amount_tax', 'amount_total',
+                'amount_residual', 'payment_state', 'currency_id',
+                'invoice_origin',
+            ])[0]
+
+            order_data = order.read([
+                'id', 'name', 'state', 'partner_id',
+                'amount_untaxed', 'amount_tax', 'amount_total',
+                'invoice_status',
+            ])[0]
+
+            payment_data = {}
+            if payment:
+                payment_data = payment.read([
+                    'id', 'name', 'state', 'amount',
+                    'payment_type', 'journal_id', 'date',
+                ])[0]
+
+            stock_moves = []
+            for move in order.picking_ids.move_ids:
+                stock_moves.append({
+                    'id': move.id,
+                    'product_id': move.product_id.id,
+                    'product_name': move.product_id.display_name,
+                    'quantity': move.quantity,
+                    'state': move.state,
+                    'reference': move.reference,
+                })
+
+            return self._json_response(
+                data={
+                    'sale_order': order_data,
+                    'invoice': inv_data,
+                    'payment': payment_data,
+                    'pickings': pickings_data,
+                    'stock_moves': stock_moves,
+                },
+                message="In-store purchase completed: SO confirmed, delivered, invoiced, and paid",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "PURCHASE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "PURCHASE_ERROR")
+        except Exception as e:
+            _logger.error("In-store purchase error: %s", str(e))
+            return self._error_response(
+                "Error processing in-store purchase", 500, "PURCHASE_ERROR")
+
     # ===== INVENTORY ADJUSTMENT =====
 
     @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
