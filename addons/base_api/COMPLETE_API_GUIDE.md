@@ -18,6 +18,9 @@
 7. [Partners & Contacts](#7-partners--contacts)
 8. [Products](#8-products)
 9. [Sales](#9-sales)
+   - [9.1 Sales Orders](#91-sales-orders)
+   - [9.2 Create Invoice from Sale Order](#92-create-invoice-from-sale-order)
+   - [9.3 In-Store Purchase (One-Shot)](#93-in-store-purchase-one-shot)
 10. [CRM](#10-crm)
 11. [HR & Employees](#11-hr--employees)
 12. [Notifications & Messaging](#12-notifications--messaging)
@@ -1565,6 +1568,208 @@ session-token: <token>
 ```
 
 > **Note:** Step 2 can be skipped if order lines are included inline during step 1 using the `order_line` field with `[[0, 0, {...}]]` syntax. The order must be confirmed (state = `sale`) before step 3 — confirmation currently requires the Odoo UI or XML-RPC.
+
+### 9.3 In-Store Purchase (One-Shot)
+
+A single endpoint that handles the entire point-of-sale flow: create sale order, confirm it, deliver the goods, create and post the invoice, and register full payment. Designed for in-store / counter sales where payment and delivery happen immediately.
+
+```
+POST /sales/in-store-purchase
+```
+
+**Authentication:** `session-token` or `api-key` header required.
+
+**JSON body:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `partner_id` | integer | No | auto | Customer ID (`res.partner`). If omitted or set to the company's own partner (e.g. `1`), the backend automatically uses a **"Walk-In Store Customer"** partner (created on first use). Pass a real customer ID to associate the sale with a specific customer. |
+| `order_lines` | array | Yes | — | At least one line (see below) |
+| `warehouse_id` | integer | No | auto | Warehouse ID. Must use one-step delivery (`ship_only`). If omitted, the backend picks a suitable warehouse automatically. |
+| `journal_id` | integer | No | auto | Payment journal ID (must be `bank` or `cash` type) |
+| `payment_date` | string | No | today | Payment date in `YYYY-MM-DD` format |
+| `invoice_date` | string | No | today | Invoice date in `YYYY-MM-DD` format |
+
+**Order line object:**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `product_id` | integer | Yes | — | Product variant ID (`product.product`) |
+| `quantity` | number | No | `1` | Quantity to sell (must be > 0) |
+| `price_unit` | number | No | product list price | Unit price override |
+
+#### Examples
+
+**1. Quick anonymous sale (no customer, single product):**
+
+The simplest possible call. No `partner_id` needed — the backend creates a "Walk-In Store Customer" automatically.
+
+```http
+POST /api/v2/sales/in-store-purchase
+Content-Type: application/json
+session-token: <token>
+
+{
+  "order_lines": [
+    { "product_id": 16, "quantity": 1 }
+  ]
+}
+```
+
+**2. Sale with a known customer:**
+
+Pass the customer's `partner_id` to associate the sale, invoice, and payment with them.
+
+```http
+POST /api/v2/sales/in-store-purchase
+Content-Type: application/json
+session-token: <token>
+
+{
+  "partner_id": 42,
+  "order_lines": [
+    { "product_id": 16, "quantity": 2 }
+  ]
+}
+```
+
+**3. Full example (multiple products, custom prices, explicit journal):**
+
+```http
+POST /api/v2/sales/in-store-purchase
+Content-Type: application/json
+session-token: <token>
+
+{
+  "partner_id": 42,
+  "order_lines": [
+    { "product_id": 16, "quantity": 2, "price_unit": 999.99 },
+    { "product_id": 18, "quantity": 1, "price_unit": 49.99 }
+  ],
+  "journal_id": 4,
+  "payment_date": "2026-04-04",
+  "invoice_date": "2026-04-04"
+}
+```
+
+**4. TypeScript / React example (matching the UI codebase):**
+
+```typescript
+// In your OdooSalesRepository.completeSale():
+const response = await apiClient.request('/api/v2/sales/in-store-purchase', {
+  method: 'POST',
+  body: JSON.stringify({
+    // partner_id is optional — omit for anonymous walk-in sales
+    partner_id: checkoutData.customerId || undefined,
+    order_lines: cart.items.map(item => ({
+      product_id: item.variantId,
+      quantity: item.quantity,
+      price_unit: item.price,
+    })),
+    payment_date: new Date().toISOString().split('T')[0],
+    invoice_date: new Date().toISOString().split('T')[0],
+  }),
+});
+
+// response.data contains: sale_order, invoice, payment, pickings, stock_moves
+const { sale_order, invoice, payment } = response.data;
+```
+
+#### Partner resolution logic
+
+| What you send | What happens |
+|---------------|--------------|
+| No `partner_id` | Backend uses "Walk-In Store Customer" (auto-created if needed) |
+| `partner_id: 1` (company partner) | Same — redirected to "Walk-In Store Customer" |
+| `partner_id: 42` (real customer) | Used as-is for the SO, invoice, and payment |
+| `partner_id: 999999` (doesn't exist) | Returns `404 NOT_FOUND` |
+
+#### Success response (201)
+
+```json
+{
+  "success": true,
+  "data": {
+    "sale_order": {
+      "id": 77,
+      "name": "S00077",
+      "state": "sale",
+      "partner_id": [163, "Walk-In Store Customer"],
+      "amount_untaxed": 999.99,
+      "amount_tax": 150.00,
+      "amount_total": 1149.99,
+      "invoice_status": "invoiced"
+    },
+    "invoice": {
+      "id": 29,
+      "name": "INV/2026/00007",
+      "state": "posted",
+      "move_type": "out_invoice",
+      "partner_id": [163, "Walk-In Store Customer"],
+      "invoice_date": "2026-04-04",
+      "invoice_date_due": "2026-04-04",
+      "amount_untaxed": 999.99,
+      "amount_tax": 150.00,
+      "amount_total": 1149.99,
+      "amount_residual": 0.00,
+      "payment_state": "paid",
+      "currency_id": [1, "USD"],
+      "invoice_origin": "S00077"
+    },
+    "payment": {
+      "id": 3,
+      "name": "PBNK1/2026/00003",
+      "state": "paid",
+      "amount": 1149.99,
+      "payment_type": "inbound",
+      "journal_id": [6, "Bank"],
+      "date": "2026-04-04"
+    },
+    "pickings": [
+      { "id": 22, "name": "WH/OUT/00022", "state": "done" }
+    ],
+    "stock_moves": [
+      {
+        "id": 35,
+        "product_id": 16,
+        "product_name": "[ELEC-LP15] Laptop Pro 15\"",
+        "quantity": 1.0,
+        "state": "done",
+        "reference": "WH/OUT/00022"
+      }
+    ]
+  },
+  "message": "In-store purchase completed: SO confirmed, delivered, invoiced, and paid"
+}
+```
+
+#### What happens under the hood (in order)
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Partner resolved | Walk-in customer auto-created if needed |
+| 2 | Sale order created and confirmed | `state` = `sale`, stock picking created |
+| 3 | Delivery picking validated | Stock moves = `done`, on-hand inventory decreases |
+| 4 | Invoice created and posted | `state` = `posted`, linked to SO |
+| 5 | Full payment registered | `payment_state` = `paid`, `amount_residual` = 0 |
+
+#### Error codes
+
+| HTTP | Code | Cause |
+|------|------|-------|
+| 400 | `MISSING_PARAM` | Missing `order_lines`, or `product_id` in a line |
+| 400 | `INVALID_PARAM` | `quantity` is zero or negative |
+| 400 | `INVALID_CONTENT_TYPE` | Request Content-Type is not `application/json` |
+| 400 | `INVALID_WAREHOUSE` | Specified warehouse uses multi-step delivery |
+| 400 | `NO_DATA` | Empty or missing JSON body |
+| 400 | `INVALID_JSON` | Malformed JSON |
+| 400 | `NOTHING_TO_INVOICE` | No invoice could be created (check product invoice policies) |
+| 400 | `PURCHASE_ERROR` | General business logic error (message has details) |
+| 401 | `MISSING_SESSION_TOKEN` | No auth header provided |
+| 401 | `INVALID_SESSION` | Session token expired or invalid |
+| 403 | `ACCESS_DENIED` | User lacks required permissions |
+| 404 | `NOT_FOUND` | Partner, product, or warehouse ID does not exist |
+| 500 | `PURCHASE_ERROR` | Unexpected server error |
 
 ---
 
