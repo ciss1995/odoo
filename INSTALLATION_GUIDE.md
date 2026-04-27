@@ -21,29 +21,73 @@ docker compose version
 
 ### Quick Start
 
-From the project root:
+Odoo now integrates with a **Control Plane** service that manages subscription plans and module access. You can run Odoo standalone (no enforcement) or with the Control Plane (full plan enforcement).
+
+#### Option 1: Full Stack (Odoo + Control Plane) — Recommended
 
 ```bash
-# Optional: customize database settings
-cp .env.example .env
-# Edit .env if needed (e.g. ODOO_DB, ODOO_INIT_MODULES)
+# 1. Create the shared Docker network (one-time)
+docker network create saas-net 2>/dev/null || true
 
-# Build and start Odoo + PostgreSQL
+# 2. Start the Control Plane first
+cd /Users/cheickcisse/Projects/control-plane
+docker compose up -d
+# Run migrations on first run only:
+docker compose exec app alembic upgrade head
+
+# 3. Start Odoo
+cd /Users/cheickcisse/Projects/odoo
+cp .env.example .env   # Optional: customize database settings
 docker compose up -d
 
-# Initialize database and install modules (required on first run)
-# Uses ODOO_INIT_MODULES from .env (see "Module Presets" below)
+# 4. Initialize database and install modules (first run only)
 docker compose exec odoo python3 /opt/odoo/odoo-bin \
   -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} \
   -i ${ODOO_INIT_MODULES:-base,base_api} --stop-after-init
+docker compose restart odoo
 
-# Restart Odoo to pick up the initialized database
+# 5. Register this Odoo instance as a tenant (first run only)
+curl -s -X POST http://localhost:8000/admin/tenants \
+  -H "Authorization: Bearer dev-admin-key-change-me" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "main-company",
+    "company_name": "Main Company",
+    "admin_email": "admin@main.com",
+    "plan_slug": "mid",
+    "status": "active",
+    "payment_status": "current",
+    "container_host": "odoo-odoo-1",
+    "odoo_port": 8069,
+    "internal_token": "dev-internal-key-change-me"
+  }'
+```
+
+Open **http://localhost:8069** and log in with `admin` / `admin`. The API now enforces plan limits — see `CONTROL_PLANE_BUILD_PROMPT.md` for details.
+
+#### Option 2: Standalone Odoo (no Control Plane)
+
+To run Odoo without plan enforcement, comment out the three enforcer env vars in `docker-compose.yml`:
+
+```yaml
+# TENANT_ID: main-company
+# CONTROL_PLANE_URL: http://control-plane-app-1:8000
+# CONTROL_PLANE_TOKEN: dev-internal-key-change-me
+```
+
+Then:
+
+```bash
+docker compose up -d
+
+# Initialize database (first run only)
+docker compose exec odoo python3 /opt/odoo/odoo-bin \
+  -c /etc/odoo/odoo.conf -d ${ODOO_DB:-odoo19_db} \
+  -i ${ODOO_INIT_MODULES:-base,base_api} --stop-after-init
 docker compose restart odoo
 ```
 
-That's it. Open **http://localhost:8069** and log in:
-- **Email**: `admin`
-- **Password**: `admin`
+No `saas-net` network needed in this mode. All modules accessible, no user limits.
 
 ### Module Presets
 
@@ -208,19 +252,41 @@ docker compose start odoo
 
 ### What Docker Compose Starts
 
-| Service      | Image         | Port (host) | Description                     |
-|-------------|---------------|-------------|---------------------------------|
-| `db`        | postgres:18   | 5433        | PostgreSQL database             |
-| `odoo`      | built locally | 8069        | Odoo web server                 |
+**Odoo stack** (`odoo/docker-compose.yml`):
+
+| Service | Image | Port (host) | Description |
+|---------|-------|-------------|-------------|
+| `db` | postgres:18 | 5433 | Odoo PostgreSQL database |
+| `odoo` | built locally | 8069, 8072 | Odoo web server + API |
+
+**Control Plane stack** (`control-plane/docker-compose.yml`):
+
+| Service | Image | Port (host) | Description |
+|---------|-------|-------------|-------------|
+| `traefik` | traefik:v3.3 | 80, 443, 8080 | Reverse proxy — routes `<slug>.localhost` to correct tenant container |
+| `db` | postgres:18 | 5434 | Control Plane PostgreSQL database |
+| `app` | built locally | 8000 | Control Plane API (FastAPI) |
+
+**Traefik subdomain routing** (accessible after `docker compose up -d` in control-plane):
+
+| URL | Routes to | Purpose |
+|-----|-----------|---------|
+| `http://admin.localhost` | Control Plane (:8000) | Admin dashboard + API |
+| `http://<slug>.localhost` | Tenant Odoo (:8069) | Tenant's Odoo API (after provisioning) |
+| `http://localhost:8080` | Traefik dashboard | Router/service monitoring UI |
+
+Both stacks communicate over the `saas-net` Docker network. The Odoo container calls the Control Plane at `http://control-plane-app-1:8000` to check plan limits on every API request. Traefik auto-discovers new tenant containers via Docker labels and routes subdomains to them.
 
 ### Common Docker Commands
 
 ```bash
-# Start the stack
-docker compose up -d
+# Start the full stack (Control Plane first, then Odoo)
+cd /Users/cheickcisse/Projects/control-plane && docker compose up -d
+cd /Users/cheickcisse/Projects/odoo && docker compose up -d
 
-# Stop the stack
-docker compose down
+# Stop everything
+cd /Users/cheickcisse/Projects/odoo && docker compose down
+cd /Users/cheickcisse/Projects/control-plane && docker compose down
 
 # View live Odoo logs
 docker compose exec odoo tail -f /var/log/odoo/odoo.log
@@ -255,14 +321,26 @@ docker compose down -v
 
 The Docker setup uses these files:
 
-| File                    | Purpose                                          |
-|------------------------|--------------------------------------------------|
-| `Dockerfile`           | Builds the Odoo image from source                |
-| `docker-compose.yml`   | Orchestrates Odoo + PostgreSQL services           |
-| `docker/odoo.conf`     | Odoo server configuration template for Docker     |
-| `docker/entrypoint.sh` | Entrypoint script (env-var substitution, CORS)    |
-| `.dockerignore`        | Excludes unnecessary files from the Docker build  |
-| `.env`                 | Optional overrides (database, users, init modules) |
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Builds the Odoo image from source |
+| `docker-compose.yml` | Orchestrates Odoo + PostgreSQL + Control Plane networking |
+| `docker/odoo.conf` | Odoo server configuration template for Docker |
+| `docker/entrypoint.sh` | Entrypoint script (env-var substitution, CORS) |
+| `.dockerignore` | Excludes unnecessary files from the Docker build |
+| `.env` | Optional overrides (database, users, init modules) |
+
+#### Subscription Enforcer Environment Variables
+
+These are set in `docker-compose.yml` and control whether plan enforcement is active:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `TENANT_ID` | `main-company` | This Odoo instance's tenant slug in the Control Plane |
+| `CONTROL_PLANE_URL` | `http://control-plane-app-1:8000` | Internal URL to reach the Control Plane container |
+| `CONTROL_PLANE_TOKEN` | `dev-internal-key-change-me` | Bearer token for authenticating with the Control Plane |
+
+When all three are set, every API request to `/api/v2/*` checks the tenant's plan for module access and user limits. When any are missing, enforcement is completely disabled.
 
 To change Odoo settings (port, log level, worker count, etc.), edit `docker/odoo.conf` and rebuild:
 
@@ -298,15 +376,28 @@ The CORS implementation:
 - Allowed headers: `Content-Type`, `session-token`, `Authorization`, `api-key`
 - Allowed methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
 
-### Docker Volumes
+### Docker Volumes and Networks
 
 Data persists across restarts via named volumes:
 
-| Volume             | Mounted at (container)                    | Content           |
-|-------------------|-------------------------------------------|--------------------|
-| `odoo-db-data`    | `/var/lib/postgresql/data/pgdata`         | PostgreSQL data    |
-| `odoo-filestore`  | `/var/lib/odoo/filestore`                 | Odoo file uploads  |
-| `odoo-logs`       | `/var/log/odoo`                           | Odoo log files     |
+| Volume | Mounted at (container) | Content |
+|--------|------------------------|---------|
+| `odoo-db-data` | `/var/lib/postgresql/data/pgdata` | Odoo PostgreSQL data |
+| `odoo-filestore` | `/var/lib/odoo/filestore` | Odoo file uploads |
+| `odoo-logs` | `/var/log/odoo` | Odoo log files |
+| `cp-db-data` | `/var/lib/postgresql` | Control Plane PostgreSQL data (in control-plane stack) |
+| `tenants-data` | `/data/tenants` | Provisioned tenant directories (in control-plane stack) |
+| `traefik-certs` | `/data` | TLS certificates from Let's Encrypt (in control-plane stack) |
+
+**Networks:**
+
+| Network | Type | Purpose |
+|---------|------|---------|
+| `saas-net` | External | Shared between Odoo and Control Plane stacks so containers can communicate |
+| `odoo_default` | Internal | Odoo ↔ its own PostgreSQL |
+| `control-plane_default` | Internal | Control Plane app ↔ its own PostgreSQL |
+
+Create the shared network once: `docker network create saas-net`
 
 ### Docker Troubleshooting
 
@@ -1062,10 +1153,22 @@ deactivate
 
 ## Next Steps
 
-1. **Create your first module**: Follow the [Odoo development tutorials](https://www.odoo.com/documentation/master/developer/howtos.html)
-2. **Explore the codebase**: Familiarize yourself with the addon structure
-3. **Set up your IDE**: Configure your development environment for Python/JavaScript
-4. **Read the documentation**: Check the [official Odoo documentation](https://www.odoo.com/documentation/)
+1. **Manage plans and tenants**: See `CONTROL_PLANE_BUILD_PROMPT.md` for curl commands to change plans, add modules, override user limits
+2. **Provision new tenants**: `POST /admin/tenants/{id}/provision` — see `control-plane/README.md` for the full workflow
+3. **Access via subdomains**: After provisioning, tenants are reachable at `http://<slug>.localhost` (Traefik routes automatically)
+4. **Traefik dashboard**: Visit http://localhost:8080 to see all active routes and services
+5. **Control Plane API docs**: Visit http://localhost:8000/docs when the Control Plane is running (auto-generated Swagger UI)
+6. **Create your first module**: Follow the [Odoo development tutorials](https://www.odoo.com/documentation/master/developer/howtos.html)
+7. **Read the documentation**: Check the [official Odoo documentation](https://www.odoo.com/documentation/)
+
+## Related Documentation
+
+| Document | Content |
+|----------|---------|
+| `CONTROL_PLANE_BUILD_PROMPT.md` | How to run the full stack, manage plans/tenants, test enforcement, architecture diagram |
+| `MEMBERSHIP_MODULE_ACCESS_PLAN.md` | Architecture design for the membership/module-access system |
+| `MULTI_TENANT_SAAS_PLAN.md` | Broader multi-tenant SaaS platform plan |
+| `control-plane/README.md` | Control Plane API reference, project structure, test instructions |
 
 ## Quick Reference
 

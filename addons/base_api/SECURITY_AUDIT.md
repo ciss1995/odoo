@@ -11,9 +11,9 @@
 | Severity | Count | Done | Open | Status |
 |----------|-------|------|------|--------|
 | P0 — Critical | 3 | 3 | 0 | Closed |
-| P1 — High | 3 | 2 | 1 | In Progress |
-| P2 — Medium | 2 | 1 | 1 | In Progress |
-| **Total** | **8** | **6** | **2** | |
+| P1 — High | 4 | 4 | 0 | Closed |
+| P2 — Medium | 6 | 6 | 0 | Closed |
+| **Total** | **13** | **13** | **0** | |
 
 ---
 
@@ -175,7 +175,7 @@ except Exception as e:
 
 ### P1-2: No rate limiting on login endpoint
 
-**Status:** OPEN
+**Status:** DONE (2026-04-09)
 
 **File:** `controllers/simple_api.py` — `user_login`
 
@@ -303,7 +303,7 @@ except Exception as e:
 
 ### P2-2: `sudo()` overuse in user management
 
-**Status:** OPEN
+**Status:** DONE (2026-04-09)
 
 **File:** `controllers/simple_api.py` — `list_users`, `get_user`, `update_user`, `_create_user_with_groups`
 
@@ -335,6 +335,92 @@ target_user.sudo().write(update_data)
 
 ---
 
+### P1-4: IDOR in update_record and delete_record
+
+**Status:** DONE (2026-04-09)
+
+**File:** `controllers/simple_api.py` — `update_record`, `delete_record`
+
+**Problem:** Both endpoints used `browse(record_id)` to fetch records without applying the user's scope domain. By contrast, `get_record_by_id` correctly applies `_get_record_scope_domain()`. A user could update or delete records outside their allowed scope by guessing record IDs (e.g., a salesperson modifying another team's leads).
+
+**Impact:** Privilege escalation — users can modify/delete records they should not have access to.
+
+**Fix implemented:** Replaced `browse(record_id)` with `search([('id', '=', record_id)] + scope_domain, limit=1)` in both endpoints, matching the pattern already used in `get_record_by_id`.
+
+**Breaking change for frontend?** NO. Out-of-scope records now return 404 instead of succeeding. The frontend should already handle 404 responses.
+
+---
+
+### P2-3: Information disclosure in inventory error messages
+
+**Status:** DONE (2026-04-09)
+
+**File:** `controllers/simple_api.py` — `inventory_adjust`, `inventory_decrement`
+
+**Problem:** Generic `except Exception` handlers returned raw exception text to the client: `f"Error adjusting inventory: {str(e)}"`. Database constraint names, table names, and internal paths could leak.
+
+**Impact:** Information disclosure aiding further attacks.
+
+**Fix implemented:** Error responses now return generic messages. Exception details are logged server-side only.
+
+**Breaking change for frontend?** NO.
+
+---
+
+### P2-4: Unbounded limit/offset parameters (DoS risk)
+
+**Status:** DONE (2026-04-09)
+
+**File:** `controllers/simple_api.py` — `list_partners`, `list_products`, `search_model`, `list_users`
+
+**Problem:** The `limit` and `offset` query parameters accepted any integer with no upper bound. A request like `?limit=1000000` could force the ORM to load millions of records into memory.
+
+**Impact:** Denial of Service through resource exhaustion.
+
+**Fix implemented:** Added `_parse_pagination()` helper that caps `limit` to 1000, floors `offset` at 0, and returns a 400 error for non-integer values. All four list endpoints now use this helper.
+
+**Breaking change for frontend?** UNLIKELY. Only affects requests with `?limit=` exceeding 1000, which would be capped silently. Invalid (non-integer) values now return 400 instead of 500.
+
+---
+
+### P2-5: Incomplete BLOCKED_MODELS list
+
+**Status:** DONE (2026-04-09)
+
+**File:** `controllers/simple_api.py` — `BLOCKED_MODELS`
+
+**Problem:** Several sensitive Odoo models were missing from the blocklist, allowing information disclosure:
+- `ir.config_parameter` — OAuth secrets, database UUID, feature flags
+- `ir.module.module` — installed module enumeration
+- `ir.actions.server` — executable server actions
+- `base.automation` — automation workflows
+- `ir.model.data` — XML IDs revealing internal structure
+
+**Impact:** Information disclosure about system configuration.
+
+**Fix implemented:** Added all five models to `BLOCKED_MODELS`.
+
+**Breaking change for frontend?** VERIFY. If the frontend queries any of these models directly, those calls will now return `ACCESS_DENIED`. Review frontend code before deploying.
+
+---
+
+### P2-6: `sudo()` overuse in user management (reads)
+
+**Status:** DONE (2026-04-09)
+
+**File:** `controllers/simple_api.py` — `list_users`, `get_user`, `update_user`
+
+**Problem:** See P2-2 above. All three endpoints used `.sudo()` unconditionally, bypassing Odoo's record rules for all users.
+
+**Fix implemented:**
+- `list_users`: `sudo()` now only used for admins. Managers use regular env with their scoped domain.
+- `get_user`: `sudo()` only for admins. Other users go through Odoo's record rules.
+- `update_user`: Permission check moved before `sudo()` call. `sudo()` retained for write (required by Odoo) but only after authorization is verified.
+
+**Breaking change for frontend?** POSSIBLE. Manager-level user list may return fewer users. Test the user management UI with manager accounts.
+
+---
+
 ## Fix Priority and Implementation Order
 
 | Order | Finding | Effort | Breaking? | Frontend Changes? | Status |
@@ -345,14 +431,21 @@ target_user.sudo().write(update_data)
 | 4 | P2-1: Fix exception handling | 1 hr | Minimal | Update error code handling if needed | DONE |
 | 5 | P0-2: Hash session tokens | 2 hr | No | None | DONE |
 | 6 | P1-3: Cache-Control headers on credentials | 15 min | No | None | DONE |
-| 7 | P1-2: Rate limiting on login | 1-2 hr | No (additive) | Handle 429 error code | OPEN |
-| 8 | P2-2: Remove sudo() from reads | 1 hr | Possible | Test user list for fewer results | OPEN |
+| 7 | P1-2: Rate limiting on login | 1-2 hr | No (additive) | Handle 429 error code | DONE |
+| 8 | P2-2: Remove sudo() from reads | 1 hr | Possible | Test user list for fewer results | DONE |
+| 9 | P1-4: IDOR in update/delete | 30 min | No | None | DONE |
+| 10 | P2-3: Error message info disclosure | 15 min | No | None | DONE |
+| 11 | P2-4: Unbounded limit/offset | 30 min | Possible | Requests over 1000 now capped | DONE |
+| 12 | P2-5: Expand model blocklist | 15 min | Possible | Verify no frontend queries to newly blocked models | DONE |
+| 13 | P2-6: sudo() overuse in user reads | 30 min | Possible | Manager user list may show fewer results | DONE |
 
 ### Recommended deployment approach
 
-1. **Fixes 1-6 are implemented and validated** (full suite passing)
-2. **Fix 7** requires a small frontend addition (handle rate limit error) — coordinate with frontend
-3. **Fix 8** requires frontend testing — deploy behind a feature flag or in a staging environment first
+All 13 findings are implemented. Frontend team should:
+1. Handle `429 RATE_LIMITED` error code on login form and all API calls
+2. Verify no frontend code queries newly blocked models (`ir.config_parameter`, `ir.module.module`, `ir.actions.server`, `base.automation`, `ir.model.data`)
+3. Test manager-level user list (may return fewer users without sudo)
+4. Note that `?limit=` is now capped at 1000
 
 ---
 
@@ -366,16 +459,21 @@ The client currently uses `session-token` header for all API calls. Here is the 
 | P0-2: Hash session tokens | **No** | Implemented. Frontend sends raw token; backend hashes internally |
 | P0-3: Model blocklist | **Verify** | Implemented. If frontend queries blocked models directly, those calls now fail with `ACCESS_DENIED` |
 | P1-1: AccessError handling | **No** | Implemented. 403 instead of 500 for access errors |
-| P1-2: Rate limiting | **Small** | Add handling for 429 status / `RATE_LIMITED` error code on login form |
+| P1-2: Rate limiting | **Small** | Handle 429 status / `RATE_LIMITED` error code on login form and API calls |
 | P1-3: Cache-Control headers | **No** | Implemented. Transparent to frontend |
+| P1-4: IDOR in update/delete | **No** | Scope enforcement added. Out-of-scope records now return 404 instead of succeeding |
 | P2-1: Exception handling | **Unlikely** | Implemented in generic endpoints; security denials now return explicit access errors |
 | P2-2: Remove sudo() reads | **Test** | User list may return fewer results — verify UI handles this gracefully |
+| P2-3: Error message sanitization | **No** | Generic messages returned; no frontend impact |
+| P2-4: Limit cap (1000) | **Unlikely** | Only affects requests with `?limit=` > 1000 |
+| P2-5: Expanded blocklist | **Verify** | Check if frontend queries `ir.config_parameter`, `ir.module.module`, etc. |
 
-**Bottom line:** Fixes 1-6 are **done** and require **zero frontend changes**. Fix 7 needs a minor UI addition for rate limiting. Fix 8 needs testing.
+**Bottom line:** All findings are **done**. Frontend should handle 429 errors and verify no queries to newly blocked models.
 
 ---
 
 ## Validation
 
 - Full API regression suite updated and executed after fixes.
-- Result: **244 passed, 0 failed out of 244 tests**.
+- Result: **244 passed, 0 failed out of 244 tests** (as of 2026-03-21).
+- Fixes 7-13 added 2026-04-09 — rerun test suite to validate.
