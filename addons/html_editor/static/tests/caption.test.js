@@ -1042,10 +1042,10 @@ test("should drag and drop image with its caption(1)", async () => {
             <figure contenteditable="false">
                 <img data-caption="${caption}" data-caption-id="${captionId}" src="${base64Img}" class="img-fluid test-image o_editable_media">
                 <figcaption placeholder="${caption}" data-embedded-props='{"id":"${captionId}","focusInput":false}' class="mt-2" contenteditable="false" data-oe-protected="true" data-embedded="caption">
-                    []<input ${CAPTION_INPUT_ATTRIBUTES}>
+                    <input ${CAPTION_INPUT_ATTRIBUTES}>
                 </figcaption>
             </figure>
-            <p data-selection-placeholder="" style="margin: -9px 0px 8px;"><br></p>
+            <p o-we-hint-text='Type "/" for commands' class="o-we-hint">[]<br></p>
         `)
     );
 });
@@ -1095,10 +1095,10 @@ test("should drag and drop image with its caption(2)", async () => {
             <figure contenteditable="false">
                 <img data-caption="${caption}" data-caption-id="${captionId}" src="${base64Img}" class="img-fluid test-image o_editable_media">
                 <figcaption placeholder="${caption}" data-embedded-props='{"id":"${captionId}","focusInput":false}' class="mt-2" contenteditable="false" data-oe-protected="true" data-embedded="caption">
-                    []<input ${CAPTION_INPUT_ATTRIBUTES}>
+                    <input ${CAPTION_INPUT_ATTRIBUTES}>
                 </figcaption>
             </figure>
-            <p data-selection-placeholder="" style="margin: -9px 0px 8px;"><br></p>
+            <p o-we-hint-text='Type "/" for commands' class="o-we-hint">[]<br></p>
         `)
     );
 });
@@ -1445,4 +1445,45 @@ test("Should be able to revert image replace", async () => {
     // Check the caption text is still same
     const input = el.querySelector("input");
     expect(input.value).toBe(captionText);
+});
+
+test("should toggle caption on an image with display:block (add and remove caption)", async () => {
+    const captionId = 1;
+    const { el, editor } = await setupEditorWithEmbeddedCaption(
+        `<img class="img-fluid test-image o_editable_media" style="display:block" src="${base64Img}">`
+    );
+    await animationFrame();
+    await toggleCaption();
+    await animationFrame();
+    const input = queryOne("figure > figcaption > input");
+    expect(input.value).toBe("");
+    expect(editor.document.activeElement).toBe(input);
+    // Remove the editor selection for the test because it's irrelevant
+    // since the focus is not in it.
+    const selection = editor.document.getSelection();
+    selection.removeAllRanges();
+    await waitForNone(".o-we-toolbar");
+    expect(getContent(el)).toBe(
+        unformat(
+            `<p data-selection-placeholder=""><br></p>
+            <figure contenteditable="false">
+                <img class="img-fluid test-image o_editable_media" style="display:block" src="${base64Img}" data-caption-id="${captionId}" data-caption="">
+                <figcaption ${getFigcaptionAttributes(captionId, "", true)}>
+                    <input ${CAPTION_INPUT_ATTRIBUTES}>
+                </figcaption>
+            </figure>
+            <p data-selection-placeholder="" style="margin: -9px 0px 8px;"><br></p>`
+        )
+    );
+    await click("img");
+    const captionButton = ".o-we-toolbar button[name='image_caption']";
+    await waitFor(captionButton);
+    expect(captionButton).toHaveClass("active");
+    await click(captionButton);
+    await animationFrame();
+    expect(getContent(el)).toBe(
+        unformat(`
+            <p>[<img class="img-fluid test-image" style="display:block" src="${base64Img}" data-caption="">]</p>
+        `)
+    );
 });

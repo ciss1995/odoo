@@ -74,10 +74,11 @@ class AccountMove(models.Model):
             elif allow_fallback:
                 if (
                     self.partner_id
-                    and (suggested_edi_format := self.commercial_partner_id._get_suggested_ubl_cii_edi_format())
-                    and self._need_ubl_cii_xml(suggested_edi_format)
+                    and (edi_format := self.commercial_partner_id.with_company(self.company_id)
+                        ._get_ubl_cii_edi_format())
+                    and self._need_ubl_cii_xml(edi_format)
                 ):
-                    builder = self.env['res.partner']._get_edi_builder(suggested_edi_format)
+                    builder = self.env['res.partner']._get_edi_builder(edi_format)
                     xml_content, errors = builder._export_invoice(self)
                     filename = builder._export_invoice_filename(self)
                     return {
@@ -91,12 +92,17 @@ class AccountMove(models.Model):
     def get_extra_print_items(self):
         print_items = super().get_extra_print_items()
         posted_moves = self.filtered(lambda move: move.state == 'posted')
-        suggested_edi_formats = {
-            suggested_format
-            for partner in posted_moves.commercial_partner_id
-            if (suggested_format := partner._get_suggested_ubl_cii_edi_format())
-        }
-        if posted_moves.ubl_cii_xml_id or suggested_edi_formats:
+        can_export_xml = any(
+            (
+                move.ubl_cii_xml_id
+                or (
+                    (edi_format := move.commercial_partner_id.with_company(move.company_id)._get_ubl_cii_edi_format())
+                    and move._need_ubl_cii_xml(edi_format)
+                )
+            )
+            for move in posted_moves.filtered(lambda move: move.ubl_cii_xml_id or move.commercial_partner_id)
+        )
+        if can_export_xml:
             print_items.append({
                 'key': 'download_ubl',
                 'description': _('Export XML'),
@@ -139,6 +145,9 @@ class AccountMove(models.Model):
         Group lines by tax, based on the invoice lines
         """
         self.ensure_one()
+        if not self.is_invoice(include_receipts=True):
+            raise UserError(_("You can only group lines of an invoice"))
+
         line_vals = self._get_line_vals_group_by_tax(self.partner_id)
         self.invoice_line_ids = [Command.clear()]
         self.invoice_line_ids = line_vals
