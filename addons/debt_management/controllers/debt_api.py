@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from odoo import http, fields
 from odoo.http import request
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -99,6 +99,27 @@ class DebtApiController(http.Controller):
             return self._authenticate_session()
         return self._authenticate()
 
+    def _check_debt_access(self, user, operation='read'):
+        """Check if the user has ACL access to debt.record for the given operation.
+
+        Returns None if OK, or an error response if denied.
+        """
+        try:
+            request.env['debt.record'].check_access_rights(operation)
+            return None
+        except AccessError:
+            return self._error_response(
+                "Access denied for debt management", 403, "ACCESS_DENIED",
+            )
+
+    def _require_admin_or_manager(self, user):
+        """Return error response if user is neither admin nor ERP manager."""
+        if user.has_group('base.group_system') or user.has_group('base.group_erp_manager'):
+            return None
+        return self._error_response(
+            "Admin or manager access required", 403, "ACCESS_DENIED",
+        )
+
     def _parse_json(self):
         ct = request.httprequest.headers.get('Content-Type', '')
         if 'application/json' not in ct:
@@ -176,6 +197,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'create')
+        if acl_err:
+            return acl_err
         data, err = self._parse_json()
         if err:
             return err
@@ -237,6 +261,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             args = request.httprequest.args
             limit = int(args.get('limit', 20))
@@ -286,6 +313,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             debt = request.env['debt.record'].browse(debt_id)
             if not debt.exists():
@@ -311,6 +341,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'write')
+        if acl_err:
+            return acl_err
         data, err = self._parse_json()
         if err:
             return err
@@ -339,6 +372,10 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        # Cancel/delete requires unlink-level permission (admin only per ACL)
+        admin_err = self._require_admin_or_manager(user)
+        if admin_err:
+            return admin_err
         try:
             debt = request.env['debt.record'].browse(debt_id)
             if not debt.exists():
@@ -371,6 +408,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'write')
+        if acl_err:
+            return acl_err
         data, err = self._parse_json()
         if err:
             return err
@@ -426,6 +466,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             debt = request.env['debt.record'].browse(debt_id)
             if not debt.exists():
@@ -455,6 +498,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             partner = request.env['res.partner'].browse(partner_id)
             if not partner.exists():
@@ -493,6 +539,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             partner = request.env['res.partner'].browse(partner_id)
             if not partner.exists():
@@ -550,6 +599,10 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        # Setting debt limits is an admin/manager operation
+        admin_err = self._require_admin_or_manager(user)
+        if admin_err:
+            return admin_err
         data, err = self._parse_json()
         if err:
             return err
@@ -595,6 +648,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             args = request.httprequest.args
             limit = int(args.get('limit', 50))
@@ -627,6 +683,10 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        # Analytics overview requires admin or manager
+        admin_err = self._require_admin_or_manager(user)
+        if admin_err:
+            return admin_err
         try:
             Debt = request.env['debt.record']
             all_debts = Debt.search([('state', '!=', 'cancelled')])
@@ -691,6 +751,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             args = request.httprequest.args
             limit = int(args.get('limit', 50))
@@ -744,6 +807,9 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        acl_err = self._check_debt_access(user, 'read')
+        if acl_err:
+            return acl_err
         try:
             rules = request.env['debt.interest.rule'].search([('active', '=', True)])
             return self._json_response(
@@ -769,6 +835,10 @@ class DebtApiController(http.Controller):
         ok, user = self._auth()
         if not ok:
             return user
+        # Creating interest rules requires admin (per ACL: only group_system can create)
+        admin_err = self._require_admin_or_manager(user)
+        if admin_err:
+            return admin_err
         data, err = self._parse_json()
         if err:
             return err

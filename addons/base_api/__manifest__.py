@@ -14,7 +14,7 @@
     """,
     'author': 'Your Company',
     'website': 'https://www.yourcompany.com',
-    'depends': ['base', 'web', 'sale', 'sale_stock', 'account', 'hr', 'crm'],
+    'depends': ['base', 'web', 'sale', 'sale_stock', 'purchase', 'purchase_stock', 'account', 'hr', 'crm'],
     'data': [
         'security/ir.model.access.csv',
         'views/res_users_views.xml',

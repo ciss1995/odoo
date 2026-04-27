@@ -2,8 +2,10 @@
 
 import json
 import logging
+import os
 import secrets
 import string
+import time as _time
 from datetime import datetime, timedelta
 from odoo import http
 from odoo.http import request
@@ -19,6 +21,11 @@ BLOCKED_MODELS = frozenset({
     'res.users.apikeys',
     'ir.attachment',
     'base.module.update',
+    'ir.config_parameter',
+    'ir.module.module',
+    'ir.actions.server',
+    'base.automation',
+    'ir.model.data',
 })
 
 
@@ -32,12 +39,13 @@ class SimpleApiController(http.Controller):
             'data': data,
             'message': message
         }
-        
+
         response = request.make_response(
             json.dumps(response_data, default=str),
             headers=[('Content-Type', 'application/json')]
         )
         response.status_code = status_code
+        self._log_api_call(status_code)
         return response
 
     def _json_response_sensitive(self, data=None, success=True, message=None, status_code=200):
@@ -57,6 +65,7 @@ class SimpleApiController(http.Controller):
             ]
         )
         response.status_code = status_code
+        self._log_api_call(status_code)
         return response
 
     def _error_response(self, message, status_code=400, error_code=None):
@@ -68,46 +77,70 @@ class SimpleApiController(http.Controller):
                 'code': error_code
             }
         }
-        
+
         response = request.make_response(
             json.dumps(error_data, default=str),
             headers=[('Content-Type', 'application/json')]
         )
         response.status_code = status_code
+        self._log_api_call(status_code)
         return response
+
+    MAX_PAGE_LIMIT = 1000
 
     def _is_model_blocked(self, model_name):
         """Check if a model is blocked from generic API access."""
         return model_name in BLOCKED_MODELS
 
+    def _parse_pagination(self):
+        """Parse and validate limit/offset query parameters.
+
+        Returns (limit, offset) capped to safe bounds, or raises ValueError.
+        """
+        try:
+            limit = int(request.httprequest.args.get('limit', 10))
+            offset = int(request.httprequest.args.get('offset', 0))
+        except (ValueError, TypeError):
+            return None, None
+        limit = max(1, min(limit, self.MAX_PAGE_LIMIT))
+        offset = max(0, offset)
+        return limit, offset
+
     def _authenticate(self):
         """Authenticate via API key using Odoo 19's hashed key verification."""
+        request.httprequest._api_start_time = _time.time()
         api_key = request.httprequest.headers.get('api-key')
         if not api_key:
             return False, self._error_response("Missing API key", 401, "MISSING_API_KEY")
-        
+
         try:
             user_id = request.env['res.users.apikeys'].sudo()._check_credentials(scope='rpc', key=api_key)
             if not user_id:
                 return False, self._error_response("Invalid API key", 403, "INVALID_API_KEY")
-            
+
             user = request.env['res.users'].sudo().browse(user_id)
             if not user.exists() or not user.active:
                 return False, self._error_response("User account inactive", 403, "INACTIVE_USER")
-            
+
+            # Per-user rate limit check
+            rate_error = self._enforce_user_rate_limit(user)
+            if rate_error:
+                return False, rate_error
+
             request.update_env(user=user.id)
             return True, user
-            
+
         except Exception as e:
             _logger.error("Authentication error: %s", str(e))
             return False, self._error_response("Authentication error", 500, "AUTH_ERROR")
 
     def _authenticate_session(self):
         """Authenticate user with session token (compared via hash)."""
+        request.httprequest._api_start_time = _time.time()
         session_token = request.httprequest.headers.get('session-token')
         if not session_token:
             return False, self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
-        
+
         try:
             token_hash = request.env['api.session']._hash_token(session_token)
             session = request.env['api.session'].sudo().search([
@@ -115,17 +148,20 @@ class SimpleApiController(http.Controller):
                 ('active', '=', True),
                 ('expires_at', '>', datetime.now())
             ], limit=1)
-            
+
             if not session:
                 return False, self._error_response("Invalid or expired session", 401, "INVALID_SESSION")
-            
+
             try:
                 session.sudo().write({'last_activity': datetime.now()})
             except Exception as write_error:
-                # Keep auth successful even if activity timestamp cannot be persisted
-                # (e.g., read-only transaction context in some test scenarios).
                 _logger.warning("Could not update session last_activity: %s", str(write_error))
-            
+
+            # Per-user rate limit check
+            rate_error = self._enforce_user_rate_limit(session.user_id)
+            if rate_error:
+                return False, rate_error
+
             request.update_env(user=session.user_id.id)
             return True, session.user_id
         except Exception as e:
@@ -140,6 +176,31 @@ class SimpleApiController(http.Controller):
             return True
         except AccessError:
             return False
+
+    def _filter_readable_fields(self, model_obj, fields_list):
+        """Remove fields the current user cannot safely read.
+
+        Filters out:
+        1. Fields with a ``groups`` attribute the user does not satisfy.
+        2. One2many / Many2many fields whose comodel the user has no read
+           access to (reading them triggers ``check_access_rights`` on the
+           related model, which would raise ``AccessError``).
+        """
+        user = request.env.user
+        safe = []
+        for fname in fields_list:
+            field_def = model_obj._fields.get(fname)
+            if not field_def:
+                continue
+            # 1. Field-level group restriction
+            if field_def.groups and not user.has_groups(field_def.groups):
+                continue
+            # 2. Relational fields — verify comodel is readable
+            if field_def.type in ('one2many', 'many2many') and field_def.comodel_name:
+                if not self._check_model_access(field_def.comodel_name, 'read'):
+                    continue
+            safe.append(fname)
+        return safe or ['id']
 
     def _get_model_base_domain(self, model_name):
         """Return model-specific base domain filters.
@@ -189,20 +250,266 @@ class SimpleApiController(http.Controller):
         'debt':       {'model': 'debt.record',        'label': 'Debt Management'},
     }
 
+    # Maps module keys to the minimum Odoo group required for access.
+    # Admin (base.group_system) bypasses all checks.
+    MODULE_REQUIRED_GROUP = {
+        'crm':        'sales_team.group_sale_salesman',
+        'sales':      'sales_team.group_sale_salesman',
+        'accounting': 'account.group_account_invoice',
+        'invoicing':  'account.group_account_invoice',
+        'inventory':  'stock.group_stock_user',
+        'purchase':   'purchase.group_purchase_user',
+        'hr':         'hr.group_hr_user',
+        'project':    'project.group_project_user',
+    }
+
+    def _user_has_module_role(self, user, module_key):
+        """Check if user has the required group for a module. Admins always pass."""
+        if user.has_group('base.group_system'):
+            return True
+        required = self.MODULE_REQUIRED_GROUP.get(module_key)
+        if not required:
+            return True  # No group requirement (contacts, products, calendar, debt)
+        return user.has_group(required)
+
+    def _get_enforcer(self):
+        """Get the SubscriptionEnforcer singleton. Returns None if enforcement is disabled."""
+        from odoo.addons.base_api.services.subscription_enforcer import SubscriptionEnforcer
+        return SubscriptionEnforcer.get_instance()
+
+    def _enforce_subscription(self):
+        """Check subscription is active. Returns None if OK, or an error response if not.
+
+        Call this at the top of every authenticated endpoint, right after auth succeeds.
+        If enforcement is disabled (no Control Plane), returns None (always OK).
+        """
+        enforcer = self._get_enforcer()
+        if enforcer is None:
+            return None
+        allowed, error = enforcer.check_subscription_active()
+        if not allowed:
+            return self._error_response(error['message'], error['status_code'], error['code'])
+        return None
+
+    def _enforce_module_access(self, model_name):
+        """Check if the model's module is in the tenant's plan. Returns None if OK, or error response.
+
+        If the model doesn't map to any module (system model), allow access.
+        If enforcement is disabled, returns None.
+        """
+        enforcer = self._get_enforcer()
+        if enforcer is None:
+            return None
+        from odoo.addons.base_api.services.module_resolver import resolve_module_key
+        module_key = resolve_module_key(model_name)
+        if module_key is None:
+            return None  # System model, always accessible
+        allowed, error = enforcer.check_module_allowed(module_key)
+        if not allowed:
+            _logger.warning(
+                "Module access denied: model=%s module_key=%s code=%s",
+                model_name, module_key, error.get('code'),
+            )
+            return self._error_response(error['message'], error['status_code'], error['code'])
+        return None
+
+    def _enforce_api_quota(self):
+        """Check API call quota. Returns None if OK, or error response if exceeded."""
+        enforcer = self._get_enforcer()
+        if enforcer is None:
+            return None
+        allowed, error = enforcer.check_api_quota()
+        if not allowed:
+            return self._error_response(error['message'], error['status_code'], error['code'])
+        return None
+
+    def _enforce_user_rate_limit(self, user):
+        """Check per-user API rate limit. Returns None if OK, or 429 error response."""
+        from odoo.addons.base_api.services.rate_limiter import check_api_rate_limit
+        allowed, retry_after, remaining = check_api_rate_limit(user.id)
+        if not allowed:
+            response = self._error_response(
+                f"Rate limit exceeded. Try again in {retry_after} seconds.",
+                429, "RATE_LIMITED"
+            )
+            response.headers['Retry-After'] = str(retry_after)
+            response.headers['X-RateLimit-Limit'] = str(120)
+            response.headers['X-RateLimit-Remaining'] = '0'
+            return response
+        return None
+
+    def _get_record_scope_domain(self, model_name, user):
+        """Return a domain that restricts records to those the user should see.
+
+        Admins see everything. For other users, scoping is model-specific:
+        - CRM/Sales: own records + team records + unassigned
+        - Accounting: accounting group sees all; others see own invoices
+        - Purchase: purchase group sees all; others see own POs
+        - HR: HR managers see all; others see self + department
+        - Project: visible projects (employee-visible or user is member/creator)
+        - Tasks: assigned to user or in visible projects
+        - Activities: own only
+        - Calendar: own events + events user is invited to
+        - Products/Contacts: no additional scoping (shared resources)
+        """
+        if user.has_group('base.group_system'):
+            return []
+
+        uid = user.id
+
+        if model_name == 'crm.lead':
+            team_ids = user.crm_team_ids.ids if 'crm_team_ids' in user._fields else []
+            if team_ids:
+                return ['|', '|',
+                        ('user_id', '=', uid),
+                        ('user_id', '=', False),
+                        ('team_id', 'in', team_ids)]
+            return ['|', ('user_id', '=', uid), ('user_id', '=', False)]
+
+        if model_name == 'sale.order':
+            team_ids = user.crm_team_ids.ids if 'crm_team_ids' in user._fields else []
+            if team_ids:
+                return ['|', '|',
+                        ('user_id', '=', uid),
+                        ('user_id', '=', False),
+                        ('team_id', 'in', team_ids)]
+            return ['|', ('user_id', '=', uid), ('user_id', '=', False)]
+
+        if model_name == 'account.move':
+            if user.has_group('account.group_account_invoice'):
+                return []
+            return ['|',
+                    ('invoice_user_id', '=', uid),
+                    ('invoice_user_id', '=', False)]
+
+        if model_name == 'purchase.order':
+            if user.has_group('purchase.group_purchase_user'):
+                return []
+            return [('user_id', '=', uid)]
+
+        if model_name == 'mail.activity':
+            return [('user_id', '=', uid)]
+
+        if model_name == 'hr.employee':
+            # HR Officers and Managers see all employees
+            if user.has_group('hr.group_hr_user'):
+                return []
+            employee = user.employee_id if 'employee_id' in user._fields else False
+            if employee and employee.department_id:
+                return ['|',
+                        ('user_id', '=', uid),
+                        ('department_id', '=', employee.department_id.id)]
+            return [('user_id', '=', uid)]
+
+        if model_name in ('hr.contract', 'hr.resume.line'):
+            if user.has_group('hr.group_hr_user'):
+                return []
+            employee = user.employee_id if 'employee_id' in user._fields else False
+            if employee and employee.department_id:
+                return ['|',
+                        ('employee_id.user_id', '=', uid),
+                        ('employee_id.department_id', '=', employee.department_id.id)]
+            return [('employee_id.user_id', '=', uid)]
+
+        if model_name == 'project.project':
+            return ['|', '|',
+                    ('favorite_user_ids', 'in', [uid]),
+                    ('privacy_visibility', '=', 'employees'),
+                    ('create_uid', '=', uid)]
+
+        if model_name == 'project.task':
+            return ['|',
+                    ('user_ids', 'in', [uid]),
+                    ('project_id.privacy_visibility', '=', 'employees')]
+
+        if model_name == 'calendar.event':
+            partner_id = user.partner_id.id if user.partner_id else False
+            if partner_id:
+                return ['|',
+                        ('user_id', '=', uid),
+                        ('partner_ids', 'in', [partner_id])]
+            return [('user_id', '=', uid)]
+
+        # product.template, res.partner, and other models: no additional scoping
+        return []
+
+    def _log_api_call(self, status_code):
+        """Log an API call to the usage tracker. Non-blocking, best-effort."""
+        start_time = getattr(request.httprequest, '_api_start_time', None)
+        if start_time is None:
+            return
+        try:
+            from odoo.addons.base_api.services.api_call_logger import ApiCallLogger
+            logger = ApiCallLogger.get_instance()
+            if logger is not None:
+                response_ms = int((_time.time() - start_time) * 1000)
+                method = request.httprequest.method or 'GET'
+                logger.log_call(method, status_code, response_ms)
+        except Exception:
+            pass  # Best-effort, never break the response
+
     def _get_module_access(self):
-        """Return a dict of module_key → {accessible, label} for the current user."""
+        """Return a dict of module_key → {accessible, in_plan, label, model, models} for the current user.
+
+        When the Control Plane is configured, ``in_plan`` reflects the actual
+        plan response.  If the CP is unreachable **and** enforcement is enabled,
+        ``in_plan`` is reported as ``False`` so the frontend stays consistent
+        with what ``_enforce_module_access`` will actually allow at request time.
+        When enforcement is disabled (no env vars), everything is in-plan.
+
+        ``models`` is a dict mapping every model in the module (primary +
+        secondary) to its individual ACL status.  The frontend should consult
+        this before querying a secondary model like ``stock.move``.
+        """
+        from odoo.addons.base_api.services.module_resolver import MODEL_TO_MODULE
+
+        enforcer = self._get_enforcer()
+        plan_modules = None
+        cp_unreachable = False
+        if enforcer is not None:
+            try:
+                info = enforcer.get_tenant_info()
+                plan_modules = info.get('effective', {}).get('allowed_modules', [])
+            except Exception:
+                cp_unreachable = True
+
+        # Build reverse map: module_key → [model_name, ...]
+        module_models = {}
+        for model_name, mod_key in MODEL_TO_MODULE.items():
+            module_models.setdefault(mod_key, []).append(model_name)
+
         result = {}
         for key, info in self.MODULE_ACCESS_MAP.items():
-            model_name = info['model']
-            accessible = (
-                model_name in request.env
-                and not self._is_model_blocked(model_name)
-                and self._check_model_access(model_name, 'read')
+            primary_model = info['model']
+            has_acl = (
+                primary_model in request.env
+                and not self._is_model_blocked(primary_model)
+                and self._check_model_access(primary_model, 'read')
             )
+            # Determine if module is in plan — must match _enforce_module_access behaviour
+            if enforcer is None:
+                in_plan = True  # No enforcement configured
+            elif cp_unreachable:
+                in_plan = False  # CP down → strict, same as _enforce_module_access
+            elif '__all__' in plan_modules:
+                in_plan = True
+            else:
+                in_plan = key in plan_modules
+
+            # Per-model ACL check for all models in this module
+            per_model = {}
+            for m in module_models.get(key, [primary_model]):
+                if m in request.env and not self._is_model_blocked(m):
+                    per_model[m] = self._check_model_access(m, 'read')
+                else:
+                    per_model[m] = False
+
             result[key] = {
-                'accessible': accessible,
+                'accessible': has_acl and in_plan,
+                'in_plan': in_plan,
                 'label': info['label'],
-                'model': model_name,
+                'model': primary_model,
+                'models': per_model,
             }
         return result
 
@@ -255,7 +562,15 @@ class SimpleApiController(http.Controller):
         is_valid, result = self._authenticate()
         if not is_valid:
             return result
-        
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         user = result
         return self._json_response(
             data={
@@ -280,12 +595,21 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return result
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             Partner = request.env['res.partner']
             
             # Get parameters from URL
-            limit = int(request.httprequest.args.get('limit', 10))
-            offset = int(request.httprequest.args.get('offset', 0))
+            limit, offset = self._parse_pagination()
+            if limit is None:
+                return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
             customers_only = request.httprequest.args.get('customers_only', 'true').lower() == 'true'
             
             # Build domain
@@ -330,12 +654,21 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return result
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             Product = request.env['product.template']
             
             # Get parameters
-            limit = int(request.httprequest.args.get('limit', 10))
-            offset = int(request.httprequest.args.get('offset', 0))
+            limit, offset = self._parse_pagination()
+            if limit is None:
+                return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
             sale_ok = request.httprequest.args.get('sale_ok', 'true').lower() == 'true'
             
             # Build domain
@@ -381,6 +714,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Validate model
             if model not in request.env:
@@ -389,16 +730,26 @@ class SimpleApiController(http.Controller):
             if self._is_model_blocked(model):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
 
-            # Check user access to model
+            # Module access enforcement (subscription plan)
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+
+            # Check user access to model (ir.model.access ACL)
             if not self._check_model_access(model, 'read'):
+                _logger.warning(
+                    "ACL denied: user %s (id=%s) lacks read rights on %s",
+                    user.login, user.id, model,
+                )
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
-            
+
             model_obj = request.env[model]
-            
-            
+
+
             # Get parameters
-            limit = int(request.httprequest.args.get('limit', 10))
-            offset = int(request.httprequest.args.get('offset', 0))
+            limit, offset = self._parse_pagination()
+            if limit is None:
+                return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
             fields_param = request.httprequest.args.get('fields', '')
             
             # Handle field specification
@@ -416,31 +767,59 @@ class SimpleApiController(http.Controller):
                 basic_fields = ['id', 'name', 'display_name']
                 available_fields = [f for f in basic_fields if f in model_obj._fields]
             
+            # Filter out fields the user cannot read (field-level group restrictions).
+            # check_access_rights only validates model-level access; individual
+            # fields may require additional groups (e.g. groups="account.group_...").
+            available_fields = self._filter_readable_fields(model_obj, available_fields)
+
             # Model-specific base domain (e.g. res.partner excludes employees)
             domain = self._get_model_base_domain(model)
 
-            # Handle additional filtering parameters from URL first
+            # Parse explicit domain filter (JSON-encoded Odoo domain)
+            domain_param = request.httprequest.args.get('domain', '').strip()
             has_custom_filters = False
+            if domain_param:
+                try:
+                    parsed = json.loads(domain_param)
+                    if isinstance(parsed, list):
+                        # Validate each leaf is a valid (field, op, value) triple or a logic operator
+                        for item in parsed:
+                            if isinstance(item, (list, tuple)) and len(item) == 3:
+                                field_name = item[0]
+                                if isinstance(field_name, str) and field_name.split('.')[0] in model_obj._fields:
+                                    domain.append(tuple(item))
+                                    has_custom_filters = True
+                            elif item in ('&', '|', '!'):
+                                domain.append(item)
+                except (json.JSONDecodeError, TypeError):
+                    return self._error_response("Invalid domain parameter (must be JSON-encoded list)", 400, "INVALID_DOMAIN")
+
+            # Handle additional filtering parameters from URL
+            _RESERVED_PARAMS = frozenset(['limit', 'offset', 'fields', 'partner_type', 'domain'])
             for param_key, param_value in request.httprequest.args.items():
-                # Skip special parameters
-                if param_key in ['limit', 'offset', 'fields', 'partner_type']:
+                if param_key in _RESERVED_PARAMS:
                     continue
-                
+
                 # Add domain filter for other parameters
                 if param_key in model_obj._fields:
                     domain.append((param_key, '=', param_value))
                     has_custom_filters = True
-            
+
             # Only add active filter if no custom filters and active field exists
             if not has_custom_filters and 'active' in model_obj._fields:
                 domain.append(('active', '=', True))
-            
+
+            # Record-level scoping: restrict to records the user is allowed to see
+            scope_domain = self._get_record_scope_domain(model, user)
+            if scope_domain:
+                domain = scope_domain + domain
+
             # Search records
             records = model_obj.search(domain, limit=limit, offset=offset, order='id')
-            
+
             # Read specified fields
             records_data = records.read(available_fields)
-            
+
             return self._json_response(
                 data={
                     'records': records_data,
@@ -453,7 +832,15 @@ class SimpleApiController(http.Controller):
             )
 
         except AccessError as e:
-            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+            _logger.warning(
+                "AccessError during search on %s for user %s (id=%s): %s",
+                model, user.login, user.id, e,
+            )
+            return self._error_response(
+                f"Access denied: you do not have permission to read '{model}'. "
+                f"Check that your user has the required module group.",
+                403, "ACCESS_DENIED",
+            )
         except (MissingError, ValidationError) as e:
             return self._error_response(str(e), 400, "SEARCH_ERROR")
         except Exception as e:
@@ -470,6 +857,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Validate model
             if model not in request.env:
@@ -478,22 +873,32 @@ class SimpleApiController(http.Controller):
             if self._is_model_blocked(model):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
 
-            # Check user access to model
+            # Module access enforcement (subscription plan)
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+
+            # Check user access to model (ir.model.access ACL)
             if not self._check_model_access(model, 'read'):
+                _logger.warning(
+                    "ACL denied: user %s (id=%s) lacks read rights on %s",
+                    user.login, user.id, model,
+                )
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
-            
+
             model_obj = request.env[model]
-            
-            # Get the record by ID
-            record = model_obj.browse(record_id)
-            
-            # Check if record exists
-            if not record.exists():
+
+            # Verify record exists AND is within the user's allowed scope
+            scope_domain = self._get_record_scope_domain(model, user)
+            record_domain = [('id', '=', record_id)] + scope_domain
+            record = model_obj.search(record_domain, limit=1)
+
+            if not record:
                 return self._error_response(f"Record with ID {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
             
             # Get all fields from the model
             all_fields = list(model_obj._fields.keys())
-            
+
             # Get fields parameter to allow field filtering
             fields_param = request.httprequest.args.get('fields', '')
             if fields_param:
@@ -505,18 +910,12 @@ class SimpleApiController(http.Controller):
                     return self._error_response("No valid fields specified", 400, "INVALID_FIELDS")
             else:
                 available_fields = all_fields
-            
+
+            # Filter out fields with group restrictions the user doesn't satisfy
+            available_fields = self._filter_readable_fields(model_obj, available_fields)
+
             # Read the record with specified fields
-            try:
-                record_data = record.read(available_fields)[0]
-            except AccessError:
-                basic_fields = ['id', 'name', 'display_name', 'create_date', 'write_date', 'create_uid', 'write_uid']
-                safe_fields = [f for f in basic_fields if f in model_obj._fields]
-                if not safe_fields:
-                    safe_fields = ['id']
-                record_data = record.read(safe_fields)[0]
-                available_fields = safe_fields
-                _logger.warning("Access restricted for some fields on %s ID %s, using basic fields", model, record_id)
+            record_data = record.read(available_fields)[0]
             
             return self._json_response(
                 data={
@@ -529,7 +928,11 @@ class SimpleApiController(http.Controller):
                 message=f"Found record {record_id} in {model}"
             )
 
-        except AccessError:
+        except AccessError as e:
+            _logger.warning(
+                "AccessError getting record %s/%s for user %s (id=%s): %s",
+                model, record_id, user.login, user.id, e,
+            )
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
         except (MissingError, ValidationError) as e:
             return self._error_response(str(e), 400, "GET_RECORD_ERROR")
@@ -546,6 +949,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             # Validate model exists
@@ -587,33 +998,49 @@ class SimpleApiController(http.Controller):
     def user_login(self):
         """Authenticate user with username/password and create session."""
         try:
+            # Per-IP login rate limiting
+            from odoo.addons.base_api.services.rate_limiter import check_login_rate_limit
+            client_ip = request.httprequest.environ.get(
+                'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
+            )
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            allowed, retry_after = check_login_rate_limit(client_ip or 'unknown')
+            if not allowed:
+                response = self._error_response(
+                    f"Too many login attempts. Try again in {retry_after} seconds.",
+                    429, "RATE_LIMITED"
+                )
+                response.headers['Retry-After'] = str(retry_after)
+                return response
+
             # Parse JSON data from HTTP request
             content_type = request.httprequest.headers.get('Content-Type', '')
             if 'application/json' not in content_type:
                 return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
-            
+
             try:
                 data = request.httprequest.get_json(force=True)
                 if not data:
                     return self._error_response("No data provided", 400, "NO_DATA")
             except Exception:
                 return self._error_response("Invalid JSON", 400, "INVALID_JSON")
-                
+
             username = data.get('username')
             password = data.get('password')
-            
+
             if not username or not password:
                 return self._error_response("Username and password required", 400, "MISSING_CREDENTIALS")
-            
+
             try:
                 credential = {
                     'login': username,
                     'password': password,
                     'type': 'password'
                 }
-                
+
                 auth_info = request.session.authenticate(request.env, credential)
-                
+
                 if not auth_info or not auth_info.get('uid'):
                     return self._error_response("Invalid credentials", 401, "INVALID_CREDENTIALS")
                 
@@ -737,8 +1164,38 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
-        
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
+            # Build plan info for the response
+            plan_info = None
+            enforcer = self._get_enforcer()
+            if enforcer is not None:
+                try:
+                    tenant_info = enforcer.get_tenant_info()
+                    effective = tenant_info.get('effective', {})
+                    current_user_count = request.env['res.users'].sudo().search_count(
+                        [('active', '=', True), ('share', '=', False)]
+                    )
+                    max_users = effective.get('max_users', -1)
+                    plan_info = {
+                        'slug': tenant_info.get('plan', {}).get('slug'),
+                        'name': tenant_info.get('plan', {}).get('name'),
+                        'max_users': max_users,
+                        'current_users': current_user_count,
+                        'can_create_users': max_users == -1 or current_user_count < max_users,
+                        'allowed_modules': effective.get('allowed_modules', []),
+                    }
+                except Exception as e:
+                    _logger.warning("Could not fetch plan info: %s", str(e))
+
             return self._json_response(
                 data={
                     'user': {
@@ -752,9 +1209,10 @@ class SimpleApiController(http.Controller):
                         'permissions': {
                             'is_admin': user.has_group('base.group_system'),
                             'is_user': user.has_group('base.group_user'),
-                            'can_manage_users': user.has_group('base.group_user_admin')
+                            'can_manage_users': user.has_group('base.group_erp_manager')
                         },
-                        'module_access': self._get_module_access()
+                        'module_access': self._get_module_access(),
+                        'plan': plan_info,
                     }
                 },
                 message="User information retrieved"
@@ -773,9 +1231,17 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Check if user can manage users
-            if not user.has_group('base.group_user_admin') and not user.has_group('base.group_system'):
+            if not user.has_group('base.group_erp_manager') and not user.has_group('base.group_system'):
                 return self._error_response("Access denied: User management required", 403, "ACCESS_DENIED")
 
             # Get all groups excluding system and technical ones
@@ -827,6 +1293,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Parse JSON data
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -847,12 +1321,17 @@ class SimpleApiController(http.Controller):
             if self._is_model_blocked(model):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
 
+            # Module access enforcement
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+
             # Check user access to model
             if not self._check_model_access(model, 'create'):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
-            
+
             model_obj = request.env[model]
-            
+
             # Special handling for user creation with groups
             if model == 'res.users':
                 return self._create_user_with_groups(data)
@@ -910,6 +1389,16 @@ class SimpleApiController(http.Controller):
         Odoo auto-creates an hr.employee record when a user gets internal
         access, so we find that record and update it with the HR fields.
         """
+        # User limit enforcement
+        enforcer = self._get_enforcer()
+        if enforcer is not None:
+            current_count = request.env['res.users'].sudo().search_count(
+                [('active', '=', True), ('share', '=', False)]
+            )
+            allowed, error = enforcer.check_user_limit(current_count)
+            if not allowed:
+                return self._error_response(error['message'], error['status_code'], error['code'])
+
         try:
             # -- Extract employee-specific fields before user creation --
             employee_fields = {}
@@ -1130,6 +1619,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Parse JSON data
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -1156,7 +1653,7 @@ class SimpleApiController(http.Controller):
 
             # Check permissions
             is_own_password = current_user.id == user_id
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
+            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
             
             if not is_own_password and not is_admin:
                 return self._error_response("Access denied: Can only change own password or need admin rights", 403, "ACCESS_DENIED")
@@ -1202,6 +1699,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Parse JSON data
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -1215,17 +1720,17 @@ class SimpleApiController(http.Controller):
             except Exception:
                 return self._error_response("Invalid JSON", 400, "INVALID_JSON")
 
-            # Get target user
+            # Check permissions before escalating
+            is_own_profile = current_user.id == user_id
+            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
+
+            if not is_own_profile and not is_admin:
+                return self._error_response("Access denied: Can only update own profile or need admin rights", 403, "ACCESS_DENIED")
+
+            # Verify user exists (sudo needed for write, applied after permission check)
             target_user = request.env['res.users'].sudo().browse(user_id)
             if not target_user.exists():
                 return self._error_response("User not found", 404, "USER_NOT_FOUND")
-
-            # Check permissions
-            is_own_profile = current_user.id == user_id
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
-            
-            if not is_own_profile and not is_admin:
-                return self._error_response("Access denied: Can only update own profile or need admin rights", 403, "ACCESS_DENIED")
 
             # Fields that users can update about themselves
             user_editable_fields = ['name', 'email', 'phone', 'signature', 'lang', 'tz']
@@ -1291,19 +1796,30 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
-        try:
-            # Get target user
-            target_user = request.env['res.users'].sudo().browse(user_id)
-            if not target_user.exists():
-                return self._error_response("User not found", 404, "USER_NOT_FOUND")
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
-            # Check permissions
+        try:
+            # Check permissions first
             is_own_profile = current_user.id == user_id
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
+            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
             can_view_users = current_user.has_group('base.group_user')
-            
+
             if not is_own_profile and not is_admin and not can_view_users:
                 return self._error_response("Access denied", 403, "ACCESS_DENIED")
+
+            # Use sudo() only for admins; others go through record rules
+            if is_admin:
+                target_user = request.env['res.users'].sudo().browse(user_id)
+            else:
+                target_user = request.env['res.users'].browse(user_id)
+            if not target_user.exists():
+                return self._error_response("User not found", 404, "USER_NOT_FOUND")
 
             # Basic fields everyone can see
             user_data = {
@@ -1325,7 +1841,7 @@ class SimpleApiController(http.Controller):
                     'company_id': [target_user.company_id.id, target_user.company_id.name] if target_user.company_id else None,
                 })
 
-            # Admin-only fields
+            # Admin-only fields (sudo already applied above for admins)
             if is_admin:
                 user_data.update({
                     'groups': [{'id': g.id, 'name': g.name, 'full_name': g.full_name} for g in target_user.group_ids],
@@ -1352,9 +1868,17 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Check admin permissions
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
+            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
             if not is_admin:
                 return self._error_response("Access denied: Admin rights required", 403, "ACCESS_DENIED")
 
@@ -1392,17 +1916,26 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
-            # Check permissions
-            can_view_users = current_user.has_group('base.group_user')
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
-            
-            if not can_view_users:
+            # Role-based access control
+            is_admin = current_user.has_group('base.group_system')
+            is_manager = current_user.has_group('base.group_erp_manager')
+
+            if not is_admin and not is_manager:
                 return self._error_response("Access denied", 403, "ACCESS_DENIED")
 
             # Get parameters
-            limit = int(request.httprequest.args.get('limit', 10))
-            offset = int(request.httprequest.args.get('offset', 0))
+            limit, offset = self._parse_pagination()
+            if limit is None:
+                return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
             search = request.httprequest.args.get('search', '')
             active_only = request.httprequest.args.get('active_only', 'true').lower() == 'true'
 
@@ -1411,15 +1944,31 @@ class SimpleApiController(http.Controller):
             if active_only:
                 domain.append(('active', '=', True))
             if search:
-                domain.extend(['|', '|', 
+                domain.extend(['|', '|',
                     ('name', 'ilike', search),
                     ('login', 'ilike', search),
                     ('email', 'ilike', search)
                 ])
 
-            # Get users
-            users = request.env['res.users'].sudo().search(domain, limit=limit, offset=offset, order='name')
-            total_count = request.env['res.users'].sudo().search_count(domain)
+            # Scoping: managers see only users they manage (same department or created by them)
+            # Admins see all users
+            if is_manager and not is_admin:
+                employee = current_user.employee_id if 'employee_id' in current_user._fields else False
+                dept_id = employee.department_id.id if employee and employee.department_id else False
+                scope = ['|', ('create_uid', '=', current_user.id)]
+                if dept_id:
+                    scope.append(('employee_ids.department_id', '=', dept_id))
+                else:
+                    scope.append(('id', '=', current_user.id))
+                domain = scope + domain
+
+            # Admins use sudo() for full visibility; managers rely on scoped domain + record rules
+            if is_admin:
+                Users = request.env['res.users'].sudo()
+            else:
+                Users = request.env['res.users']
+            users = Users.search(domain, limit=limit, offset=offset, order='name')
+            total_count = Users.search_count(domain)
 
             # Prepare user data
             users_data = []
@@ -1468,10 +2017,18 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return current_user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             # Check permissions
             is_own_user = current_user.id == user_id
-            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_user_admin')
+            is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
             
             if not is_own_user and not is_admin:
                 return self._error_response("Access denied: Can only generate own API key or need admin rights", 403, "ACCESS_DENIED")
@@ -1518,6 +2075,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             content_type = request.httprequest.headers.get('Content-Type', '')
             if 'application/json' not in content_type:
@@ -1536,11 +2101,18 @@ class SimpleApiController(http.Controller):
             if self._is_model_blocked(model):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
 
+            # Module access enforcement
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+
             if not self._check_model_access(model, 'write'):
                 return self._error_response(f"Write access denied for model '{model}'", 403, "ACCESS_DENIED")
 
-            record = request.env[model].browse(record_id)
-            if not record.exists():
+            # Verify record exists AND is within the user's allowed scope
+            scope_domain = self._get_record_scope_domain(model, user)
+            record = request.env[model].search([('id', '=', record_id)] + scope_domain, limit=1)
+            if not record:
                 return self._error_response(f"Record {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
 
             record.write(data)
@@ -1592,6 +2164,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             # --- access checks ---
@@ -1730,6 +2310,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             # --- parse body ---
@@ -2003,6 +2591,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             content_type = request.httprequest.headers.get('Content-Type', '')
             if 'application/json' not in content_type:
@@ -2138,7 +2734,7 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Error adjusting inventory: %s", str(e))
             return self._error_response(
-                f"Error adjusting inventory: {str(e)}", 500, "INVENTORY_ADJUST_ERROR"
+                "Error adjusting inventory", 500, "INVENTORY_ADJUST_ERROR"
             )
 
     @http.route('/api/v2/inventory/decrement', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
@@ -2162,6 +2758,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -2333,8 +2937,498 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Error decrementing inventory: %s", str(e))
             return self._error_response(
-                f"Error decrementing inventory: {str(e)}", 500, "INVENTORY_DECREMENT_ERROR"
+                "Error decrementing inventory", 500, "INVENTORY_DECREMENT_ERROR"
             )
+
+    # ===== PURCHASE ORDER: CONFIRM =====
+
+    @http.route('/api/v2/purchase/<int:order_id>/confirm', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def purchase_confirm(self, order_id):
+        """Confirm a draft/sent purchase order via Odoo's ``button_confirm()``.
+
+        This triggers the full business logic including:
+        - State transition (draft/sent → purchase)
+        - Auto-creation of stock.picking for consumable products
+        - Creation of stock.moves linked to PO lines
+        - Move confirmation and reservation
+
+        No JSON body required (POST with empty body is fine).
+
+        Returns the confirmed PO with its picking_ids and order lines.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'purchase.order' not in request.env:
+                return self._error_response(
+                    "Purchase module not installed", 404, "MODULE_NOT_FOUND")
+
+            if not self._check_model_access('purchase.order', 'write'):
+                return self._error_response(
+                    "Access denied for purchase.order", 403, "ACCESS_DENIED")
+
+            order = request.env['purchase.order'].browse(order_id)
+            if not order.exists():
+                return self._error_response(
+                    f"Purchase order {order_id} not found", 404, "NOT_FOUND")
+
+            if order.state not in ('draft', 'sent'):
+                return self._error_response(
+                    f"Order is in state '{order.state}'. "
+                    "Only draft or sent orders can be confirmed.",
+                    400, "INVALID_STATE")
+
+            if not order.order_line:
+                return self._error_response(
+                    "Cannot confirm a purchase order with no lines",
+                    400, "NO_ORDER_LINES")
+
+            # Call the real Odoo confirm method (triggers _create_picking)
+            order.button_confirm()
+            order.invalidate_recordset()
+
+            # Read back confirmed order
+            order_data = order.read([
+                'id', 'name', 'state', 'partner_id',
+                'date_order', 'date_approve',
+                'amount_untaxed', 'amount_tax', 'amount_total',
+                'picking_ids', 'order_line', 'invoice_status',
+            ])[0]
+
+            # Enrich picking details
+            pickings_data = []
+            for picking in order.picking_ids:
+                moves = []
+                for move in picking.move_ids:
+                    moves.append({
+                        'id': move.id,
+                        'product_id': move.product_id.id,
+                        'product_name': move.product_id.display_name,
+                        'product_uom_qty': move.product_uom_qty,
+                        'quantity': move.quantity,
+                        'state': move.state,
+                    })
+                pickings_data.append({
+                    'id': picking.id,
+                    'name': picking.name,
+                    'state': picking.state,
+                    'picking_type_id': [picking.picking_type_id.id,
+                                        picking.picking_type_id.display_name],
+                    'scheduled_date': str(picking.scheduled_date) if picking.scheduled_date else None,
+                    'move_ids': moves,
+                })
+
+            # Enrich order lines
+            lines_data = []
+            for line in order.order_line:
+                lines_data.append({
+                    'id': line.id,
+                    'product_id': line.product_id.id,
+                    'product_name': line.product_id.display_name,
+                    'product_type': line.product_id.type,
+                    'product_qty': line.product_qty,
+                    'qty_received': line.qty_received,
+                    'price_unit': line.price_unit,
+                    'price_subtotal': line.price_subtotal,
+                })
+
+            order_data['pickings'] = pickings_data
+            order_data['lines'] = lines_data
+
+            # Warn if no pickings were created
+            message = "Purchase order confirmed"
+            if not order.picking_ids:
+                message += (
+                    " — but no receipt was generated. This typically means "
+                    "the PO contains only service-type products. Only "
+                    "consumable (storable) products generate receipts."
+                )
+
+            return self._json_response(
+                data={'purchase_order': order_data},
+                message=message,
+                status_code=200,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "CONFIRM_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "CONFIRM_ERROR")
+        except Exception as e:
+            _logger.error("Error confirming PO %s: %s", order_id, str(e))
+            return self._error_response(
+                "Error confirming purchase order", 500, "CONFIRM_ERROR")
+
+    # ===== STOCK PICKING: VALIDATE (RECEIVE) =====
+
+    @http.route('/api/v2/picking/<int:picking_id>/validate', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def picking_validate(self, picking_id):
+        """Validate (receive) a stock picking via Odoo's ``button_validate()``.
+
+        This triggers the full receiving logic including:
+        - Setting done quantities on stock.moves
+        - Updating stock.quant (actual inventory)
+        - Processing any subsequent/chained moves
+
+        Optional JSON body::
+
+            {
+                "move_lines": [          // optional – partial receipt
+                    {
+                        "move_id": 42,
+                        "quantity": 5.0  // qty to receive (less than ordered = backorder)
+                    }
+                ],
+                "create_backorder": true  // default true; false = no backorder for unprocessed qty
+            }
+
+        If ``move_lines`` is omitted, all moves are received in full
+        (quantity = product_uom_qty).
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'stock.picking' not in request.env:
+                return self._error_response(
+                    "Stock module not installed", 404, "MODULE_NOT_FOUND")
+
+            if not self._check_model_access('stock.picking', 'write'):
+                return self._error_response(
+                    "Access denied for stock.picking", 403, "ACCESS_DENIED")
+
+            picking = request.env['stock.picking'].browse(picking_id)
+            if not picking.exists():
+                return self._error_response(
+                    f"Picking {picking_id} not found", 404, "NOT_FOUND")
+
+            if picking.state == 'done':
+                return self._error_response(
+                    f"Picking {picking.name} is already validated (done)",
+                    400, "ALREADY_DONE")
+
+            if picking.state == 'cancel':
+                return self._error_response(
+                    f"Picking {picking.name} is cancelled",
+                    400, "CANCELLED")
+
+            if picking.state == 'draft':
+                picking.action_confirm()
+
+            if picking.state == 'waiting':
+                picking.action_assign()
+
+            # --- parse optional body for partial receipt ---
+            body = {}
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' in content_type:
+                try:
+                    body = request.httprequest.get_json(force=True) or {}
+                except Exception:
+                    body = {}
+
+            move_lines = body.get('move_lines')
+            create_backorder = body.get('create_backorder', True)
+
+            if move_lines and isinstance(move_lines, list):
+                # Partial receipt: set specific quantities
+                move_map = {ml['move_id']: ml['quantity'] for ml in move_lines
+                            if 'move_id' in ml and 'quantity' in ml}
+                for move in picking.move_ids.filtered(
+                        lambda m: m.state not in ('done', 'cancel')):
+                    if move.id in move_map:
+                        qty = move_map[move.id]
+                        if qty < 0:
+                            return self._error_response(
+                                f"Quantity for move {move.id} cannot be negative",
+                                400, "INVALID_QUANTITY")
+                        move.write({'quantity': qty, 'picked': True})
+                    else:
+                        # Not mentioned → leave at zero (will trigger backorder)
+                        move.write({'quantity': 0, 'picked': False})
+            else:
+                # Full receipt: receive everything
+                for move in picking.move_ids.filtered(
+                        lambda m: m.state not in ('done', 'cancel')):
+                    move.write({
+                        'quantity': move.product_uom_qty,
+                        'picked': True,
+                    })
+
+            # --- validate ---
+            ctx = {
+                'skip_sms': True,
+                'skip_immediate': True,
+            }
+            if not create_backorder:
+                ctx['skip_backorder'] = True
+
+            result = picking.with_context(**ctx).button_validate()
+
+            # Handle wizard popups (backorder confirmation, immediate transfer)
+            if isinstance(result, dict) and result.get('res_model'):
+                wiz_model = result['res_model']
+                wiz_ctx = result.get('context') or {}
+                wiz = (request.env[wiz_model]
+                       .sudo()
+                       .with_context(**wiz_ctx)
+                       .create({}))
+                if hasattr(wiz, 'process'):
+                    wiz.process()
+                elif hasattr(wiz, 'action_back_order'):
+                    if create_backorder:
+                        wiz.action_back_order()
+                    else:
+                        wiz.process_cancel_backorder()
+
+            picking.invalidate_recordset()
+
+            # --- build response ---
+            moves_data = []
+            for move in picking.move_ids:
+                moves_data.append({
+                    'id': move.id,
+                    'product_id': move.product_id.id,
+                    'product_name': move.product_id.display_name,
+                    'product_uom_qty': move.product_uom_qty,
+                    'quantity': move.quantity,
+                    'state': move.state,
+                })
+
+            picking_data = {
+                'id': picking.id,
+                'name': picking.name,
+                'state': picking.state,
+                'date_done': str(picking.date_done) if picking.date_done else None,
+                'origin': picking.origin,
+                'picking_type_id': [picking.picking_type_id.id,
+                                    picking.picking_type_id.display_name],
+                'move_ids': moves_data,
+            }
+
+            # Check for backorder
+            backorder = None
+            if picking.backorder_ids:
+                bo = picking.backorder_ids.sorted('id', reverse=True)[:1]
+                if bo:
+                    backorder = {
+                        'id': bo.id,
+                        'name': bo.name,
+                        'state': bo.state,
+                    }
+
+            response_data = {'picking': picking_data}
+            if backorder:
+                response_data['backorder'] = backorder
+
+            return self._json_response(
+                data=response_data,
+                message=f"Picking {picking.name} validated successfully",
+                status_code=200,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "VALIDATE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "VALIDATE_ERROR")
+        except Exception as e:
+            _logger.error("Error validating picking %s: %s", picking_id, str(e))
+            return self._error_response(
+                "Error validating picking", 500, "VALIDATE_ERROR")
+
+    # ===== STOCK PICKING: RETURN =====
+
+    @http.route('/api/v2/picking/<int:picking_id>/return', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def picking_return(self, picking_id):
+        """Create a return for a validated (done) picking using Odoo's
+        ``stock.return.picking`` wizard.
+
+        This properly reverses inventory by creating a new return picking
+        with reversed stock.moves.
+
+        Optional JSON body::
+
+            {
+                "return_lines": [        // optional – partial return
+                    {
+                        "product_id": 12,
+                        "quantity": 3.0
+                    }
+                ],
+                "validate_return": false  // default false; true = auto-validate the return picking
+            }
+
+        If ``return_lines`` is omitted, all products are returned in full.
+
+        Returns the newly created return picking.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'stock.picking' not in request.env:
+                return self._error_response(
+                    "Stock module not installed", 404, "MODULE_NOT_FOUND")
+
+            if not self._check_model_access('stock.picking', 'write'):
+                return self._error_response(
+                    "Access denied for stock.picking", 403, "ACCESS_DENIED")
+
+            picking = request.env['stock.picking'].browse(picking_id)
+            if not picking.exists():
+                return self._error_response(
+                    f"Picking {picking_id} not found", 404, "NOT_FOUND")
+
+            if picking.state != 'done':
+                return self._error_response(
+                    f"Picking {picking.name} is in state '{picking.state}'. "
+                    "Only validated (done) pickings can be returned.",
+                    400, "INVALID_STATE")
+
+            # --- parse optional body ---
+            body = {}
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' in content_type:
+                try:
+                    body = request.httprequest.get_json(force=True) or {}
+                except Exception:
+                    body = {}
+
+            return_lines = body.get('return_lines')
+            validate_return = body.get('validate_return', False)
+
+            # --- create the return wizard ---
+            ctx = {
+                'active_id': picking.id,
+                'active_ids': [picking.id],
+                'active_model': 'stock.picking',
+            }
+            wizard = request.env['stock.return.picking'].with_context(**ctx).create({})
+
+            # --- adjust quantities if partial return ---
+            if return_lines and isinstance(return_lines, list):
+                qty_by_product = {rl['product_id']: rl['quantity']
+                                  for rl in return_lines
+                                  if 'product_id' in rl and 'quantity' in rl}
+                for wiz_line in wizard.product_return_moves:
+                    if wiz_line.product_id.id in qty_by_product:
+                        qty = qty_by_product[wiz_line.product_id.id]
+                        if qty < 0:
+                            return self._error_response(
+                                f"Quantity for product {wiz_line.product_id.id} "
+                                "cannot be negative",
+                                400, "INVALID_QUANTITY")
+                        wiz_line.write({'quantity': qty})
+                    else:
+                        wiz_line.write({'quantity': 0})
+
+            # --- create the return picking ---
+            result = wizard.action_create_returns()
+
+            new_picking_id = result.get('res_id')
+            if not new_picking_id:
+                return self._error_response(
+                    "Return creation failed — no picking was generated",
+                    500, "RETURN_ERROR")
+
+            new_picking = request.env['stock.picking'].browse(new_picking_id)
+
+            # --- optionally auto-validate the return ---
+            if validate_return and new_picking.state != 'done':
+                for move in new_picking.move_ids.filtered(
+                        lambda m: m.state not in ('done', 'cancel')):
+                    move.write({
+                        'quantity': move.product_uom_qty,
+                        'picked': True,
+                    })
+                new_picking.with_context(
+                    skip_sms=True,
+                    skip_immediate=True,
+                    skip_backorder=True,
+                ).button_validate()
+                new_picking.invalidate_recordset()
+
+            # --- build response ---
+            moves_data = []
+            for move in new_picking.move_ids:
+                moves_data.append({
+                    'id': move.id,
+                    'product_id': move.product_id.id,
+                    'product_name': move.product_id.display_name,
+                    'product_uom_qty': move.product_uom_qty,
+                    'quantity': move.quantity,
+                    'state': move.state,
+                })
+
+            return_data = {
+                'id': new_picking.id,
+                'name': new_picking.name,
+                'state': new_picking.state,
+                'origin': new_picking.origin,
+                'date_done': str(new_picking.date_done) if new_picking.date_done else None,
+                'picking_type_id': [new_picking.picking_type_id.id,
+                                    new_picking.picking_type_id.display_name],
+                'move_ids': moves_data,
+                'original_picking_id': picking.id,
+                'original_picking_name': picking.name,
+            }
+
+            return self._json_response(
+                data={'return_picking': return_data},
+                message=f"Return picking {new_picking.name} created"
+                        + (" and validated" if validate_return else "")
+                        + f" for {picking.name}",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "RETURN_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "RETURN_ERROR")
+        except Exception as e:
+            _logger.error("Error returning picking %s: %s", picking_id, str(e))
+            return self._error_response(
+                "Error creating return", 500, "RETURN_ERROR")
 
     # ===== GENERIC CRUD: DELETE =====
 
@@ -2347,6 +3441,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if model not in request.env:
                 return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
@@ -2354,11 +3456,18 @@ class SimpleApiController(http.Controller):
             if self._is_model_blocked(model):
                 return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
 
+            # Module access enforcement
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+
             if not self._check_model_access(model, 'unlink'):
                 return self._error_response(f"Delete access denied for model '{model}'", 403, "ACCESS_DENIED")
 
-            record = request.env[model].browse(record_id)
-            if not record.exists():
+            # Verify record exists AND is within the user's allowed scope
+            scope_domain = self._get_record_scope_domain(model, user)
+            record = request.env[model].search([('id', '=', record_id)] + scope_domain, limit=1)
+            if not record:
                 return self._error_response(f"Record {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
 
             record.unlink()
@@ -2386,6 +3495,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             search_term = request.httprequest.args.get('search', '')
@@ -2431,6 +3548,14 @@ class SimpleApiController(http.Controller):
             is_valid, user = self._authenticate()
             if not is_valid:
                 return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             module_access = self._get_module_access()
@@ -2573,6 +3698,14 @@ class SimpleApiController(http.Controller):
             if not is_valid:
                 return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             module_access = self._get_module_access()
             accessible_modules = [
@@ -2599,10 +3732,14 @@ class SimpleApiController(http.Controller):
                 if model_name not in request.env:
                     continue
                 try:
-                    count = request.env[model_name].search_count([
+                    domain = [
                         (date_field, '>=', week_ago.isoformat()),
                         (date_field, '<=', today.isoformat()),
-                    ])
+                    ]
+                    scope = self._get_record_scope_domain(model_name, user)
+                    if scope:
+                        domain = scope + domain
+                    count = request.env[model_name].search_count(domain)
                     recent_summary[mod_key] = {'new_this_week': count}
                 except Exception:
                     continue
@@ -2630,7 +3767,7 @@ class SimpleApiController(http.Controller):
                     'permissions': {
                         'is_admin': user.has_group('base.group_system'),
                         'is_user': user.has_group('base.group_user'),
-                        'can_manage_users': user.has_group('base.group_user_admin'),
+                        'can_manage_users': user.has_group('base.group_erp_manager'),
                     },
                     'module_access': module_access,
                     'accessible_modules': accessible_modules,
@@ -2651,6 +3788,14 @@ class SimpleApiController(http.Controller):
         is_valid, user = self._authenticate_session()
         if not is_valid:
             return user
+
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
 
         try:
             params = self._parse_analytics_params()
@@ -2678,6 +3823,8 @@ class SimpleApiController(http.Controller):
                     continue
                 if not self._check_model_access(model_name):
                     continue
+                if not self._user_has_module_role(user, mod_key):
+                    continue
 
                 model_obj = request.env[model_name]
                 cur_d = self._ddom(date_field, params['from_date'], params['to_date']) + params['extra_domain']
@@ -2697,7 +3844,7 @@ class SimpleApiController(http.Controller):
                 module_kpis[mod_key] = kpis
 
             total_employees = 0
-            if 'hr.employee' in request.env and self._check_model_access('hr.employee'):
+            if 'hr.employee' in request.env and self._check_model_access('hr.employee') and self._user_has_module_role(user, 'hr'):
                 total_employees = request.env['hr.employee'].search_count(
                     [('active', '=', True)] + params['extra_domain'])
 
@@ -2706,7 +3853,11 @@ class SimpleApiController(http.Controller):
                     'current': total_employees, 'previous': None, 'delta': None, 'delta_percent': None
                 }
 
-            overdue = self._overdue_activities('crm.lead') + self._overdue_activities('sale.order')
+            overdue = 0
+            if self._user_has_module_role(user, 'crm'):
+                overdue += self._overdue_activities('crm.lead')
+            if self._user_has_module_role(user, 'sales'):
+                overdue += self._overdue_activities('sale.order')
             alerts = []
             if overdue > 0:
                 alerts.append({
@@ -2737,9 +3888,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'crm.lead' not in request.env or not self._check_model_access('crm.lead'):
                 return self._error_response("CRM not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'crm'):
+                return self._error_response("Access denied: requires Sales/CRM role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             Lead = request.env['crm.lead']
@@ -2789,9 +3950,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'sale.order' not in request.env or not self._check_model_access('sale.order'):
                 return self._error_response("Sales not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'sales'):
+                return self._error_response("Access denied: requires Sales role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             SO = request.env['sale.order']
@@ -2847,9 +4018,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'account.move' not in request.env or not self._check_model_access('account.move'):
                 return self._error_response("Invoicing not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'invoicing'):
+                return self._error_response("Access denied: requires Accounting/Invoicing role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             Move = request.env['account.move']
@@ -2904,9 +4085,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'stock.picking' not in request.env or not self._check_model_access('stock.picking'):
                 return self._error_response("Inventory not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'inventory'):
+                return self._error_response("Access denied: requires Inventory role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             Pick = request.env['stock.picking']
@@ -2960,9 +4151,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'purchase.order' not in request.env or not self._check_model_access('purchase.order'):
                 return self._error_response("Purchases not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'purchase'):
+                return self._error_response("Access denied: requires Purchase role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             PO = request.env['purchase.order']
@@ -3010,9 +4211,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'hr.employee' not in request.env or not self._check_model_access('hr.employee'):
                 return self._error_response("HR not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'hr'):
+                return self._error_response("Access denied: requires HR role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             Emp = request.env['hr.employee']
@@ -3057,9 +4268,19 @@ class SimpleApiController(http.Controller):
         if not is_valid:
             return user
 
+        # Subscription enforcement
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
         try:
             if 'project.task' not in request.env or not self._check_model_access('project.task'):
                 return self._error_response("Projects not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'project'):
+                return self._error_response("Access denied: requires Project role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
             Task = request.env['project.task']
@@ -3108,3 +4329,22 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Project analytics error: %s", str(e))
             return self._error_response("Error retrieving project analytics", 500, "ANALYTICS_ERROR")
+
+    # ===== INTERNAL: CACHE INVALIDATION =====
+
+    @http.route('/api/v2/internal/invalidate-cache', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def invalidate_enforcer_cache(self):
+        """Internal endpoint for Control Plane to push cache invalidation.
+
+        Authenticated by internal token (not user session).
+        """
+        token = request.httprequest.headers.get('Authorization', '').removeprefix('Bearer ').strip()
+        expected = os.environ.get('CONTROL_PLANE_TOKEN', '')
+        if not expected or token != expected:
+            return self._error_response("Unauthorized", 401, "UNAUTHORIZED")
+
+        enforcer = self._get_enforcer()
+        if enforcer is not None:
+            enforcer.invalidate_cache()
+
+        return self._json_response(data={"invalidated": True}, message="Cache invalidated")
