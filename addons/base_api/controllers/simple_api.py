@@ -538,6 +538,24 @@ class SimpleApiController(http.Controller):
             message="Basic test successful"
         )
 
+    @http.route('/api/v2/public/branding', type='http', auth='none', methods=['GET'], csrf=False)
+    def public_branding(self):
+        """Return tenant branding info (company name) so the SPA can render
+        the right name on the login screen and main shell. Public, unauth.
+
+        Single-tenant per Odoo: there is only ever one company that matters,
+        the main one created at provisioning time. We pick the lowest id as
+        the canonical "main" company.
+        """
+        company_name = None
+        try:
+            company = request.env['res.company'].sudo().search([], order='id asc', limit=1)
+            if company:
+                company_name = company.name
+        except Exception:
+            pass
+        return self._json_response(data={'company_name': company_name})
+
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
         """Test authentication."""
