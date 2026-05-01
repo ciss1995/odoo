@@ -152,10 +152,14 @@ class SimpleApiController(http.Controller):
             if not session:
                 return False, self._error_response("Invalid or expired session", 401, "INVALID_SESSION")
 
+            # Best-effort last_activity bump. GET routes run on a read-only
+            # cursor in Odoo 18+, so the write may fail; wrap in a savepoint
+            # so the failure stays contained and the cursor remains usable.
             try:
-                session.sudo().write({'last_activity': datetime.now()})
+                with request.env.cr.savepoint():
+                    session.sudo().write({'last_activity': datetime.now()})
             except Exception as write_error:
-                _logger.warning("Could not update session last_activity: %s", str(write_error))
+                _logger.debug("Skipped session last_activity bump: %s", str(write_error))
 
             # Per-user rate limit check
             rate_error = self._enforce_user_rate_limit(session.user_id)
@@ -1223,6 +1227,7 @@ class SimpleApiController(http.Controller):
                         'email': user.email,
                         'active': user.active,
                         'company_id': [user.company_id.id, user.company_id.name] if user.company_id else False,
+                        'partner_id': [user.partner_id.id, user.partner_id.name] if user.partner_id else False,
                         'groups': [{'id': g.id, 'name': g.name} for g in user.group_ids],
                         'permissions': {
                             'is_admin': user.has_group('base.group_system'),
@@ -3448,6 +3453,417 @@ class SimpleApiController(http.Controller):
             return self._error_response(
                 "Error creating return", 500, "RETURN_ERROR")
 
+    # ===== HR RECRUITMENT: APPLICANT ACTIONS =====
+
+    def _hr_recruitment_guard(self, model='hr.applicant', operation='write'):
+        """Shared guard for hr.applicant action endpoints.
+
+        Returns (user, None) on success or (None, error_response) on failure.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return None, user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return None, sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return None, quota_error
+
+        if model not in request.env:
+            return None, self._error_response(
+                "hr_recruitment module not installed", 404, "MODULE_NOT_FOUND")
+
+        if not self._user_has_module_role(user, 'hr'):
+            return None, self._error_response(
+                "User does not have HR access", 403, "MODULE_ACCESS_DENIED")
+
+        if not self._check_model_access(model, operation):
+            return None, self._error_response(
+                f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
+        return user, None
+
+    @http.route('/api/v2/hr/applicants/<int:applicant_id>/refuse', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def applicant_refuse(self, applicant_id, **_kwargs):
+        """Refuse an applicant.
+
+        Mirrors Odoo's refuse-reason wizard apply: sets ``refuse_reason_id``,
+        ``active = False``, ``refuse_date = now``. Skips email sending and
+        duplicate-detection — those are wizard-only concerns.
+
+        Body (optional): ``{"reason_id": <hr.applicant.refuse.reason id>}``.
+        If omitted, the first reason record is used (matches the wizard
+        default).
+        """
+        user, err = self._hr_recruitment_guard()
+        if err:
+            return err
+
+        try:
+            try:
+                data = request.httprequest.get_json(force=True, silent=True) or {}
+            except Exception:
+                data = {}
+
+            applicant = request.env['hr.applicant'].browse(applicant_id)
+            if not applicant.exists():
+                return self._error_response(
+                    f"Applicant {applicant_id} not found", 404, "NOT_FOUND")
+
+            if applicant.application_status in ('refused', 'hired'):
+                return self._error_response(
+                    f"Applicant is already in state '{applicant.application_status}'",
+                    400, "INVALID_STATE")
+
+            reason_id = data.get('reason_id')
+            if reason_id:
+                reason = request.env['hr.applicant.refuse.reason'].browse(int(reason_id))
+                if not reason.exists():
+                    return self._error_response(
+                        f"Refuse reason {reason_id} not found", 400, "INVALID_REASON")
+            else:
+                reason = request.env['hr.applicant.refuse.reason'].search([], limit=1)
+                if not reason:
+                    return self._error_response(
+                        "No refuse reason configured. Pass reason_id or seed hr.applicant.refuse.reason.",
+                        400, "NO_REFUSE_REASON")
+
+            applicant.write({
+                'refuse_reason_id': reason.id,
+                'active': False,
+                'refuse_date': datetime.now(),
+            })
+            applicant.invalidate_recordset()
+
+            return self._json_response(
+                data={
+                    'applicant': {
+                        'id': applicant.id,
+                        'partner_name': applicant.partner_name,
+                        'application_status': applicant.application_status,
+                        'active': applicant.active,
+                        'refuse_reason_id': [reason.id, reason.name],
+                        'refuse_date': str(applicant.refuse_date) if applicant.refuse_date else None,
+                    }
+                },
+                message="Applicant refused",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "REFUSE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "REFUSE_ERROR")
+        except Exception as e:
+            _logger.error("Error refusing applicant %s: %s", applicant_id, str(e))
+            return self._error_response(
+                "Error refusing applicant", 500, "REFUSE_ERROR")
+
+    @http.route('/api/v2/hr/applicants/<int:applicant_id>/hire', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def applicant_hire(self, applicant_id, **_kwargs):
+        """Hire an applicant — creates the linked hr.employee record.
+
+        Wraps Odoo's ``create_employee_from_applicant`` so the hire flow goes
+        through the same path as the kanban "Create Employee" button. Returns
+        the new employee id and the applicant's updated application_status.
+        """
+        user, err = self._hr_recruitment_guard()
+        if err:
+            return err
+
+        try:
+            applicant = request.env['hr.applicant'].browse(applicant_id)
+            if not applicant.exists():
+                return self._error_response(
+                    f"Applicant {applicant_id} not found", 404, "NOT_FOUND")
+
+            if applicant.application_status in ('refused', 'hired'):
+                return self._error_response(
+                    f"Applicant is already in state '{applicant.application_status}'",
+                    400, "INVALID_STATE")
+
+            existing_employee = applicant.employee_id
+            if existing_employee:
+                return self._error_response(
+                    f"Applicant already linked to employee {existing_employee.id}",
+                    400, "ALREADY_HIRED")
+
+            applicant.create_employee_from_applicant()
+
+            # Move applicant to a hired stage so application_status flips to
+            # 'hired'. We pick the first stage flagged ``hired_stage`` that
+            # applies to this applicant's job (or has no job restriction).
+            hired_stage = request.env['hr.recruitment.stage'].search([
+                ('hired_stage', '=', True),
+                '|', ('job_ids', '=', False), ('job_ids', '=', applicant.job_id.id),
+            ], order='sequence asc', limit=1)
+            if hired_stage:
+                applicant.stage_id = hired_stage.id
+            applicant.invalidate_recordset()
+            employee = applicant.employee_id
+
+            return self._json_response(
+                data={
+                    'applicant': {
+                        'id': applicant.id,
+                        'application_status': applicant.application_status,
+                        'date_closed': str(applicant.date_closed) if applicant.date_closed else None,
+                    },
+                    'employee': {
+                        'id': employee.id,
+                        'name': employee.name,
+                        'job_id': [employee.job_id.id, employee.job_id.name] if employee.job_id else None,
+                        'department_id': [employee.department_id.id, employee.department_id.name] if employee.department_id else None,
+                    } if employee else None,
+                },
+                message="Applicant hired and employee record created",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "HIRE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "HIRE_ERROR")
+        except Exception as e:
+            _logger.error("Error hiring applicant %s: %s", applicant_id, str(e))
+            return self._error_response(
+                "Error hiring applicant", 500, "HIRE_ERROR")
+
+    # ===== HR TIME OFF: LEAVE ACTIONS =====
+
+    def _hr_leave_guard(self, operation='write'):
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return None, user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return None, sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return None, quota_error
+
+        if 'hr.leave' not in request.env:
+            return None, self._error_response(
+                "hr_holidays module not installed", 404, "MODULE_NOT_FOUND")
+
+        if not self._user_has_module_role(user, 'hr'):
+            return None, self._error_response(
+                "User does not have HR access", 403, "MODULE_ACCESS_DENIED")
+
+        if not self._check_model_access('hr.leave', operation):
+            return None, self._error_response(
+                "Access denied for model 'hr.leave'", 403, "ACCESS_DENIED")
+
+        return user, None
+
+    def _serialize_leave(self, leave):
+        return {
+            'id': leave.id,
+            'name': leave.name or '',
+            'state': leave.state,
+            'employee_id': [leave.employee_id.id, leave.employee_id.name] if leave.employee_id else None,
+            'holiday_status_id': [leave.holiday_status_id.id, leave.holiday_status_id.name] if leave.holiday_status_id else None,
+            'request_date_from': str(leave.request_date_from) if leave.request_date_from else None,
+            'request_date_to': str(leave.request_date_to) if leave.request_date_to else None,
+            'number_of_days': leave.number_of_days,
+            'validation_type': leave.validation_type,
+            'first_approver_id': [leave.first_approver_id.id, leave.first_approver_id.name] if leave.first_approver_id else None,
+            'second_approver_id': [leave.second_approver_id.id, leave.second_approver_id.name] if leave.second_approver_id else None,
+        }
+
+    @http.route('/api/v2/hr/leaves/<int:leave_id>/approve', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def leave_approve(self, leave_id, **_kwargs):
+        """Approve a leave request.
+
+        For ``validation_type = 'both'``, calling this once moves
+        confirm → validate1. The UI team asked for "one endpoint that does
+        the full happy path", so we call ``action_approve`` a second time when
+        the leave is still in validate1 and the same user has rights to
+        complete it. If the user lacks the second-approval right, we leave the
+        record at validate1 and return the current state.
+        """
+        user, err = self._hr_leave_guard()
+        if err:
+            return err
+
+        try:
+            leave = request.env['hr.leave'].browse(leave_id)
+            if not leave.exists():
+                return self._error_response(
+                    f"Leave request {leave_id} not found", 404, "NOT_FOUND")
+
+            if leave.state in ('validate', 'refuse', 'cancel'):
+                return self._error_response(
+                    f"Leave is in state '{leave.state}' and cannot be approved",
+                    400, "INVALID_STATE")
+
+            leave.action_approve()
+            leave.invalidate_recordset()
+
+            # Second pass for double-validation: only if the user has the
+            # second-approver right (action_approve will raise UserError
+            # otherwise, which we catch and treat as "first approval done").
+            if leave.state == 'validate1':
+                try:
+                    leave.action_approve()
+                    leave.invalidate_recordset()
+                except UserError:
+                    pass  # First approval recorded; second approver must act.
+
+            return self._json_response(
+                data={'leave': self._serialize_leave(leave)},
+                message=f"Leave {leave.state}",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "APPROVE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "APPROVE_ERROR")
+        except Exception as e:
+            _logger.error("Error approving leave %s: %s", leave_id, str(e))
+            return self._error_response(
+                "Error approving leave", 500, "APPROVE_ERROR")
+
+    @http.route('/api/v2/hr/leaves/<int:leave_id>/refuse', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def leave_refuse(self, leave_id, **_kwargs):
+        """Refuse a leave request — calls ``action_refuse`` (state → refuse).
+
+        Optional body: ``{"reason": "..."}`` — if present, posted as a chatter
+        message before the state transition.
+        """
+        user, err = self._hr_leave_guard()
+        if err:
+            return err
+
+        try:
+            try:
+                data = request.httprequest.get_json(force=True, silent=True) or {}
+            except Exception:
+                data = {}
+
+            leave = request.env['hr.leave'].browse(leave_id)
+            if not leave.exists():
+                return self._error_response(
+                    f"Leave request {leave_id} not found", 404, "NOT_FOUND")
+
+            if leave.state not in ('confirm', 'validate', 'validate1'):
+                return self._error_response(
+                    f"Leave is in state '{leave.state}' and cannot be refused",
+                    400, "INVALID_STATE")
+
+            reason = (data.get('reason') or '').strip()
+            if reason:
+                leave.message_post(body=f"Refusal reason: {reason}")
+
+            leave.action_refuse()
+            leave.invalidate_recordset()
+
+            return self._json_response(
+                data={'leave': self._serialize_leave(leave)},
+                message="Leave refused",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "REFUSE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "REFUSE_ERROR")
+        except Exception as e:
+            _logger.error("Error refusing leave %s: %s", leave_id, str(e))
+            return self._error_response(
+                "Error refusing leave", 500, "REFUSE_ERROR")
+
+    # ===== ACCOUNTING: JOURNAL ENTRY POST =====
+
+    @http.route('/api/v2/accounting/journal-entries/<int:move_id>/post', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def journal_entry_post(self, move_id, **_kwargs):
+        """Post a draft journal entry (account.move) — calls ``action_post``.
+
+        Use the generic ``POST /api/v2/create/account.move`` to create a draft
+        miscellaneous entry with embedded ``line_ids`` (Odoo accepts the
+        standard one2many tuple syntax: ``[(0, 0, {...}), ...]``). Then call
+        this endpoint to transition draft → posted.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response(
+                "User does not have Accounting access", 403, "MODULE_ACCESS_DENIED")
+
+        if not self._check_model_access('account.move', 'write'):
+            return self._error_response(
+                "Access denied for model 'account.move'", 403, "ACCESS_DENIED")
+
+        try:
+            move = request.env['account.move'].browse(move_id)
+            if not move.exists():
+                return self._error_response(
+                    f"Journal entry {move_id} not found", 404, "NOT_FOUND")
+
+            if move.state == 'posted':
+                return self._error_response(
+                    "Journal entry already posted", 400, "INVALID_STATE")
+            if move.state == 'cancel':
+                return self._error_response(
+                    "Cannot post a cancelled journal entry", 400, "INVALID_STATE")
+
+            move.action_post()
+            move.invalidate_recordset()
+
+            return self._json_response(
+                data={
+                    'move': {
+                        'id': move.id,
+                        'name': move.name,
+                        'state': move.state,
+                        'date': str(move.date) if move.date else None,
+                        'journal_id': [move.journal_id.id, move.journal_id.name] if move.journal_id else None,
+                        'amount_total': move.amount_total,
+                    }
+                },
+                message="Journal entry posted",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(str(e), 400, "POST_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "POST_ERROR")
+        except Exception as e:
+            _logger.error("Error posting journal entry %s: %s", move_id, str(e))
+            return self._error_response(
+                "Error posting journal entry", 500, "POST_ERROR")
+
     # ===== GENERIC CRUD: DELETE =====
 
     @http.route('/api/v2/delete/<string:model>/<int:record_id>', type='http', auth='none', methods=['DELETE'], csrf=False, readonly=False)
@@ -4347,6 +4763,465 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Project analytics error: %s", str(e))
             return self._error_response("Error retrieving project analytics", 500, "ANALYTICS_ERROR")
+
+    # ===== ACCOUNTING REPORTS =====
+
+    _ACCT_ASSET_TYPES = (
+        'asset_receivable', 'asset_cash', 'asset_current',
+        'asset_non_current', 'asset_prepayments', 'asset_fixed',
+    )
+    _ACCT_LIABILITY_TYPES = (
+        'liability_payable', 'liability_credit_card',
+        'liability_current', 'liability_non_current',
+    )
+    _ACCT_EQUITY_TYPES = ('equity', 'equity_unaffected')
+    _ACCT_INCOME_TYPES = ('income', 'income_other')
+    _ACCT_EXPENSE_TYPES = ('expense', 'expense_depreciation', 'expense_direct_cost')
+
+    _ACCT_TYPE_LABELS = {
+        'asset_receivable': 'Receivable',
+        'asset_cash': 'Bank and Cash',
+        'asset_current': 'Current Assets',
+        'asset_non_current': 'Non-current Assets',
+        'asset_prepayments': 'Prepayments',
+        'asset_fixed': 'Fixed Assets',
+        'liability_payable': 'Payable',
+        'liability_credit_card': 'Credit Card',
+        'liability_current': 'Current Liabilities',
+        'liability_non_current': 'Non-current Liabilities',
+        'equity': 'Equity',
+        'equity_unaffected': 'Current Year Earnings',
+        'income': 'Income',
+        'income_other': 'Other Income',
+        'expense': 'Expenses',
+        'expense_depreciation': 'Depreciation',
+        'expense_direct_cost': 'Cost of Revenue',
+    }
+
+    def _account_balances(self, account_types, date_from=None, date_to=None, extra_domain=None):
+        """Aggregate move-line balances per account.
+
+        Returns list of dicts: {account_id, code, name, account_type, balance}.
+        balance = sum(debit) - sum(credit) over posted move lines in window.
+        """
+        AccountAccount = request.env['account.account']
+        MoveLine = request.env['account.move.line']
+
+        accounts = AccountAccount.search([
+            ('account_type', 'in', list(account_types)),
+            ('active', '=', True),
+        ] + (extra_domain or []))
+        if not accounts:
+            return []
+
+        ml_domain = [
+            ('parent_state', '=', 'posted'),
+            ('account_id', 'in', accounts.ids),
+        ]
+        if date_from:
+            ml_domain.append(('date', '>=', date_from.isoformat()))
+        if date_to:
+            ml_domain.append(('date', '<=', date_to.isoformat()))
+
+        rg = MoveLine.read_group(ml_domain, ['balance:sum', 'debit:sum', 'credit:sum'], ['account_id'])
+        by_id = {row['account_id'][0]: row for row in rg if row.get('account_id')}
+
+        rows = []
+        for acc in accounts:
+            row = by_id.get(acc.id)
+            balance = (row.get('balance', 0.0) if row else 0.0) or 0.0
+            debit = (row.get('debit', 0.0) if row else 0.0) or 0.0
+            credit = (row.get('credit', 0.0) if row else 0.0) or 0.0
+            rows.append({
+                'account_id': acc.id,
+                'code': acc.code,
+                'name': acc.name,
+                'account_type': acc.account_type,
+                'reconcile': bool(acc.reconcile),
+                'debit': round(debit, 2),
+                'credit': round(credit, 2),
+                'balance': round(balance, 2),
+            })
+        return rows
+
+    def _section_from_rows(self, rows, account_types, label, sign=1):
+        """Build a balance-sheet/P&L section from filtered rows."""
+        accounts = [r for r in rows if r['account_type'] in account_types and r['balance'] != 0]
+        accounts.sort(key=lambda r: (r['code'] or ''))
+        total = round(sum(r['balance'] for r in accounts) * sign, 2)
+        return {
+            'label': label,
+            'total': total,
+            'accounts': [{
+                'id': a['account_id'],
+                'code': a['code'],
+                'name': a['name'],
+                'type_label': self._ACCT_TYPE_LABELS.get(a['account_type'], a['account_type']),
+                'amount': round(a['balance'] * sign, 2),
+                'level': 1,
+            } for a in accounts],
+        }
+
+    @http.route('/api/v2/analytics/accounting/journals/cards', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_journal_cards(self, **_kwargs):
+        """Journal summary cards: per-journal counts, balances, to-validate, overdue."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.journal' not in request.env or not self._check_model_access('account.journal'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Journal = request.env['account.journal']
+            Move = request.env['account.move']
+            today_str = datetime.now().date().isoformat()
+
+            journal_domain = []
+            for q, f in [('company_id', 'company_id')]:
+                v = request.httprequest.args.get(q)
+                if v:
+                    try:
+                        journal_domain.append((f, '=', int(v)))
+                    except (ValueError, TypeError):
+                        pass
+
+            journals = Journal.search(journal_domain)
+            cards = []
+            for j in journals:
+                base_d = [('journal_id', '=', j.id)] + params['extra_domain']
+                window_d = base_d + self._ddom('invoice_date', params['from_date'], params['to_date'])
+
+                total_count, total_amount = self._agg(Move, window_d + [('state', '=', 'posted')], 'amount_total')
+                to_validate = Move.search_count(base_d + [('state', '=', 'draft')])
+
+                overdue = 0
+                if j.type in ('sale', 'purchase'):
+                    overdue = Move.search_count(base_d + [
+                        ('state', '=', 'posted'),
+                        ('payment_state', 'not in', ('paid', 'reversed', 'in_payment')),
+                        ('invoice_date_due', '<', today_str),
+                    ])
+
+                bank_balance = None
+                if j.type in ('bank', 'cash') and j.default_account_id:
+                    rows = self._account_balances(
+                        (j.default_account_id.account_type,),
+                        date_to=params['to_date'],
+                    )
+                    bank_balance = round(sum(
+                        r['balance'] for r in rows
+                        if r['account_id'] == j.default_account_id.id
+                    ), 2)
+
+                cards.append({
+                    'id': j.id,
+                    'name': j.name,
+                    'code': j.code,
+                    'type': j.type,
+                    'currency': j.currency_id.name if j.currency_id else (j.company_id.currency_id.name if j.company_id else None),
+                    'balance': round(total_amount, 2),
+                    'bank_balance': bank_balance,
+                    'entries_count': total_count,
+                    'to_validate': to_validate,
+                    'overdue': overdue,
+                })
+
+            return self._json_response(data={
+                'cards': cards,
+                'meta': self._analytics_meta(params),
+            }, message="Journal cards retrieved")
+
+        except Exception as e:
+            _logger.error("Journal cards error: %s", str(e))
+            return self._error_response("Error retrieving journal cards", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/chart-of-accounts', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_chart_of_accounts(self, **_kwargs):
+        """Chart of accounts with cumulative balances as of `to` date."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.account' not in request.env or not self._check_model_access('account.account'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            args = request.httprequest.args
+            try:
+                limit = max(1, min(int(args.get('limit', 200)), 500))
+            except (ValueError, TypeError):
+                limit = 200
+            try:
+                offset = max(0, int(args.get('offset', 0)))
+            except (ValueError, TypeError):
+                offset = 0
+
+            type_filter = args.get('account_type')
+            account_types = (
+                self._ACCT_ASSET_TYPES + self._ACCT_LIABILITY_TYPES +
+                self._ACCT_EQUITY_TYPES + self._ACCT_INCOME_TYPES + self._ACCT_EXPENSE_TYPES
+            )
+            if type_filter:
+                account_types = tuple(t.strip() for t in type_filter.split(',') if t.strip())
+
+            extra = []
+            company_id = args.get('company_id')
+            if company_id:
+                try:
+                    extra.append(('company_id', '=', int(company_id)))
+                except (ValueError, TypeError):
+                    pass
+
+            rows = self._account_balances(account_types, date_to=params['to_date'], extra_domain=extra)
+            rows.sort(key=lambda r: (r['code'] or ''))
+            total_count = len(rows)
+            page = rows[offset:offset + limit]
+
+            return self._json_response(data={
+                'accounts': [{
+                    'id': r['account_id'],
+                    'code': r['code'],
+                    'name': r['name'],
+                    'type': r['account_type'],
+                    'type_label': self._ACCT_TYPE_LABELS.get(r['account_type'], r['account_type']),
+                    'allow_reconciliation': r['reconcile'],
+                    'debit': r['debit'],
+                    'credit': r['credit'],
+                    'balance': r['balance'],
+                } for r in page],
+                'pagination': {
+                    'total': total_count,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': offset + limit < total_count,
+                },
+                'meta': self._analytics_meta(params),
+            }, message="Chart of accounts retrieved")
+
+        except Exception as e:
+            _logger.error("Chart of accounts error: %s", str(e))
+            return self._error_response("Error retrieving chart of accounts", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/balance-sheet', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_balance_sheet(self, **_kwargs):
+        """Balance sheet: assets, liabilities, equity as of `to` date."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.account' not in request.env or not self._check_model_access('account.account'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            extra = []
+            company_id = request.httprequest.args.get('company_id')
+            if company_id:
+                try:
+                    extra.append(('company_id', '=', int(company_id)))
+                except (ValueError, TypeError):
+                    pass
+
+            all_types = (
+                self._ACCT_ASSET_TYPES + self._ACCT_LIABILITY_TYPES + self._ACCT_EQUITY_TYPES
+            )
+            rows = self._account_balances(all_types, date_to=params['to_date'], extra_domain=extra)
+
+            # Liabilities & equity carry credit-normal balances; flip sign so amounts read positive.
+            assets = self._section_from_rows(rows, self._ACCT_ASSET_TYPES, 'Assets', sign=1)
+            liabilities = self._section_from_rows(rows, self._ACCT_LIABILITY_TYPES, 'Liabilities', sign=-1)
+            equity = self._section_from_rows(rows, self._ACCT_EQUITY_TYPES, 'Equity', sign=-1)
+
+            return self._json_response(data={
+                'as_of': params['to_date'].isoformat(),
+                'sections': [assets, liabilities, equity],
+                'totals': {
+                    'assets': assets['total'],
+                    'liabilities': liabilities['total'],
+                    'equity': equity['total'],
+                    'liabilities_and_equity': round(liabilities['total'] + equity['total'], 2),
+                },
+                'meta': self._analytics_meta(params),
+            }, message="Balance sheet retrieved")
+
+        except Exception as e:
+            _logger.error("Balance sheet error: %s", str(e))
+            return self._error_response("Error retrieving balance sheet", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/profit-and-loss', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_profit_and_loss(self, **_kwargs):
+        """Profit and loss: income vs expenses for the requested window."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.account' not in request.env or not self._check_model_access('account.account'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            extra = []
+            company_id = request.httprequest.args.get('company_id')
+            if company_id:
+                try:
+                    extra.append(('company_id', '=', int(company_id)))
+                except (ValueError, TypeError):
+                    pass
+
+            all_types = self._ACCT_INCOME_TYPES + self._ACCT_EXPENSE_TYPES
+            rows = self._account_balances(
+                all_types,
+                date_from=params['from_date'],
+                date_to=params['to_date'],
+                extra_domain=extra,
+            )
+
+            income = self._section_from_rows(rows, self._ACCT_INCOME_TYPES, 'Income', sign=-1)
+            expenses = self._section_from_rows(rows, self._ACCT_EXPENSE_TYPES, 'Expenses', sign=1)
+            net_profit = round(income['total'] - expenses['total'], 2)
+
+            return self._json_response(data={
+                'period': {
+                    'from': params['from_date'].isoformat(),
+                    'to': params['to_date'].isoformat(),
+                },
+                'sections': [income, expenses],
+                'totals': {
+                    'income': income['total'],
+                    'expenses': expenses['total'],
+                    'net_profit': net_profit,
+                },
+                'meta': self._analytics_meta(params),
+            }, message="Profit and loss retrieved")
+
+        except Exception as e:
+            _logger.error("P&L error: %s", str(e))
+            return self._error_response("Error retrieving profit and loss", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/cash-flow', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_cash_flow(self, **_kwargs):
+        """Cash flow: opening, inflows, outflows, closing balance for cash & bank accounts."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.move.line' not in request.env or not self._check_model_access('account.move.line'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            extra = []
+            company_id = request.httprequest.args.get('company_id')
+            if company_id:
+                try:
+                    extra.append(('company_id', '=', int(company_id)))
+                except (ValueError, TypeError):
+                    pass
+
+            opening_rows = self._account_balances(
+                ('asset_cash',),
+                date_to=params['from_date'] - timedelta(days=1),
+                extra_domain=extra,
+            )
+            window_rows = self._account_balances(
+                ('asset_cash',),
+                date_from=params['from_date'],
+                date_to=params['to_date'],
+                extra_domain=extra,
+            )
+            closing_rows = self._account_balances(
+                ('asset_cash',),
+                date_to=params['to_date'],
+                extra_domain=extra,
+            )
+
+            opening = round(sum(r['balance'] for r in opening_rows), 2)
+            inflows = round(sum(r['debit'] for r in window_rows), 2)
+            outflows = round(sum(r['credit'] for r in window_rows), 2)
+            net_change = round(inflows - outflows, 2)
+            closing = round(sum(r['balance'] for r in closing_rows), 2)
+
+            by_account = []
+            for r in window_rows:
+                if r['debit'] == 0 and r['credit'] == 0:
+                    continue
+                by_account.append({
+                    'id': r['account_id'],
+                    'code': r['code'],
+                    'name': r['name'],
+                    'inflows': r['debit'],
+                    'outflows': r['credit'],
+                    'net': round(r['debit'] - r['credit'], 2),
+                })
+            by_account.sort(key=lambda r: (r['code'] or ''))
+
+            return self._json_response(data={
+                'period': {
+                    'from': params['from_date'].isoformat(),
+                    'to': params['to_date'].isoformat(),
+                },
+                'totals': {
+                    'opening_balance': opening,
+                    'inflows': inflows,
+                    'outflows': outflows,
+                    'net_change': net_change,
+                    'closing_balance': closing,
+                },
+                'by_account': by_account,
+                'meta': self._analytics_meta(params),
+            }, message="Cash flow retrieved")
+
+        except Exception as e:
+            _logger.error("Cash flow error: %s", str(e))
+            return self._error_response("Error retrieving cash flow", 500, "ANALYTICS_ERROR")
 
     # ===== INTERNAL: CACHE INVALIDATION =====
 
