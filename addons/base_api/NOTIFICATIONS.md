@@ -2,18 +2,153 @@
 
 ## Overview
 
-Odoo has a full notification system accessible via the `base_api` REST endpoints. It is built on several interconnected models:
+Two surfaces are available:
 
-| Model | Purpose | Key Use |
-|-------|---------|---------|
-| `mail.message` | All messages, notes, and notifications attached to records | Inbox, chatter, log notes |
-| `mail.notification` | Per-recipient delivery tracking for each message | Read/unread status, email delivery status |
-| `mail.activity` | Scheduled tasks/reminders assigned to users on records | To-dos, calls, meetings, follow-ups |
-| `mail.activity.type` | Definitions for activity types | Email, Call, Meeting, To-Do, Document |
-| `mail.followers` | Subscription records (who follows which document) | Auto-notification on document changes |
-| `mail.message.subtype` | Categories of notifications (Discussions, Note, Stage Changed, etc.) | Controls what followers receive |
+1. **Dedicated controller (`/api/v2/notifications/*`)** — recommended for the SPA bell. ACL-aware, lightweight payloads, plain-text previews, no domain-building required by the caller. See [SPA Notifications API](#spa-notifications-api) below.
+2. **Generic CRUD over the underlying mail models** — available on `mail.message`, `mail.activity`, `mail.notification`, `mail.followers`, etc. via the regular `/api/v2/search|create|update|delete` endpoints. Useful for chatter, audit, and admin tooling. The reference documentation for that surface is preserved further down in this file.
 
-All of these are accessible through the generic search/create/update/delete endpoints.
+The dedicated controller is built on the same underlying models — pick whichever fits.
+
+---
+
+## SPA Notifications API
+
+Endpoints (session-token auth, same as `/auth/me`). All under `/api/v2/notifications/`.
+
+### `GET /summary`
+
+Bell-badge poll. Returns two counts:
+
+```json
+{
+  "success": true,
+  "data": {
+    "needaction_count": 3,
+    "feed_unread_count": 2
+  }
+}
+```
+
+- `needaction_count` — `mail.message` rows where the calling user has a pending action (Inbox).
+- `feed_unread_count` — `mail.activity` rows assigned to the calling user that have not been dismissed via `/mark-read`.
+
+### `GET /inbox`
+
+Messages addressed to the user (needaction or starred), newest first.
+
+Query params:
+
+| Param | Default | Notes |
+|---|---|---|
+| `limit` | 20 | Max 100. Larger values are silently capped. |
+| `offset` | 0 | |
+| `filter` | `all` | `all` \| `needaction` \| `starred` |
+| `model` | — | Comma-separated list, max 20. Each name must be a real model. Empty = no filter. |
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": 1234,
+        "subject": "Re: Quotation S00042",
+        "preview": "plain text body, html-stripped, ≤300 chars",
+        "author": { "id": 17, "name": "Awa Diallo", "avatar_url": null },
+        "date": "2026-04-30T10:14:22Z",
+        "message_type": "comment",
+        "model": "sale.order",
+        "res_id": 42,
+        "record_name": "S00042",
+        "starred": false,
+        "needaction": true
+      }
+    ],
+    "total": 57,
+    "has_more": true
+  }
+}
+```
+
+Note: there is no `link` field. Caller derives the SPA route from `model` + `res_id`.
+
+### `GET /feed`
+
+Activities assigned to the user. By default returns only undismissed ones.
+
+Query params:
+
+| Param | Default | Notes |
+|---|---|---|
+| `limit`, `offset` | 20, 0 | Same as `/inbox`. |
+| `filter` | `unread` | `unread` (excludes dismissed) \| `all` (includes dismissed, with `is_read=true`). |
+| `model` | — | Same comma-list semantics as `/inbox`, filters on `mail.activity.res_model`. |
+
+Response item shape:
+
+```json
+{
+  "id": 981,
+  "type": "activity",
+  "title": "Reminder: call client",
+  "description": "Follow up on quotation S00042",
+  "is_read": false,
+  "date": "2026-04-30T09:00:00Z",
+  "model": "sale.order",
+  "res_id": 42,
+  "record_name": "S00042",
+  "author": { "id": 17, "name": "Awa Diallo", "avatar_url": null }
+}
+```
+
+`type` is currently always `"activity"`. The enum is reserved for future expansion (`mention`, `system`, `info`).
+
+### `POST /mark-read`
+
+```json
+{ "ids": [1234, 1235], "kind": "inbox" }
+```
+
+- `kind: "inbox"` — flips `mail.notification.is_read = True` for the calling user's partner on each `mail.message` id.
+- `kind: "feed"` — inserts a row in `api.notification.dismissal` for each activity id the user owns. Activities the user does **not** own are silently skipped.
+
+Returns `{ success, data: { updated: <int> } }`. Idempotent: a second call returns `updated: 0`.
+
+### `POST /mark-all-read`
+
+```json
+{ "kind": "inbox" | "feed" | "all" }
+```
+
+Bulk version of `/mark-read`. Returns the same `{ updated }` payload.
+
+### `POST /<id>/star` and `/<id>/unstar`
+
+Star or unstar a `mail.message`. Idempotent — calling `star` on an already-starred message is a no-op. Returns `{ success, data: { starred: true|false } }`.
+
+### Errors
+
+Same shape as `/auth/login`:
+
+```json
+{ "success": false, "error": { "message": "...", "code": "..." } }
+```
+
+Common codes: `UNAUTHORIZED` (401), `INVALID_INPUT` (400), `NOT_FOUND` (404), `RATE_LIMITED` (429), plus the standard subscription/quota codes from `_enforce_subscription` / `_enforce_api_quota`.
+
+### Implementation notes
+
+- ACL is enforced by routing all reads through `request.env.user`'s scope — no `sudo()` on the data path. The dismissal write helpers re-check ownership of the underlying activity before inserting a row.
+- Read state for the feed is stored in `api.notification.dismissal` (this addon's own table). `mail.activity` is **not** modified — completing an activity (`action_done`) and dismissing the bell entry are separate concerns.
+- Long-poll / `bus.bus` push is intentionally not exposed. Poll `/summary` until we ship the websocket bridge.
+
+---
+
+## Generic CRUD reference (the lower-level models)
+
+The dedicated controller above is built on these. Drop down here when you need fields the bell doesn't surface, or when you're working with chatter, followers, or activity types directly.
 
 ---
 
