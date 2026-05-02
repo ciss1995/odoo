@@ -7,3 +7,4 @@ from . import test_avatars
 from . import test_accounting_reports
 from . import test_hr_writes
 from . import test_hr_job_salary
+from . import test_product_categories
