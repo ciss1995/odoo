@@ -1327,7 +1327,7 @@ class SimpleApiController(http.Controller):
                             'name': user.name,
                             'login': user.login,
                             'email': user.email,
-                            'groups': [group.name for group in user.group_ids]
+                            'groups': sorted(xid for xid in user.group_ids.get_external_id().values() if xid),
                         }
                     },
                     message="Login successful"
