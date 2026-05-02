@@ -672,9 +672,12 @@ class SimpleApiController(http.Controller):
     @http.route('/api/v2/products', type='http', auth='none', methods=['GET'], csrf=False)
     def list_products(self):
         """List products with authentication."""
-        is_valid, result = self._authenticate()
+        # Try session authentication first, then API key
+        is_valid, result = self._authenticate_session()
         if not is_valid:
-            return result
+            is_valid, result = self._authenticate()
+            if not is_valid:
+                return result
 
         # Subscription enforcement
         sub_error = self._enforce_subscription()
@@ -686,21 +689,33 @@ class SimpleApiController(http.Controller):
 
         try:
             Product = request.env['product.template']
-            
+
             # Get parameters
             limit, offset = self._parse_pagination()
             if limit is None:
                 return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
             sale_ok = request.httprequest.args.get('sale_ok', 'true').lower() == 'true'
-            
+
             # Build domain
             domain = [('active', '=', True)]
             if sale_ok:
                 domain.append(('sale_ok', '=', True))
-            
+
+            # Optional category filter. Uses child_of so picking a parent
+            # category includes products in its subcategories too.
+            category_id_param = request.httprequest.args.get('category_id', '').strip()
+            if category_id_param:
+                try:
+                    category_id = int(category_id_param)
+                except ValueError:
+                    return self._error_response("category_id must be an integer", 400, "INVALID_PARAMS")
+                if not request.env['product.category'].browse(category_id).exists():
+                    return self._error_response("Category not found", 404, "CATEGORY_NOT_FOUND")
+                domain.append(('categ_id', 'child_of', category_id))
+
             # Search products
             products = Product.search(domain, limit=limit, offset=offset, order='name')
-            
+
             # Prepare data
             products_data = []
             for product in products:
@@ -710,9 +725,10 @@ class SimpleApiController(http.Controller):
                     'default_code': product.default_code,
                     'list_price': product.list_price,
                     'sale_ok': product.sale_ok,
+                    'category_id': product.categ_id.id if product.categ_id else False,
                     'category': product.categ_id.name if product.categ_id else False,
                 })
-            
+
             return self._json_response(
                 data={
                     'products': products_data,
@@ -721,10 +737,165 @@ class SimpleApiController(http.Controller):
                 },
                 message="Products retrieved successfully"
             )
-            
+
         except Exception as e:
             _logger.error("Error listing products: %s", str(e))
             return self._error_response("Error retrieving products", 500, "PRODUCTS_ERROR")
+
+    @http.route('/api/v2/product-categories', type='http', auth='none', methods=['GET'], csrf=False)
+    def list_product_categories(self):
+        """List product categories for the UI category picker/sidebar."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            Category = request.env['product.category']
+            Product = request.env['product.template']
+
+            if not self._check_model_access('product.category', 'read'):
+                return self._error_response("Access denied for product.category", 403, "ACCESS_DENIED")
+
+            limit, offset = self._parse_pagination()
+            if limit is None:
+                return self._error_response("limit and offset must be integers", 400, "INVALID_PARAMS")
+
+            # Optional filters
+            domain = []
+            search_term = request.httprequest.args.get('search', '').strip()
+            if search_term:
+                domain.append(('complete_name', 'ilike', search_term))
+
+            parent_id_param = request.httprequest.args.get('parent_id', '').strip()
+            if parent_id_param:
+                if parent_id_param.lower() in ('false', 'null', '0'):
+                    domain.append(('parent_id', '=', False))
+                else:
+                    try:
+                        domain.append(('parent_id', '=', int(parent_id_param)))
+                    except ValueError:
+                        return self._error_response("parent_id must be an integer", 400, "INVALID_PARAMS")
+
+            categories = Category.search(domain, limit=limit, offset=offset, order='complete_name')
+
+            # Per-category product count (descendants included), respecting ACLs.
+            categories_data = []
+            for category in categories:
+                product_count = Product.search_count([
+                    ('categ_id', 'child_of', category.id),
+                    ('active', '=', True),
+                ])
+                categories_data.append({
+                    'id': category.id,
+                    'name': category.name,
+                    'complete_name': category.complete_name,
+                    'parent_id': category.parent_id.id if category.parent_id else False,
+                    'parent_name': category.parent_id.complete_name if category.parent_id else False,
+                    'product_count': product_count,
+                })
+
+            can_create = Category.check_access_rights('create', raise_exception=False)
+
+            return self._json_response(
+                data={
+                    'categories': categories_data,
+                    'count': len(categories_data),
+                    'total_count': Category.search_count(domain),
+                    'can_create': bool(can_create),
+                },
+                message="Product categories retrieved successfully"
+            )
+
+        except AccessError:
+            return self._error_response("Access denied for product.category", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Error listing product categories: %s", str(e))
+            return self._error_response("Error retrieving product categories", 500, "CATEGORIES_ERROR")
+
+    @http.route('/api/v2/product-categories', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def create_product_category(self):
+        """Create a product category (requires Inventory Manager rights)."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+
+            try:
+                data = request.httprequest.get_json(force=True)
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            if not data or not isinstance(data, dict):
+                return self._error_response("No data provided", 400, "NO_DATA")
+
+            name = (data.get('name') or '').strip()
+            if not name:
+                return self._error_response("name is required", 400, "MISSING_NAME")
+
+            if not self._check_model_access('product.category', 'create'):
+                return self._error_response(
+                    "You don't have permission to create product categories",
+                    403, "ACCESS_DENIED",
+                )
+
+            Category = request.env['product.category']
+
+            payload = {'name': name}
+            parent_id = data.get('parent_id')
+            if parent_id:
+                try:
+                    parent_id = int(parent_id)
+                except (TypeError, ValueError):
+                    return self._error_response("parent_id must be an integer", 400, "INVALID_PARAMS")
+                if not Category.browse(parent_id).exists():
+                    return self._error_response("Parent category not found", 404, "PARENT_NOT_FOUND")
+                payload['parent_id'] = parent_id
+
+            new_category = Category.create(payload)
+
+            return self._json_response(
+                data={
+                    'id': new_category.id,
+                    'name': new_category.name,
+                    'complete_name': new_category.complete_name,
+                    'parent_id': new_category.parent_id.id if new_category.parent_id else False,
+                },
+                message="Product category created",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response(
+                "You don't have permission to create product categories",
+                403, "ACCESS_DENIED",
+            )
+        except (MissingError, ValidationError) as e:
+            return self._error_response(str(e), 400, "CREATE_ERROR")
+        except Exception as e:
+            _logger.error("Error creating product category: %s", str(e))
+            return self._error_response("Error creating product category", 500, "CREATE_ERROR")
 
     @http.route('/api/v2/search/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
     def search_model(self, model):
@@ -796,10 +967,26 @@ class SimpleApiController(http.Controller):
 
             # Model-specific base domain (e.g. res.partner excludes employees)
             domain = self._get_model_base_domain(model)
+            has_custom_filters = False
+
+            # product.template-specific: category_id maps to categ_id child_of
+            # (descendant-aware), matching the /api/v2/products?category_id=... contract.
+            # product.template has no `category_id` field, so the generic param loop
+            # below would otherwise silently drop this argument.
+            if model == 'product.template':
+                category_id_param = request.httprequest.args.get('category_id', '').strip()
+                if category_id_param:
+                    try:
+                        category_id = int(category_id_param)
+                    except ValueError:
+                        return self._error_response("category_id must be an integer", 400, "INVALID_PARAMS")
+                    if not request.env['product.category'].browse(category_id).exists():
+                        return self._error_response("Category not found", 404, "CATEGORY_NOT_FOUND")
+                    domain.append(('categ_id', 'child_of', category_id))
+                    has_custom_filters = True
 
             # Parse explicit domain filter (JSON-encoded Odoo domain)
             domain_param = request.httprequest.args.get('domain', '').strip()
-            has_custom_filters = False
             if domain_param:
                 try:
                     parsed = json.loads(domain_param)
