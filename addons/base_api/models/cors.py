@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import os
+import json
 import logging
+import os
+import secrets
 
 import werkzeug.exceptions
 from werkzeug.wrappers import Response as WerkzeugResponse
@@ -15,6 +17,8 @@ from odoo.addons.base_api.services.auth_cookies import (
     is_secure_request,
     set_session_cookies,
 )
+
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 _logger = logging.getLogger(__name__)
 
@@ -54,15 +58,48 @@ class IrHttpCors(models.AbstractModel):
     @classmethod
     def _pre_dispatch(cls, rule, args):
         super()._pre_dispatch(rule, args)
-        if not request or request.httprequest.method != "OPTIONS":
+        if not request:
             return
         path = request.httprequest.path
         if not path.startswith("/api/v2/"):
             return
+        method = request.httprequest.method
         origin = request.httprequest.headers.get("Origin", "")
-        if _origin_allowed(origin):
-            resp = WerkzeugResponse(status=204)
-            _set_cors_headers(resp, origin)
+
+        if method == "OPTIONS":
+            if _origin_allowed(origin):
+                resp = WerkzeugResponse(status=204)
+                _set_cors_headers(resp, origin)
+                werkzeug.exceptions.abort(resp)
+            return
+
+        # CSRF: double-submit check on cookie-authed mutating requests.
+        # Header-authed callers (legacy session-token header during the
+        # cookie migration, or api-key) skip the check — neither header
+        # is auto-sent by the browser, so they're not CSRF-able.
+        if method in SAFE_METHODS:
+            return
+        if SESSION_COOKIE_NAME not in request.httprequest.cookies:
+            return
+        cookie_csrf = request.httprequest.cookies.get(CSRF_COOKIE_NAME, "")
+        header_csrf = request.httprequest.headers.get("X-CSRF-Token", "")
+        if not cookie_csrf or not header_csrf or not secrets.compare_digest(
+            cookie_csrf, header_csrf
+        ):
+            _logger.warning(
+                "CSRF check failed: %s %s (cookie_present=%s header_present=%s)",
+                method, path, bool(cookie_csrf), bool(header_csrf),
+            )
+            body = json.dumps({
+                "success": False,
+                "error": {
+                    "message": "CSRF token missing or invalid",
+                    "code": "CSRF_INVALID",
+                },
+            })
+            resp = WerkzeugResponse(body, status=403, content_type="application/json")
+            if _origin_allowed(origin):
+                _set_cors_headers(resp, origin)
             werkzeug.exceptions.abort(resp)
 
     @classmethod

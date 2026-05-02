@@ -144,11 +144,18 @@ class SimpleApiController(http.Controller):
             return False, self._error_response("Authentication error", 500, "AUTH_ERROR")
 
     def _authenticate_session(self):
-        """Authenticate user via session token. Cookie preferred, header fallback.
+        """Authenticate user via session token. Header wins, cookie fallback.
 
-        During the cookie-migration transition the SPA may send both a
-        yiri_session cookie and the legacy session-token header on the same
-        request. Cookie wins, header is the upgrade-handshake fallback.
+        Header-precedence is load-bearing for the cookie migration: once
+        login starts setting the yiri_session cookie, the browser auto-sends
+        it on every subsequent request. Old SPAs still pass session-token
+        explicitly. If we let the cookie win there, those requests become
+        cookie-authed and the CSRF middleware rejects them (no X-CSRF-Token
+        header from a SPA that doesn't know about CSRF yet). Header-wins
+        keeps old clients on the unprotected path; only true cookie-only
+        callers (post-upgrade SPA) trip the CSRF check.
+
+        After Phase 6 drops the header path entirely, this precedence is moot.
 
         Side effects on success, stashed on request for post-dispatch:
         - _auth_source: 'cookie' | 'header' (drives the X-Auth-Source response
@@ -160,10 +167,10 @@ class SimpleApiController(http.Controller):
         """
         request.httprequest._api_start_time = _time.time()
 
-        cookie_token = request.httprequest.cookies.get(SESSION_COOKIE_NAME)
         header_token = request.httprequest.headers.get('session-token')
-        session_token = cookie_token or header_token
-        auth_source = 'cookie' if cookie_token else ('header' if header_token else None)
+        cookie_token = request.httprequest.cookies.get(SESSION_COOKIE_NAME)
+        session_token = header_token or cookie_token
+        auth_source = 'header' if header_token else ('cookie' if cookie_token else None)
 
         if not session_token:
             return False, self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
