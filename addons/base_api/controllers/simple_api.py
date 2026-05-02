@@ -1484,6 +1484,7 @@ class SimpleApiController(http.Controller):
                         'email': user.email,
                         'phone': user.phone or None,
                         'active': user.active,
+                        'password_is_temporary': user.password_is_temporary,
                         'company_id': [user.company_id.id, user.company_id.name] if user.company_id else False,
                         'partner_id': [user.partner_id.id, user.partner_id.name] if user.partner_id else False,
                         'groups': group_xmlids,
@@ -1711,6 +1712,7 @@ class SimpleApiController(http.Controller):
             if 'password' not in data and auto_generate_credentials:
                 temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
                 data['password'] = temp_password
+                data['password_is_temporary'] = True
             else:
                 temp_password = data.get('password', None)
 
@@ -1971,8 +1973,14 @@ class SimpleApiController(http.Controller):
                 except Exception:
                     return self._error_response("Invalid old password", 401, "INVALID_OLD_PASSWORD")
 
-            # Change password
-            target_user.sudo().password = new_password
+            # Change password. Clearing password_is_temporary only on own-password
+            # change — when the user deliberately picks a value, the modal is done.
+            # Admin-via-this-endpoint preserves the existing flag (use the
+            # /reset-password endpoint to explicitly mark a new temp).
+            writes = {'password': new_password}
+            if is_own_password:
+                writes['password_is_temporary'] = False
+            target_user.sudo().write(writes)
             
             return self._json_response(
                 data={
@@ -2186,9 +2194,12 @@ class SimpleApiController(http.Controller):
 
             # Generate temporary password
             temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
-            
-            # Reset password
-            target_user.sudo().password = temp_password
+
+            # Reset password and flag as temporary so the SPA forces a change.
+            target_user.sudo().write({
+                'password': temp_password,
+                'password_is_temporary': True,
+            })
             
             return self._json_response_sensitive(
                 data={
