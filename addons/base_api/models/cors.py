@@ -77,9 +77,18 @@ class IrHttpCors(models.AbstractModel):
         # Header-authed callers (legacy session-token header during the
         # cookie migration, or api-key) skip the check — neither header
         # is auto-sent by the browser, so they're not CSRF-able.
+        #
+        # The session-token header check below mirrors header-wins precedence
+        # in _authenticate_session: if the header is present, auth will resolve
+        # via header regardless of the cookie. Without this skip, an old-SPA
+        # tab sending session-token would 403 once another tab's login has
+        # set yiri_session on the origin (browser then auto-attaches the
+        # cookie alongside the old SPA's header).
         if method in SAFE_METHODS:
             return
         if SESSION_COOKIE_NAME not in request.httprequest.cookies:
+            return
+        if request.httprequest.headers.get("session-token"):
             return
         cookie_csrf = request.httprequest.cookies.get(CSRF_COOKIE_NAME, "")
         header_csrf = request.httprequest.headers.get("X-CSRF-Token", "")
