@@ -1465,24 +1465,34 @@ class SimpleApiController(http.Controller):
             api_session = getattr(request.httprequest, '_api_session', None)
             expires_at_iso = api_session.expires_at.isoformat() if api_session else None
 
+            # xml_ids only — UI keys role gating off these. Drops UI-created
+            # custom groups that have no xml_id, which is the intended behavior
+            # (those groups can't be referenced by the SPA's role enum).
+            group_xmlids = sorted(
+                xid for xid in user.group_ids.get_external_id().values() if xid
+            )
+            module_access = self._get_module_access()
+
             response = self._json_response(
                 data={
                     'expires_at': expires_at_iso,
+                    'module_access': module_access,
                     'user': {
                         'id': user.id,
                         'name': user.name,
                         'login': user.login,
                         'email': user.email,
+                        'phone': user.phone or None,
                         'active': user.active,
                         'company_id': [user.company_id.id, user.company_id.name] if user.company_id else False,
                         'partner_id': [user.partner_id.id, user.partner_id.name] if user.partner_id else False,
-                        'groups': [{'id': g.id, 'name': g.name} for g in user.group_ids],
+                        'groups': group_xmlids,
                         'permissions': {
                             'is_admin': user.has_group('base.group_system'),
                             'is_user': user.has_group('base.group_user'),
                             'can_manage_users': user.has_group('base.group_erp_manager')
                         },
-                        'module_access': self._get_module_access(),
+                        'module_access': module_access,
                         'plan': plan_info,
                     }
                 },
