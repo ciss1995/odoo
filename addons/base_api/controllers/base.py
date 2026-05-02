@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 """Base controller with shared auth/response/enforcement helpers.
 
-Newer controllers (notifications, future modules) inherit from this. The
-existing simple_api.py keeps its inline copies of these helpers — we will
-unify in a separate refactor PR.
+Newer controllers (notifications, future modules) inherit from this.
+SimpleApiController in simple_api.py keeps its own response/enforcement
+copies (different surface area, harder to deduplicate) but both controllers
+now share the same _authenticate_session via services.auth.
 """
 
 import json
 import logging
 import time as _time
-from datetime import datetime
 
 from odoo import http
 from odoo.http import request
+
+from odoo.addons.base_api.services.auth import authenticate_session
 
 
 _logger = logging.getLogger(__name__)
@@ -49,47 +51,12 @@ class BaseApiController(http.Controller):
     # ----- Authentication -----------------------------------------------------
 
     def _authenticate_session(self):
-        """Validate the session-token header and switch env to that user.
+        """Validate the session and switch env to that user.
 
+        Header-wins-with-cookie-fallback. See services.auth for full semantics.
         Returns (True, user) on success; (False, error_response) otherwise.
         """
-        request.httprequest._api_start_time = _time.time()
-        token = request.httprequest.headers.get('session-token')
-        if not token:
-            return False, self._error_response(
-                "Session token required", 401, "UNAUTHORIZED",
-            )
-        try:
-            token_hash = request.env['api.session']._hash_token(token)
-            session = request.env['api.session'].sudo().search([
-                ('token', '=', token_hash),
-                ('active', '=', True),
-                ('expires_at', '>', datetime.now()),
-            ], limit=1)
-            if not session:
-                return False, self._error_response(
-                    "Invalid or expired session", 401, "UNAUTHORIZED",
-                )
-            # Best-effort last_activity bump. GET routes run on a read-only
-            # cursor in Odoo 18+, so the write may fail; wrap in a savepoint
-            # so the failure stays contained and the cursor remains usable.
-            try:
-                with request.env.cr.savepoint():
-                    session.sudo().write({'last_activity': datetime.now()})
-            except Exception as write_error:
-                _logger.debug(
-                    "Skipped session last_activity bump: %s", write_error,
-                )
-            rate_error = self._enforce_user_rate_limit(session.user_id)
-            if rate_error:
-                return False, rate_error
-            request.update_env(user=session.user_id.id)
-            return True, session.user_id
-        except Exception as e:
-            _logger.error("Session authentication error: %s", e)
-            return False, self._error_response(
-                "Session authentication failed", 500, "AUTH_ERROR",
-            )
+        return authenticate_session(self._error_response, self._enforce_user_rate_limit)
 
     # ----- Enforcement --------------------------------------------------------
 

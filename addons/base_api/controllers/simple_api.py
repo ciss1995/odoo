@@ -13,8 +13,6 @@ from odoo.exceptions import AccessError, MissingError, UserError, ValidationErro
 
 from odoo.addons.base_api.services.auth_cookies import (
     SESSION_COOKIE_NAME,
-    SESSION_TTL_SECONDS,
-    SLIDING_REFRESH_THRESHOLD_SECONDS,
     clear_session_cookies,
     is_secure_request,
     set_session_cookies,
@@ -144,79 +142,14 @@ class SimpleApiController(http.Controller):
             return False, self._error_response("Authentication error", 500, "AUTH_ERROR")
 
     def _authenticate_session(self):
-        """Authenticate user via session token. Header wins, cookie fallback.
+        """Validate the session and switch env to that user.
 
-        Header-precedence is load-bearing for the cookie migration: once
-        login starts setting the yiri_session cookie, the browser auto-sends
-        it on every subsequent request. Old SPAs still pass session-token
-        explicitly. If we let the cookie win there, those requests become
-        cookie-authed and the CSRF middleware rejects them (no X-CSRF-Token
-        header from a SPA that doesn't know about CSRF yet). Header-wins
-        keeps old clients on the unprotected path; only true cookie-only
-        callers (post-upgrade SPA) trip the CSRF check.
-
-        After Phase 6 drops the header path entirely, this precedence is moot.
-
-        Side effects on success, stashed on request for post-dispatch:
-        - _auth_source: 'cookie' | 'header' (drives the X-Auth-Source response
-          header so we can chart cookie-adoption per app).
-        - _refresh_session_cookie: set when sliding refresh fires AND auth was
-          via cookie, so the post-dispatch hook re-issues the cookie with a
-          fresh Max-Age. Header-authed callers don't get cookies set behind
-          their back; the upgrade through /auth/me is the explicit cookie path.
+        Header-wins-with-cookie-fallback. See services.auth for full semantics
+        (sliding refresh, _auth_source / _api_session / _refresh_session_cookie
+        request stash). Single source of truth shared with BaseApiController.
         """
-        request.httprequest._api_start_time = _time.time()
-
-        header_token = request.httprequest.headers.get('session-token')
-        cookie_token = request.httprequest.cookies.get(SESSION_COOKIE_NAME)
-        session_token = header_token or cookie_token
-        auth_source = 'header' if header_token else ('cookie' if cookie_token else None)
-
-        if not session_token:
-            return False, self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
-
-        try:
-            token_hash = request.env['api.session']._hash_token(session_token)
-            session = request.env['api.session'].sudo().search([
-                ('token', '=', token_hash),
-                ('active', '=', True),
-                ('expires_at', '>', datetime.now())
-            ], limit=1)
-
-            if not session:
-                return False, self._error_response("Invalid or expired session", 401, "INVALID_SESSION")
-
-            # Best-effort last_activity bump + sliding refresh in one savepoint.
-            # GET routes run on a read-only cursor in Odoo 18+, so the write may
-            # fail; the failure stays contained and the cursor remains usable.
-            now = datetime.now()
-            ttl = timedelta(seconds=SESSION_TTL_SECONDS)
-            refresh_threshold = timedelta(seconds=SLIDING_REFRESH_THRESHOLD_SECONDS)
-            needs_refresh = (session.expires_at - now) < (ttl - refresh_threshold)
-            try:
-                with request.env.cr.savepoint():
-                    writes = {'last_activity': now}
-                    if needs_refresh:
-                        writes['expires_at'] = now + ttl
-                    session.sudo().write(writes)
-                    if needs_refresh and auth_source == 'cookie':
-                        request.httprequest._refresh_session_cookie = True
-            except Exception as write_error:
-                _logger.debug("Skipped session bump: %s", str(write_error))
-
-            request.httprequest._auth_source = auth_source
-            request.httprequest._api_session = session
-
-            # Per-user rate limit check
-            rate_error = self._enforce_user_rate_limit(session.user_id)
-            if rate_error:
-                return False, rate_error
-
-            request.update_env(user=session.user_id.id)
-            return True, session.user_id
-        except Exception as e:
-            _logger.error("Session authentication error: %s", str(e))
-            return False, self._error_response("Session authentication failed", 500, "SESSION_AUTH_ERROR")
+        from odoo.addons.base_api.services.auth import authenticate_session
+        return authenticate_session(self._error_response, self._enforce_user_rate_limit)
 
     def _check_model_access(self, model_name, operation='read'):
         """Check if current user has access to the model and operation."""
