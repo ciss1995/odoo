@@ -1404,12 +1404,11 @@ class SimpleApiController(http.Controller):
             return result
 
         try:
-            session_token = (
-                request.httprequest.cookies.get(SESSION_COOKIE_NAME)
-                or request.httprequest.headers.get('session-token')
-            )
-            token_hash = request.env['api.session']._hash_token(session_token)
-            session = request.env['api.session'].sudo().search([('token', '=', token_hash)], limit=1)
+            # Use the session that authed this request, not a re-lookup. With
+            # header-wins precedence and a stale cookie around, a cookie-first
+            # lookup can invalidate a different (still-current) session — same
+            # class of mismatch as the CSRF gate fix in fea5d5b07daa.
+            session = getattr(request.httprequest, '_api_session', None)
             if session:
                 session.sudo().write({'active': False})
 
