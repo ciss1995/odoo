@@ -12,10 +12,21 @@ Redis (INCR + EXPIRE) so limits are shared across processes.
 """
 
 import logging
+import os
 import threading
 import time
 
 _logger = logging.getLogger(__name__)
+
+
+def _test_mode():
+    """True when the tenant is running with BASE_API_TEST_MODE=1.
+
+    Skips per-IP and per-user rate limits — only meant for the dedicated
+    integration test tenant. Never set this on customer-facing tenants.
+    """
+    return os.environ.get("BASE_API_TEST_MODE", "").lower() in ("1", "true", "yes")
+
 
 # ---------------------------------------------------------------------------
 # Login rate limiter (per IP)
@@ -36,6 +47,9 @@ def check_login_rate_limit(ip_address):
         (allowed: bool, retry_after: int or None)
         If not allowed, retry_after is seconds until the client can try again.
     """
+    if _test_mode():
+        return True, None
+
     now = time.time()
 
     with _login_lock:
@@ -87,6 +101,9 @@ def check_api_rate_limit(user_id):
     Returns:
         (allowed: bool, retry_after: int or None, remaining: int)
     """
+    if _test_mode():
+        return True, None, API_RATE_LIMIT
+
     now = time.time()
 
     with _api_lock:

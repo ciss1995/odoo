@@ -39,6 +39,29 @@ BLOCKED_MODELS = frozenset({
 class SimpleApiController(http.Controller):
     """Simple working API controller without decorators."""
 
+    def _finalize_response(self, response, status_code):
+        """Common pre-return work for every base_api response.
+
+        Closes the request cursor's open transaction and forces the HTTP
+        connection to close. Both are defenses against an Odoo-19 behavior
+        where, with auth='none' routes running on threading-mode workers, a
+        successful request can leave its psycopg2 connection in
+        `idle in transaction (ClientRead)` — the next request that touches an
+        overlapping row (notably `api.session.last_activity`) then blocks
+        indefinitely on the held transactionid lock. See BUGS.md.
+
+        Committing here is safe: Odoo's post-dispatch middleware will run an
+        additional commit on a clean cursor, which is a no-op.
+        """
+        try:
+            request.env.cr.commit()
+        except Exception as commit_err:  # pragma: no cover — defensive
+            _logger.debug("response finalize commit skipped: %s", commit_err)
+        response.headers['Connection'] = 'close'
+        response.status_code = status_code
+        self._log_api_call(status_code)
+        return response
+
     def _json_response(self, data=None, success=True, message=None, status_code=200):
         """Create a standardized JSON response."""
         response_data = {
@@ -51,9 +74,7 @@ class SimpleApiController(http.Controller):
             json.dumps(response_data, default=str),
             headers=[('Content-Type', 'application/json')]
         )
-        response.status_code = status_code
-        self._log_api_call(status_code)
-        return response
+        return self._finalize_response(response, status_code)
 
     def _json_response_sensitive(self, data=None, success=True, message=None, status_code=200):
         """JSON response with no-cache headers for credential-bearing responses."""
@@ -71,9 +92,7 @@ class SimpleApiController(http.Controller):
                 ('Pragma', 'no-cache'),
             ]
         )
-        response.status_code = status_code
-        self._log_api_call(status_code)
-        return response
+        return self._finalize_response(response, status_code)
 
     def _error_response(self, message, status_code=400, error_code=None):
         """Create a standardized error response."""
@@ -89,9 +108,7 @@ class SimpleApiController(http.Controller):
             json.dumps(error_data, default=str),
             headers=[('Content-Type', 'application/json')]
         )
-        response.status_code = status_code
-        self._log_api_call(status_code)
-        return response
+        return self._finalize_response(response, status_code)
 
     MAX_PAGE_LIMIT = 1000
 
@@ -532,17 +549,24 @@ class SimpleApiController(http.Controller):
         """
         company_name = None
         currency_code = None
+        language = None
         try:
             company = request.env['res.company'].sudo().search([], order='id asc', limit=1)
             if company:
                 company_name = company.name
                 if company.currency_id:
                     currency_code = company.currency_id.name
+            # Tenant default language: the admin user's lang. Set at provisioning
+            # time; new users inherit it via res.partner.lang unless overridden.
+            admin = request.env['res.users'].sudo().search([('login', '=', 'admin')], limit=1)
+            if admin and admin.lang:
+                language = admin.lang
         except Exception:
             pass
         return self._json_response(data={
             'company_name': company_name,
             'currency': currency_code,
+            'language': language,
         })
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)

@@ -25,15 +25,26 @@ class BaseApiController(http.Controller):
 
     # ----- Response builders --------------------------------------------------
 
+    def _finalize_response(self, response, status_code):
+        """Mirror of SimpleApiController._finalize_response. See BUGS.md
+        for why we explicitly commit + close the HTTP connection on the way out.
+        """
+        try:
+            request.env.cr.commit()
+        except Exception as commit_err:  # pragma: no cover — defensive
+            _logger.debug("response finalize commit skipped: %s", commit_err)
+        response.headers['Connection'] = 'close'
+        response.status_code = status_code
+        self._log_api_call(status_code)
+        return response
+
     def _json_response(self, data=None, success=True, message=None, status_code=200):
         body = {'success': success, 'data': data, 'message': message}
         resp = request.make_response(
             json.dumps(body, default=str),
             headers=[('Content-Type', 'application/json')],
         )
-        resp.status_code = status_code
-        self._log_api_call(status_code)
-        return resp
+        return self._finalize_response(resp, status_code)
 
     def _error_response(self, message, status_code=400, error_code=None):
         body = {
@@ -44,9 +55,7 @@ class BaseApiController(http.Controller):
             json.dumps(body, default=str),
             headers=[('Content-Type', 'application/json')],
         )
-        resp.status_code = status_code
-        self._log_api_call(status_code)
-        return resp
+        return self._finalize_response(resp, status_code)
 
     # ----- Authentication -----------------------------------------------------
 

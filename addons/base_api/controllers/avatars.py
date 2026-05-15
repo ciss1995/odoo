@@ -77,9 +77,7 @@ class AvatarsController(BaseApiController):
         etag = f'"avatar-{partner_id}-{size}-{etag_seed}"'
         if request.httprequest.headers.get('If-None-Match') == etag:
             resp = request.make_response('', headers=[('ETag', etag)])
-            resp.status_code = 304
-            self._log_api_call(304)
-            return resp
+            return self._finalize_response(resp, 304)
 
         content_type = self._sniff_image_type(img_bytes)
         resp = request.make_response(
@@ -91,8 +89,7 @@ class AvatarsController(BaseApiController):
                 ('Content-Length', str(len(img_bytes))),
             ],
         )
-        self._log_api_call(200)
-        return resp
+        return self._finalize_response(resp, 200)
 
     def _sniff_image_type(self, img_bytes):
         """Detect image type from leading magic bytes; default to PNG."""
