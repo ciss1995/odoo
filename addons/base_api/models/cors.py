@@ -20,6 +20,14 @@ from odoo.addons.base_api.services.auth_cookies import (
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
+# Endpoints that bootstrap a session (no prior auth required). Skip CSRF here:
+# the request is what's establishing identity, and a stale cookie from a wiped
+# database would otherwise block the user from ever logging back in.
+CSRF_EXEMPT_PATHS = frozenset({
+    "/api/v2/auth/login",
+    "/api/v2/auth/refresh",
+})
+
 _logger = logging.getLogger(__name__)
 
 # Comma-separated origins read once at module load.
@@ -85,6 +93,8 @@ class IrHttpCors(models.AbstractModel):
         # set yiri_session on the origin (browser then auto-attaches the
         # cookie alongside the old SPA's header).
         if method in SAFE_METHODS:
+            return
+        if path in CSRF_EXEMPT_PATHS:
             return
         if SESSION_COOKIE_NAME not in request.httprequest.cookies:
             return

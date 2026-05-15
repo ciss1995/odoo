@@ -531,13 +531,19 @@ class SimpleApiController(http.Controller):
         the canonical "main" company.
         """
         company_name = None
+        currency_code = None
         try:
             company = request.env['res.company'].sudo().search([], order='id asc', limit=1)
             if company:
                 company_name = company.name
+                if company.currency_id:
+                    currency_code = company.currency_id.name
         except Exception:
             pass
-        return self._json_response(data={'company_name': company_name})
+        return self._json_response(data={
+            'company_name': company_name,
+            'currency': currency_code,
+        })
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
