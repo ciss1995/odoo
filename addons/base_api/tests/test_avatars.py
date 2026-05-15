@@ -81,7 +81,7 @@ class TestAvatarsEndpoint(HttpCase):
         partner = self._make_partner_with_image()
         resp = self._get(partner.id)
         self.assertEqual(resp.status_code, 401)
-        self.assertEqual(resp.json()['error']['code'], 'UNAUTHORIZED')
+        self.assertEqual(resp.json()['error']['code'], 'MISSING_SESSION_TOKEN')
 
     def test_invalid_token_rejected(self):
         partner = self._make_partner_with_image()

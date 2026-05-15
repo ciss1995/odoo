@@ -11,6 +11,13 @@ from odoo import http
 from odoo.http import request
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 
+from odoo.addons.base_api.services.auth_cookies import (
+    SESSION_COOKIE_NAME,
+    clear_session_cookies,
+    is_secure_request,
+    set_session_cookies,
+)
+
 _logger = logging.getLogger(__name__)
 
 BLOCKED_MODELS = frozenset({
@@ -135,42 +142,14 @@ class SimpleApiController(http.Controller):
             return False, self._error_response("Authentication error", 500, "AUTH_ERROR")
 
     def _authenticate_session(self):
-        """Authenticate user with session token (compared via hash)."""
-        request.httprequest._api_start_time = _time.time()
-        session_token = request.httprequest.headers.get('session-token')
-        if not session_token:
-            return False, self._error_response("Session token required", 401, "MISSING_SESSION_TOKEN")
+        """Validate the session and switch env to that user.
 
-        try:
-            token_hash = request.env['api.session']._hash_token(session_token)
-            session = request.env['api.session'].sudo().search([
-                ('token', '=', token_hash),
-                ('active', '=', True),
-                ('expires_at', '>', datetime.now())
-            ], limit=1)
-
-            if not session:
-                return False, self._error_response("Invalid or expired session", 401, "INVALID_SESSION")
-
-            # Best-effort last_activity bump. GET routes run on a read-only
-            # cursor in Odoo 18+, so the write may fail; wrap in a savepoint
-            # so the failure stays contained and the cursor remains usable.
-            try:
-                with request.env.cr.savepoint():
-                    session.sudo().write({'last_activity': datetime.now()})
-            except Exception as write_error:
-                _logger.debug("Skipped session last_activity bump: %s", str(write_error))
-
-            # Per-user rate limit check
-            rate_error = self._enforce_user_rate_limit(session.user_id)
-            if rate_error:
-                return False, rate_error
-
-            request.update_env(user=session.user_id.id)
-            return True, session.user_id
-        except Exception as e:
-            _logger.error("Session authentication error: %s", str(e))
-            return False, self._error_response("Session authentication failed", 500, "SESSION_AUTH_ERROR")
+        Header-wins-with-cookie-fallback. See services.auth for full semantics
+        (sliding refresh, _auth_source / _api_session / _refresh_session_cookie
+        request stash). Single source of truth shared with BaseApiController.
+        """
+        from odoo.addons.base_api.services.auth import authenticate_session
+        return authenticate_session(self._error_response, self._enforce_user_rate_limit)
 
     def _check_model_access(self, model_name, operation='read'):
         """Check if current user has access to the model and operation."""
@@ -552,13 +531,19 @@ class SimpleApiController(http.Controller):
         the canonical "main" company.
         """
         company_name = None
+        currency_code = None
         try:
             company = request.env['res.company'].sudo().search([], order='id asc', limit=1)
             if company:
                 company_name = company.name
+                if company.currency_id:
+                    currency_code = company.currency_id.name
         except Exception:
             pass
-        return self._json_response(data={'company_name': company_name})
+        return self._json_response(data={
+            'company_name': company_name,
+            'currency': currency_code,
+        })
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
@@ -1270,8 +1255,9 @@ class SimpleApiController(http.Controller):
                     'last_activity': datetime.now(),
                     'active': True
                 })
-                
-                return self._json_response_sensitive(
+
+                csrf_token = secrets.token_urlsafe(32)
+                response = self._json_response_sensitive(
                     data={
                         'session_token': session_token,
                         'expires_at': expires_at.isoformat(),
@@ -1280,11 +1266,16 @@ class SimpleApiController(http.Controller):
                             'name': user.name,
                             'login': user.login,
                             'email': user.email,
-                            'groups': [group.name for group in user.group_ids]
+                            'groups': sorted(xid for xid in user.group_ids.get_external_id().values() if xid),
                         }
                     },
                     message="Login successful"
                 )
+                set_session_cookies(
+                    response, session_token, csrf_token,
+                    secure=is_secure_request(request.httprequest),
+                )
+                return response
                     
             except Exception as e:
                 _logger.error("Authentication error for user %s: %s", username, str(e))
@@ -1350,16 +1341,20 @@ class SimpleApiController(http.Controller):
         is_valid, result = self._authenticate_session()
         if not is_valid:
             return result
-        
+
         try:
-            session_token = request.httprequest.headers.get('session-token')
-            token_hash = request.env['api.session']._hash_token(session_token)
-            session = request.env['api.session'].sudo().search([('token', '=', token_hash)], limit=1)
+            # Use the session that authed this request, not a re-lookup. With
+            # header-wins precedence and a stale cookie around, a cookie-first
+            # lookup can invalidate a different (still-current) session — same
+            # class of mismatch as the CSRF gate fix in fea5d5b07daa.
+            session = getattr(request.httprequest, '_api_session', None)
             if session:
                 session.sudo().write({'active': False})
-            
-            return self._json_response(message="Logout successful")
-            
+
+            response = self._json_response(message="Logout successful")
+            clear_session_cookies(response, secure=is_secure_request(request.httprequest))
+            return response
+
         except Exception as e:
             _logger.error("Logout error: %s", str(e))
             return self._error_response("Logout failed", 500, "LOGOUT_ERROR")
@@ -1405,28 +1400,59 @@ class SimpleApiController(http.Controller):
                 except Exception as e:
                     _logger.warning("Could not fetch plan info: %s", str(e))
 
-            return self._json_response(
+            api_session = getattr(request.httprequest, '_api_session', None)
+            expires_at_iso = api_session.expires_at.isoformat() if api_session else None
+
+            # xml_ids only — UI keys role gating off these. Drops UI-created
+            # custom groups that have no xml_id, which is the intended behavior
+            # (those groups can't be referenced by the SPA's role enum).
+            group_xmlids = sorted(
+                xid for xid in user.group_ids.get_external_id().values() if xid
+            )
+            module_access = self._get_module_access()
+
+            response = self._json_response(
                 data={
+                    'expires_at': expires_at_iso,
+                    'module_access': module_access,
                     'user': {
                         'id': user.id,
                         'name': user.name,
                         'login': user.login,
                         'email': user.email,
+                        'phone': user.phone or None,
                         'active': user.active,
+                        'password_is_temporary': user.password_is_temporary,
                         'company_id': [user.company_id.id, user.company_id.name] if user.company_id else False,
                         'partner_id': [user.partner_id.id, user.partner_id.name] if user.partner_id else False,
-                        'groups': [{'id': g.id, 'name': g.name} for g in user.group_ids],
+                        'groups': group_xmlids,
                         'permissions': {
                             'is_admin': user.has_group('base.group_system'),
                             'is_user': user.has_group('base.group_user'),
                             'can_manage_users': user.has_group('base.group_erp_manager')
                         },
-                        'module_access': self._get_module_access(),
+                        'module_access': module_access,
                         'plan': plan_info,
                     }
                 },
                 message="User information retrieved"
             )
+
+            # Upgrade handshake: header-authed call with no cookie present →
+            # mint cookies on this response so the SPA can switch to
+            # credentials: 'include' on its next request.
+            auth_source = getattr(request.httprequest, '_auth_source', None)
+            has_session_cookie = SESSION_COOKIE_NAME in request.httprequest.cookies
+            if api_session and auth_source == 'header' and not has_session_cookie:
+                header_token = request.httprequest.headers.get('session-token')
+                if header_token:
+                    csrf_token = secrets.token_urlsafe(32)
+                    set_session_cookies(
+                        response, header_token, csrf_token,
+                        secure=is_secure_request(request.httprequest),
+                    )
+
+            return response
         except Exception as e:
             _logger.error("Error getting user info: %s", str(e))
             return self._error_response("Error retrieving user info", 500, "USER_INFO_ERROR")
@@ -1624,6 +1650,7 @@ class SimpleApiController(http.Controller):
             if 'password' not in data and auto_generate_credentials:
                 temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
                 data['password'] = temp_password
+                data['password_is_temporary'] = True
             else:
                 temp_password = data.get('password', None)
 
@@ -1884,8 +1911,14 @@ class SimpleApiController(http.Controller):
                 except Exception:
                     return self._error_response("Invalid old password", 401, "INVALID_OLD_PASSWORD")
 
-            # Change password
-            target_user.sudo().password = new_password
+            # Change password. Clearing password_is_temporary only on own-password
+            # change — when the user deliberately picks a value, the modal is done.
+            # Admin-via-this-endpoint preserves the existing flag (use the
+            # /reset-password endpoint to explicitly mark a new temp).
+            writes = {'password': new_password}
+            if is_own_password:
+                writes['password_is_temporary'] = False
+            target_user.sudo().write(writes)
             
             return self._json_response(
                 data={
@@ -2099,9 +2132,12 @@ class SimpleApiController(http.Controller):
 
             # Generate temporary password
             temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
-            
-            # Reset password
-            target_user.sudo().password = temp_password
+
+            # Reset password and flag as temporary so the SPA forces a change.
+            target_user.sudo().write({
+                'password': temp_password,
+                'password_is_temporary': True,
+            })
             
             return self._json_response_sensitive(
                 data={

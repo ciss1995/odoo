@@ -116,12 +116,12 @@ class TestNotificationsEndpoints(HttpCase):
         self.assertEqual(resp.status_code, 401)
         body = resp.json()
         self.assertFalse(body['success'])
-        self.assertEqual(body['error']['code'], 'UNAUTHORIZED')
+        self.assertEqual(body['error']['code'], 'MISSING_SESSION_TOKEN')
 
     def test_inbox_rejects_invalid_token(self):
         resp = self._get('/inbox', token='not-a-real-token')
         self.assertEqual(resp.status_code, 401)
-        self.assertEqual(resp.json()['error']['code'], 'UNAUTHORIZED')
+        self.assertEqual(resp.json()['error']['code'], 'INVALID_SESSION')
 
     # ===== summary ============================================================
 
