@@ -202,6 +202,36 @@ class SimpleApiController(http.Controller):
             safe.append(fname)
         return safe or ['id']
 
+    def _safe_read(self, records, fields_list):
+        """Read records degrading per-field on AccessError.
+
+        ``_filter_readable_fields`` doesn't catch all restrictions because
+        some fields gate access through Many2one comodels or computed
+        getters whose ACL is only enforced at read time. When the bulk
+        ``.read()`` raises AccessError, fall back to probing each field
+        individually and drop the offenders. The omitted fields are
+        returned alongside the data so the caller can surface them.
+        """
+        if not records:
+            return [], []
+        try:
+            return records.read(fields_list), []
+        except AccessError:
+            pass
+
+        safe_fields = []
+        dropped = []
+        for fname in fields_list:
+            if fname == 'id':
+                safe_fields.append(fname)
+                continue
+            try:
+                records.read([fname])
+                safe_fields.append(fname)
+            except AccessError:
+                dropped.append(fname)
+        return records.read(safe_fields), dropped
+
     def _get_model_base_domain(self, model_name):
         """Return model-specific base domain filters.
 
@@ -1035,18 +1065,24 @@ class SimpleApiController(http.Controller):
             # Search records
             records = model_obj.search(domain, limit=limit, offset=offset, order='id')
 
-            # Read specified fields
-            records_data = records.read(available_fields)
+            # Read specified fields — degrade per-field on AccessError so a
+            # single restricted field doesn't fail the whole request.
+            records_data, dropped_fields = self._safe_read(records, available_fields)
+            effective_fields = [f for f in available_fields if f not in dropped_fields]
+
+            response = {
+                'records': records_data,
+                'count': len(records_data),
+                'model': model,
+                'fields': effective_fields,
+                'total_count': model_obj.search_count(domain),
+            }
+            if dropped_fields:
+                response['fields_dropped'] = dropped_fields
 
             return self._json_response(
-                data={
-                    'records': records_data,
-                    'count': len(records_data),
-                    'model': model,
-                    'fields': available_fields,
-                    'total_count': model_obj.search_count(domain)
-                },
-                message=f"Found {len(records_data)} records in {model}"
+                data=response,
+                message=f"Found {len(records_data)} records in {model}",
             )
 
         except AccessError as e:
@@ -1132,18 +1168,24 @@ class SimpleApiController(http.Controller):
             # Filter out fields with group restrictions the user doesn't satisfy
             available_fields = self._filter_readable_fields(model_obj, available_fields)
 
-            # Read the record with specified fields
-            record_data = record.read(available_fields)[0]
-            
+            # Read the record with per-field AccessError degradation
+            records_data, dropped_fields = self._safe_read(record, available_fields)
+            record_data = records_data[0] if records_data else {}
+            effective_fields = [f for f in available_fields if f not in dropped_fields]
+
+            response = {
+                'record': record_data,
+                'model': model,
+                'id': record_id,
+                'fields_returned': effective_fields,
+                'total_fields_available': len(all_fields),
+            }
+            if dropped_fields:
+                response['fields_dropped'] = dropped_fields
+
             return self._json_response(
-                data={
-                    'record': record_data,
-                    'model': model,
-                    'id': record_id,
-                    'fields_returned': available_fields,
-                    'total_fields_available': len(all_fields)
-                },
-                message=f"Found record {record_id} in {model}"
+                data=response,
+                message=f"Found record {record_id} in {model}",
             )
 
         except AccessError as e:
