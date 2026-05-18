@@ -1383,6 +1383,89 @@ class SimpleApiController(http.Controller):
             _logger.error("Logout error: %s", str(e))
             return self._error_response("Logout failed", 500, "LOGOUT_ERROR")
 
+    @http.route('/api/v2/auth/forgot-password', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def forgot_password(self):
+        """Send a password-reset email for the given login.
+
+        Public endpoint — no session required. Wraps Odoo's standard
+        ``res.users.reset_password(login)`` which generates a signup
+        token, stores it on the partner, and queues an email via the
+        ``auth_signup.reset_password_email`` template. The email link
+        points to ``/web/reset_password?token=<token>`` on the tenant
+        host (built from ``web.base.url``), where Odoo renders the
+        standard "Set new password" form.
+
+        Always returns success — never reveals whether the email exists.
+        Prevents user-enumeration attacks. Rate-limited per IP to slow
+        down email-flood abuse.
+        """
+        try:
+            # Per-IP rate limiting (reuse the login limiter — same risk
+            # profile: anonymous, email-typed input, server-side action).
+            from odoo.addons.base_api.services.rate_limiter import check_login_rate_limit
+            client_ip = request.httprequest.environ.get(
+                'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
+            )
+            if client_ip and ',' in client_ip:
+                client_ip = client_ip.split(',')[0].strip()
+            allowed, retry_after = check_login_rate_limit(client_ip or 'unknown')
+            if not allowed:
+                response = self._error_response(
+                    f"Too many requests. Try again in {retry_after} seconds.",
+                    429, "RATE_LIMITED"
+                )
+                response.headers['Retry-After'] = str(retry_after)
+                return response
+
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+
+            try:
+                data = request.httprequest.get_json(force=True)
+                if not data:
+                    return self._error_response("No data provided", 400, "NO_DATA")
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            login = (data.get('login') or data.get('email') or '').strip()
+            if not login:
+                return self._error_response("login or email required", 400, "MISSING_LOGIN")
+
+            # Check whether reset is even enabled for this tenant. If
+            # the admin disabled signup-reset in Settings → General, we
+            # surface that as a 400 rather than silently swallowing.
+            reset_enabled = request.env['ir.config_parameter'].sudo().get_param(
+                'auth_signup.reset_password'
+            ) == 'True'
+            if not reset_enabled:
+                return self._error_response(
+                    "Password reset is disabled. Contact your administrator.",
+                    400, "RESET_DISABLED",
+                )
+
+            # Best-effort: call Odoo's reset_password. It raises on
+            # unknown login — we swallow that so we don't leak whether
+            # the email exists. Log it server-side for support.
+            try:
+                request.env['res.users'].sudo().reset_password(login)
+                _logger.info("Password reset email sent for <%s>", login)
+            except Exception as exc:
+                # Don't leak: same response shape either way.
+                _logger.info(
+                    "Password reset attempted for unknown/invalid login <%s>: %s",
+                    login, exc,
+                )
+
+            return self._json_response(
+                message="If an account with that email exists, password reset instructions have been sent.",
+                data={'login': login},
+            )
+
+        except Exception as e:
+            _logger.error("forgot_password error: %s", str(e))
+            return self._error_response("Internal error", 500, "FORGOT_PASSWORD_ERROR")
+
     @http.route('/api/v2/auth/me', type='http', auth='none', methods=['GET'], csrf=False)
     def current_user(self):
         """Get current authenticated user info."""
