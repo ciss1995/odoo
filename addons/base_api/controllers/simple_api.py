@@ -605,10 +605,24 @@ class SimpleApiController(http.Controller):
                 language = admin.lang
         except Exception:
             pass
+
+        # Per-tenant capability flags so SPAs can conditionally render
+        # optional UI without a separate roundtrip. Cheap to compute — we
+        # just probe field presence on the relevant Odoo models.
+        features = {}
+        try:
+            features['product_expiry'] = (
+                'use_expiration_date' in request.env['stock.lot']._fields
+                and 'use_expiration_date' in request.env['product.template']._fields
+            )
+        except Exception:
+            features['product_expiry'] = False
+
         return self._json_response(data={
             'company_name': company_name,
             'currency': currency_code,
             'language': language,
+            'features': features,
         })
 
     @http.route('/api/v2/public/jobs/<int:job_id>', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
