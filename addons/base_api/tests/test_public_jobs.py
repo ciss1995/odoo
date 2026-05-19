@@ -59,16 +59,17 @@ class TestPublicJobsEndpoint(HttpCase):
 
     def test_public_job_response_does_not_leak_internal_fields(self):
         job = self._create_job(name='Marketing Manager', is_public=True)
-        # Set internal fields that should NOT appear in the public response
-        job.write({'user_id': self.env.user.id, 'manager_id': self.env.user.id})
+        # Assign a recruiter (an internal field that MUST NOT leak publicly)
+        job.write({'user_id': self.env.user.id})
         resp = self.url_open(f"{self.api_base}/{job.id}")
         self.assertEqual(resp.status_code, 200)
         data = json.loads(resp.content)['data']
-        # Confirm the public surface is restricted
+        # Confirm the public projection deliberately omits internal fields
         self.assertNotIn('user_id', data)
         self.assertNotIn('manager_id', data)
         self.assertNotIn('applicant_ids', data)
         self.assertNotIn('expected_employees', data)
+        self.assertNotIn('no_of_recruitment', data)
 
     def test_public_job_includes_salary_range_when_set(self):
         job = self._create_job(name='Sales Lead', is_public=True)
