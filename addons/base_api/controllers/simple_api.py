@@ -2235,8 +2235,14 @@ class SimpleApiController(http.Controller):
 
             # Admin-only fields (sudo already applied above for admins)
             if is_admin:
+                group_ext = target_user.group_ids.get_external_id()
                 user_data.update({
-                    'groups': [{'id': g.id, 'name': g.name, 'full_name': g.full_name} for g in target_user.group_ids],
+                    'groups': [{
+                        'id': g.id,
+                        'name': g.name,
+                        'full_name': g.full_name,
+                        'xml_id': group_ext.get(g.id, ''),
+                    } for g in target_user.group_ids],
                     'company_ids': [{'id': c.id, 'name': c.name} for c in target_user.company_ids],
                     'login_date': target_user.login_date.isoformat() if target_user.login_date else None,
                 })
@@ -2379,8 +2385,14 @@ class SimpleApiController(http.Controller):
                 
                 # Add more fields for admins
                 if is_admin:
+                    group_ext = user.group_ids.get_external_id()
                     user_data.update({
-                        'groups': [g.name for g in user.group_ids],
+                        'groups': [{
+                            'id': g.id,
+                            'name': g.name,
+                            'full_name': g.full_name,
+                            'xml_id': group_ext.get(g.id, ''),
+                        } for g in user.group_ids],
                         'company_id': user.company_id.name if user.company_id else None,
                         'login_date': user.login_date.isoformat() if user.login_date else None,
                     })
