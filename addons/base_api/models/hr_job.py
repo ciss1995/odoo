@@ -32,6 +32,13 @@ class HrJob(models.Model):
         default='monthly',
         required=True,
     )
+    is_public = fields.Boolean(
+        string="Publish Externally",
+        default=False,
+        help="When enabled, this job posting is readable via the public "
+             "/api/v2/public/jobs/<id> endpoint and can be shared to "
+             "WhatsApp, LinkedIn, etc. without authentication.",
+    )
 
     @api.constrains('salary_min', 'salary_max')
     def _check_salary_range(self):

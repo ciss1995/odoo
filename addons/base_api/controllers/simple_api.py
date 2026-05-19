@@ -7,7 +7,7 @@ import secrets
 import string
 import time as _time
 from datetime import datetime, timedelta
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
 from odoo.exceptions import AccessError, MissingError, UserError, ValidationError
 
@@ -610,6 +610,50 @@ class SimpleApiController(http.Controller):
             'currency': currency_code,
             'language': language,
         })
+
+    @http.route('/api/v2/public/jobs/<int:job_id>', type='http', auth='none', methods=['GET'], csrf=False, cors='*')
+    def public_job(self, job_id):
+        """Return a job posting for public consumption (sharing on WhatsApp,
+        LinkedIn, careers page, etc.). Unauthenticated.
+
+        Only jobs explicitly marked `is_public=True` are exposed. The response
+        is a minimal projection — no internal recruiter/manager IDs, no
+        applicant data — to keep the surface safe to share publicly.
+        """
+        try:
+            job = request.env['hr.job'].sudo().browse(job_id)
+            if not job.exists() or not job.is_public:
+                return self._json_response(
+                    status_code=404,
+                    error={'code': 'JOB_NOT_FOUND', 'message': 'Job not found or not public.'},
+                )
+
+            company = job.company_id
+            logo_url = None
+            if company and company.id:
+                logo_url = f"/web/image/res.company/{company.id}/logo"
+
+            data = {
+                'id': job.id,
+                'name': job.name,
+                'description': job.description or '',
+                'requirements': job.requirements or '',
+                'department': job.department_id.name if job.department_id else None,
+                'employment_type': job.contract_type_id.name if job.contract_type_id else None,
+                'salary_min': job.salary_min or None,
+                'salary_max': job.salary_max or None,
+                'salary_currency': job.salary_currency_id.name if job.salary_currency_id else None,
+                'salary_period': job.salary_period,
+                'company_name': company.name if company else None,
+                'company_logo_url': logo_url,
+                'created_at': job.create_date.isoformat() if job.create_date else None,
+            }
+            return self._json_response(data=data)
+        except Exception as e:
+            return self._json_response(
+                status_code=500,
+                error={'code': 'INTERNAL_ERROR', 'message': str(e)},
+            )
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
@@ -3008,6 +3052,76 @@ class SimpleApiController(http.Controller):
                 "Error processing in-store purchase", 500, "PURCHASE_ERROR")
 
     # ===== INVENTORY ADJUSTMENT =====
+
+    @http.route('/api/v2/inventory/expiring-soon', type='http', auth='none', methods=['GET'], csrf=False)
+    def inventory_expiring_soon(self):
+        """Return product lots whose alert date has been reached. Requires the
+        `product_expiry` Odoo addon (in the `full` plan). If the addon is not
+        installed for this tenant, return an empty list with module=disabled
+        so the SPA can hide the widget gracefully.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        # Probe for product_expiry by checking if the fields exist on stock.lot.
+        # When the addon isn't installed, the field is absent and we short-circuit.
+        try:
+            lot_model = request.env['stock.lot'].sudo().with_user(user)
+            field_names = lot_model._fields.keys()
+            if 'use_expiration_date' not in field_names or 'expiration_date' not in field_names:
+                return self._json_response(data={'enabled': False, 'lots': []})
+
+            # Days-ahead window — defaults to "alert date reached" (today). Caller
+            # may pass ?days=30 to expand the window.
+            try:
+                days = int(request.params.get('days', 0) or 0)
+            except (TypeError, ValueError):
+                days = 0
+
+            domain = [('use_expiration_date', '=', True)]
+            if days > 0:
+                # Lots with expiration_date within the next N days
+                from datetime import datetime, timedelta
+                horizon = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+                domain += [('expiration_date', '!=', False), ('expiration_date', '<=', horizon)]
+            else:
+                # Default: lots whose alert_date has passed
+                domain += [('alert_date', '!=', False),
+                           ('alert_date', '<=', fields.Datetime.now())]
+
+            try:
+                limit = max(1, min(int(request.params.get('limit', 100) or 100), 500))
+            except (TypeError, ValueError):
+                limit = 100
+
+            lots = lot_model.search(domain, order='expiration_date asc', limit=limit)
+            results = []
+            for lot in lots:
+                product = lot.product_id
+                results.append({
+                    'lot_id': lot.id,
+                    'lot_name': lot.name,
+                    'product_id': product.id if product else None,
+                    'product_name': product.display_name if product else None,
+                    'product_default_code': product.default_code if product else None,
+                    'expiration_date': lot.expiration_date.isoformat() if lot.expiration_date else None,
+                    'alert_date': lot.alert_date.isoformat() if lot.alert_date else None,
+                    'removal_date': lot.removal_date.isoformat() if lot.removal_date else None,
+                    'product_qty': lot.product_qty if hasattr(lot, 'product_qty') else None,
+                })
+            return self._json_response(data={'enabled': True, 'lots': results})
+        except Exception as e:
+            return self._error_response(f"expiring-soon failed: {e}", 500, "EXPIRY_ERROR")
 
     @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def inventory_adjust(self):

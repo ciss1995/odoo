@@ -9,3 +9,5 @@ from . import test_hr_writes
 from . import test_hr_job_salary
 from . import test_product_categories
 from . import test_imports
+from . import test_public_jobs
+from . import test_inventory_expiry
