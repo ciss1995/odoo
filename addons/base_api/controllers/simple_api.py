@@ -1629,11 +1629,19 @@ class SimpleApiController(http.Controller):
             if not user.has_group('base.group_erp_manager') and not user.has_group('base.group_system'):
                 return self._error_response("Access denied: User management required", 403, "ACCESS_DENIED")
 
-            # Get all groups excluding system and technical ones
+            # Get all groups excluding hidden/technical ones.
+            # The hidden-category filter must allow groups with no
+            # privilege at all (top-level "Role / *" groups in Odoo 19
+            # like base.group_system / base.group_user) — otherwise
+            # SQL NULL semantics drop them and the catalog is incomplete.
             hidden_category = request.env.ref('base.module_category_hidden', raise_if_not_found=False)
             domain = [('share', '=', False)]
             if hidden_category:
-                domain.append(('privilege_id.category_id', '!=', hidden_category.id))
+                domain += [
+                    '|',
+                    ('privilege_id', '=', False),
+                    ('privilege_id.category_id', '!=', hidden_category.id),
+                ]
             groups = request.env['res.groups'].sudo().search(domain, order='privilege_id desc, name')
 
             groups_by_category = {}
