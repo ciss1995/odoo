@@ -1,0 +1,123 @@
+# Odoo unit tests for the base_api addon (HTTP routes, models, services).
+#
+# Boots a transient postgres:16 + odoo:19.0 pair, mounts addons/ into the
+# Odoo image, and runs `odoo-bin -i base_api --test-enable --test-tags=/base_api
+# --stop-after-init`. Exit code is propagated.
+#
+# This is the only place the base_api unit suite runs — previously these
+# tests were deployed but never executed. Adding this workflow closes that
+# gap so regressions like the `_json_response(error=...)` kwarg-mismatch bug
+# get caught before they reach prod.
+
+name: base-api-tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'addons/base_api/**'
+      - '.github/workflows/base-api-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'addons/base_api/**'
+      - '.github/workflows/base-api-tests.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: base-api-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: odoo-bin --test-enable
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create docker network
+        run: docker network create base-api-test-net
+
+      - name: Start postgres
+        run: |
+          docker run -d --name pg --network base-api-test-net \
+            -e POSTGRES_USER=odoo \
+            -e POSTGRES_PASSWORD=odoo \
+            -e POSTGRES_DB=postgres \
+            --health-cmd='pg_isready -U odoo' \
+            --health-interval=3s --health-timeout=2s --health-retries=20 \
+            postgres:16
+
+      - name: Wait for postgres
+        run: |
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Health.Status}}' pg 2>/dev/null)" = "healthy" ]; then
+              echo "postgres ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "postgres did not become healthy"
+          docker logs pg
+          exit 1
+
+      - name: Pull Odoo image
+        run: docker pull odoo:19.0
+
+      # Odoo's official image runs as the `odoo` user (uid 101). The mounted
+      # addons folder needs to be readable by that user.
+      - name: Adjust addon perms for the Odoo container
+        run: chmod -R a+rX addons
+
+      - name: Run base_api test suite
+        id: run_tests
+        run: |
+          set -o pipefail
+          # The Odoo official image entrypoint already invokes odoo-bin, so
+          # we pass odoo-bin args directly (no `-- odoo` prefix).
+          docker run --rm --name odoo-test --network base-api-test-net \
+            -v "$PWD/addons:/mnt/extra-addons:ro" \
+            -e HOST=pg \
+            -e USER=odoo \
+            -e PASSWORD=odoo \
+            odoo:19.0 \
+              --addons-path=/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons \
+              --db_host=pg --db_user=odoo --db_password=odoo \
+              --database=base_api_test \
+              --init=base_api \
+              --test-enable \
+              --test-tags=/base_api \
+              --stop-after-init \
+              --without-demo=all \
+              --no-http \
+              --log-level=test \
+              2>&1 | tee odoo-test.log
+
+      # Odoo returns 0 even when tests fail in some versions, so grep the log
+      # for the failure marker as a belt-and-braces check.
+      - name: Verify no test failures in log
+        run: |
+          if grep -E 'FAIL: |ERROR.*odoo.*test' odoo-test.log; then
+            echo "::error::base_api tests reported failures — see log above"
+            exit 1
+          fi
+          if ! grep -E 'Modules loaded' odoo-test.log; then
+            echo "::error::Odoo did not finish loading modules — see log above"
+            exit 1
+          fi
+
+      - name: Upload Odoo log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoo-test-log
+          path: odoo-test.log
+          if-no-files-found: ignore
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker rm -f pg odoo-test 2>/dev/null || true
+          docker network rm base-api-test-net 2>/dev/null || true
