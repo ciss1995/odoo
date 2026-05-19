@@ -623,10 +623,7 @@ class SimpleApiController(http.Controller):
         try:
             job = request.env['hr.job'].sudo().browse(job_id)
             if not job.exists() or not job.is_public:
-                return self._json_response(
-                    status_code=404,
-                    error={'code': 'JOB_NOT_FOUND', 'message': 'Job not found or not public.'},
-                )
+                return self._error_response('Job not found or not public.', 404, 'JOB_NOT_FOUND')
 
             company = job.company_id
             logo_url = None
@@ -650,10 +647,7 @@ class SimpleApiController(http.Controller):
             }
             return self._json_response(data=data)
         except Exception as e:
-            return self._json_response(
-                status_code=500,
-                error={'code': 'INTERNAL_ERROR', 'message': str(e)},
-            )
+            return self._error_response(str(e), 500, 'INTERNAL_ERROR')
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
