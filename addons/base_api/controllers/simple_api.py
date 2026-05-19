@@ -387,7 +387,17 @@ class SimpleApiController(http.Controller):
 
         uid = user.id
 
+        # Sales Administrator / "All Documents" tier sees every lead and
+        # every order regardless of team or owner. The default (Salesman
+        # tier) is scoped to own + unassigned + own teams.
+        sales_sees_all = (
+            user.has_group('sales_team.group_sale_manager')
+            or user.has_group('sales_team.group_sale_salesman_all_leads')
+        )
+
         if model_name == 'crm.lead':
+            if sales_sees_all:
+                return []
             team_ids = user.crm_team_ids.ids if 'crm_team_ids' in user._fields else []
             if team_ids:
                 return ['|', '|',
@@ -397,6 +407,8 @@ class SimpleApiController(http.Controller):
             return ['|', ('user_id', '=', uid), ('user_id', '=', False)]
 
         if model_name == 'sale.order':
+            if sales_sees_all:
+                return []
             team_ids = user.crm_team_ids.ids if 'crm_team_ids' in user._fields else []
             if team_ids:
                 return ['|', '|',
