@@ -4073,6 +4073,70 @@ class SimpleApiController(http.Controller):
 
         return user, None
 
+    @http.route('/api/v2/hr/managers', type='http', auth='none', methods=['GET'], csrf=False)
+    def hr_managers(self, **_kwargs):
+        """List employees eligible to act as a manager.
+
+        Returns active hr.employee records whose linked res.users belongs to
+        ``hr.group_hr_user``, ``hr.group_hr_manager``, or
+        ``base.group_system`` — i.e. HR Officers, HR Administrators, and
+        System Administrators. These are the people the New/Edit Employee
+        dialogs offer in the Manager dropdown.
+
+        Read via sudo() so non-HR users still get a complete list (the
+        dropdown itself is admin-only UI; the data is intentionally
+        directory-style, not company-confidential).
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'hr.employee' not in request.env:
+                return self._json_response(data={'records': []}, message="hr module not installed")
+
+            group_xml_ids = (
+                'hr.group_hr_user',
+                'hr.group_hr_manager',
+                'base.group_system',
+            )
+            group_ids = []
+            for xid in group_xml_ids:
+                g = request.env.ref(xid, raise_if_not_found=False)
+                if g:
+                    group_ids.append(g.id)
+
+            if not group_ids:
+                return self._json_response(data={'records': []}, message="No manager groups found")
+
+            users = request.env['res.users'].sudo().search([
+                ('active', '=', True),
+                ('group_ids', 'in', group_ids),
+            ])
+
+            employees = request.env['hr.employee'].sudo().search([
+                ('active', '=', True),
+                ('user_id', 'in', users.ids),
+            ], order='name')
+
+            records = [{'id': e.id, 'name': e.name} for e in employees]
+            return self._json_response(
+                data={'records': records, 'total_count': len(records)},
+                message="Manager-eligible employees retrieved",
+            )
+        except Exception as e:
+            _logger.error("Error listing hr managers: %s", str(e))
+            return self._error_response("Error listing managers", 500, "MANAGERS_ERROR")
+
     @http.route('/api/v2/hr/applicants/<int:applicant_id>/refuse', type='http',
                 auth='none', methods=['POST'], csrf=False, readonly=False)
     def applicant_refuse(self, applicant_id, **_kwargs):
