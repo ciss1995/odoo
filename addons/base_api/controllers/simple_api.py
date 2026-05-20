@@ -1888,6 +1888,7 @@ class SimpleApiController(http.Controller):
 
             group_names = data.pop('group_names', [])
             group_ids_param = data.pop('group_ids', [])
+            group_xml_ids = data.pop('group_xml_ids', [])
             auto_generate_credentials = data.pop('auto_generate_credentials', True)
 
             if 'password' not in data and auto_generate_credentials:
@@ -1897,14 +1898,22 @@ class SimpleApiController(http.Controller):
             else:
                 temp_password = data.get('password', None)
 
-            # Resolve group IDs before create so they can be set atomically
+            # Resolve group IDs before create so they can be set atomically.
+            # xml_ids are preferred (stable across locale/version); fall back
+            # to names (legacy callers) then raw ids.
             resolved_group_ids = []
-            if group_names:
+            if group_xml_ids:
+                for xid in group_xml_ids:
+                    g = request.env.ref(xid, raise_if_not_found=False)
+                    if g and g._name == 'res.groups':
+                        resolved_group_ids.append(g.id)
+            elif group_names:
                 groups = request.env['res.groups'].sudo().search([('name', 'in', group_names)])
                 resolved_group_ids = groups.ids
             elif group_ids_param:
                 resolved_group_ids = group_ids_param
-            else:
+
+            if not resolved_group_ids:
                 default_group = request.env.ref('base.group_user', raise_if_not_found=False)
                 if default_group:
                     resolved_group_ids = [default_group.id]
@@ -2256,10 +2265,20 @@ class SimpleApiController(http.Controller):
                         update_data[field] = value
                     else:
                         return self._error_response(f"Access denied: Field '{field}' requires admin rights", 403, "ADMIN_FIELD_ACCESS_DENIED")
-                elif field in ['group_names', 'group_ids']:
-                    # Handle group updates for admins
+                elif field in ['group_names', 'group_ids', 'group_xml_ids']:
+                    # Handle group updates for admins. xml_ids are preferred
+                    # (stable across locale/Odoo version) but we keep the
+                    # name- and id-based forms for backwards compatibility.
                     if is_admin:
-                        if field == 'group_names':
+                        if field == 'group_xml_ids':
+                            resolved_ids = []
+                            for xid in value or []:
+                                g = request.env.ref(xid, raise_if_not_found=False)
+                                if g and g._name == 'res.groups':
+                                    resolved_ids.append(g.id)
+                            if resolved_ids:
+                                update_data['group_ids'] = [(6, 0, resolved_ids)]
+                        elif field == 'group_names':
                             groups = request.env['res.groups'].sudo().search([('name', 'in', value)])
                             if groups:
                                 update_data['group_ids'] = [(6, 0, groups.ids)]
