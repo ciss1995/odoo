@@ -1126,8 +1126,19 @@ class SimpleApiController(http.Controller):
             if scope_domain:
                 domain = scope_domain + domain
 
+            # hr.employee: the ACL above already gates read access
+            # (hr.group_hr_user or base.group_system). Within a tenant the
+            # company directory should be visible to everyone who passes
+            # that gate. Odoo's multi-company record rule on hr.employee
+            # otherwise hides peers whose company_id isn't in the
+            # requester's allowed_company_ids — which happens when extra
+            # res.company rows exist or auto-created employees landed
+            # under a different company than the requester. sudo() the
+            # search; field-level groups still protect sensitive columns.
+            search_obj = model_obj.sudo() if model == 'hr.employee' else model_obj
+
             # Search records
-            records = model_obj.search(domain, limit=limit, offset=offset, order='id')
+            records = search_obj.search(domain, limit=limit, offset=offset, order='id')
 
             # Read specified fields — degrade per-field on AccessError so a
             # single restricted field doesn't fail the whole request.
@@ -1139,7 +1150,7 @@ class SimpleApiController(http.Controller):
                 'count': len(records_data),
                 'model': model,
                 'fields': effective_fields,
-                'total_count': model_obj.search_count(domain),
+                'total_count': search_obj.search_count(domain),
             }
             if dropped_fields:
                 response['fields_dropped'] = dropped_fields
@@ -1209,7 +1220,10 @@ class SimpleApiController(http.Controller):
             # Verify record exists AND is within the user's allowed scope
             scope_domain = self._get_record_scope_domain(model, user)
             record_domain = [('id', '=', record_id)] + scope_domain
-            record = model_obj.search(record_domain, limit=1)
+            # See search_model: bypass Odoo's multi-company rule on
+            # hr.employee — ACL already gates the read.
+            search_obj = model_obj.sudo() if model == 'hr.employee' else model_obj
+            record = search_obj.search(record_domain, limit=1)
 
             if not record:
                 return self._error_response(f"Record with ID {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
@@ -4699,7 +4713,15 @@ class SimpleApiController(http.Controller):
                     scope = self._get_record_scope_domain(model_name, user)
                     if scope:
                         domain = scope + domain
-                    count = request.env[model_name].search_count(domain)
+                    # Match /search/hr.employee: bypass Odoo's
+                    # multi-company rule so the weekly count agrees with
+                    # what the user sees in the list.
+                    model_env = (
+                        request.env[model_name].sudo()
+                        if model_name == 'hr.employee'
+                        else request.env[model_name]
+                    )
+                    count = model_env.search_count(domain)
                     recent_summary[mod_key] = {'new_this_week': count}
                 except Exception:
                     continue
@@ -4786,7 +4808,14 @@ class SimpleApiController(http.Controller):
                 if not self._user_has_module_role(user, mod_key):
                     continue
 
-                model_obj = request.env[model_name]
+                # Match /search/hr.employee: bypass Odoo's multi-company
+                # rule on hr.employee so KPIs reflect every employee in
+                # the tenant, not just those in the requester's company.
+                model_obj = (
+                    request.env[model_name].sudo()
+                    if model_name == 'hr.employee'
+                    else request.env[model_name]
+                )
                 cur_d = self._ddom(date_field, params['from_date'], params['to_date']) + params['extra_domain']
                 prev_d = self._ddom(date_field, params['prev_from'], params['prev_to']) + params['extra_domain']
 
@@ -4805,7 +4834,9 @@ class SimpleApiController(http.Controller):
 
             total_employees = 0
             if 'hr.employee' in request.env and self._check_model_access('hr.employee') and self._user_has_module_role(user, 'hr'):
-                total_employees = request.env['hr.employee'].search_count(
+                # sudo() — matches the /search/hr.employee path so the
+                # dashboard count doesn't disagree with the list.
+                total_employees = request.env['hr.employee'].sudo().search_count(
                     [('active', '=', True)] + params['extra_domain'])
 
             if 'hr' in module_kpis:
@@ -5186,7 +5217,9 @@ class SimpleApiController(http.Controller):
                 return self._error_response("Access denied: requires HR role", 403, "ROLE_ACCESS_DENIED")
 
             params = self._parse_analytics_params()
-            Emp = request.env['hr.employee']
+            # sudo() — matches /search/hr.employee so HR analytics counts
+            # don't drift below the visible list when extra companies exist.
+            Emp = request.env['hr.employee'].sudo()
 
             total_active = Emp.search_count([('active', '=', True)] + params['extra_domain'])
 
