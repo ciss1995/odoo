@@ -1904,6 +1904,13 @@ class SimpleApiController(http.Controller):
             if resolved_group_ids:
                 data['group_ids'] = [(6, 0, resolved_group_ids)]
 
+            # Odoo 19's hr.res_users.create only auto-creates the linked
+            # hr.employee when create_employee=True (or create_employee_id
+            # is set). Without it, internal users land without an
+            # employee record and never appear in /api/v2/search/hr.employee.
+            if 'hr.employee' in request.env and 'create_employee' not in data and 'create_employee_id' not in data:
+                data['create_employee'] = True
+
             user = request.env['res.users'].sudo().create(data)
 
             api_key = None
