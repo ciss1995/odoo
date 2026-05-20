@@ -1872,8 +1872,16 @@ class SimpleApiController(http.Controller):
 
         try:
             # -- Extract employee-specific fields before user creation --
+            # *_id variants are direct Odoo IDs (preferred by the SPA when it
+            # already has them from a dropdown); *_name variants do a name
+            # lookup and stay for programmatic callers without ID resolution.
             employee_fields = {}
-            for key in ('department_name', 'job_title', 'job_name', 'parent_name', 'work_phone'):
+            for key in (
+                'department_name', 'department_id',
+                'job_title', 'job_name', 'job_id',
+                'parent_name', 'parent_id',
+                'work_phone',
+            ):
                 val = data.pop(key, None)
                 if val is not None:
                     employee_fields[key] = val
@@ -1934,25 +1942,37 @@ class SimpleApiController(http.Controller):
                 if employee:
                     emp_vals = {}
 
-                    # Resolve department by name
+                    # Department: prefer the explicit ID if provided
+                    dept_id = employee_fields.get('department_id')
                     dept_name = employee_fields.get('department_name')
-                    if dept_name:
+                    if dept_id:
+                        if request.env['hr.department'].sudo().browse(dept_id).exists():
+                            emp_vals['department_id'] = dept_id
+                    elif dept_name:
                         dept = request.env['hr.department'].sudo().search(
                             [('name', '=ilike', dept_name)], limit=1)
                         if dept:
                             emp_vals['department_id'] = dept.id
 
-                    # Resolve job position by name
+                    # Job position: prefer the explicit ID if provided
+                    job_id = employee_fields.get('job_id')
                     job_name = employee_fields.get('job_name')
-                    if job_name:
+                    if job_id:
+                        if request.env['hr.job'].sudo().browse(job_id).exists():
+                            emp_vals['job_id'] = job_id
+                    elif job_name:
                         job = request.env['hr.job'].sudo().search(
                             [('name', '=ilike', job_name)], limit=1)
                         if job:
                             emp_vals['job_id'] = job.id
 
-                    # Resolve manager by name
+                    # Manager: prefer the explicit ID if provided
+                    parent_id = employee_fields.get('parent_id')
                     parent_name = employee_fields.get('parent_name')
-                    if parent_name:
+                    if parent_id:
+                        if request.env['hr.employee'].sudo().browse(parent_id).exists():
+                            emp_vals['parent_id'] = parent_id
+                    elif parent_name:
                         manager = request.env['hr.employee'].sudo().search(
                             [('name', '=ilike', parent_name)], limit=1)
                         if manager:
