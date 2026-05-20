@@ -85,12 +85,12 @@ Plus `TENANT_ID` (which slug the container belongs to). With those:
 ## Request flow
 
 ```
-<slug>.amyslab.com/         → Traefik → desktop-spa     (priority 1, catchall)
-<slug>.amyslab.com/api/*    → Traefik → <slug>-odoo-1   (priority 100) → base_api
-<slug>.amyslab.com/ai/*     → Traefik → ai-agent        (priority 90, /ai stripped)
-<slug>.m.amyslab.com/*      → same pattern, mobile-spa instead of desktop-spa
-admin.amyslab.com           → Traefik → control plane (admin UI + API)
-api.amyslab.com             → Traefik → control plane (admin API alias)
+<slug>.toomde.com/             → Traefik → desktop-spa  (priority 1, catchall)
+<slug>.toomde.com/api/*        → Traefik → <slug>-odoo-1 (priority 100) → base_api
+<slug>.toomde.com/ai/*         → Traefik → ai-agent      (priority 90, /ai stripped)
+<slug>.store.toomde.com/*      → same pattern, store-spa instead of desktop-spa
+admin.toomde.com               → Traefik → control plane (admin UI + API)
+api.toomde.com                 → Traefik → control plane (admin API alias)
 ```
 
 ## Local vs production
@@ -123,9 +123,9 @@ Local quirks:
 
 ### Production
 
-- Hetzner Cloud VPS, IP `178.105.35.11`, user `yiri`. Layout under `/opt/yiri/`.
-- DNS: two wildcard A records `*.amyslab.com` and `*.m.amyslab.com`. **No apex record** (intentional — avoids TXT collisions during Let's Encrypt DNS-01).
-- TLS via DNS-01 + GoDaddy API (`GODADDY_API_KEY`/`GODADDY_API_SECRET`).
+- Hetzner Cloud VPS, IP `178.105.35.11`, user `yiri`. Layout under `/opt/toomde/`.
+- DNS: wildcard A records `*.toomde.com` and `*.store.toomde.com` plus an apex record for the marketing site. The marketing apex uses an HTTP-01 cert (separate from the wildcard) to avoid TXT collisions during Let's Encrypt DNS-01.
+- TLS via DNS-01 + Cloudflare API (`CF_DNS_API_TOKEN`) for the wildcards; HTTP-01 for the apex.
 - Traefik **Docker provider** is enabled — tenant containers self-register via labels written by the compose template.
 - `COMPOSE_PROJECT_NAME=yiri_control_panel` is **pinned** so existing volumes (`yiri_control_panel_*`) stay attached after the monorepo rename. Don't change this.
 - **Four files are skip-worktree** so `git pull` never touches them: `control-plane/Dockerfile`, root `docker-compose.yml`, `traefik/traefik.yml`, `traefik/dynamic/routers.yml`. Production-specific edits go on the server directly.
