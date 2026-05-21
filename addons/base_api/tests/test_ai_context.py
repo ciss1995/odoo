@@ -162,7 +162,7 @@ class TestAiContextAuthIsolation(HttpCase):
             'name': 'Restricted AI Test User',
             'login': 'restricted_ai_test',
             'password': 'restricted_pw',
-            'groups_id': [(6, 0, [cls.env.ref('base.group_user').id])],
+            'group_ids': [(6, 0, [cls.env.ref('base.group_user').id])],
         })
 
     @classmethod
