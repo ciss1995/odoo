@@ -48,7 +48,9 @@ jobs:
       TEST_TAGS: >-
         /base_api:TestPublicBrandingFeatures,
         /base_api:TestPublicJobsEndpoint,
-        /base_api:TestInventoryExpiringSoon
+        /base_api:TestInventoryExpiringSoon,
+        /base_api:TestAiContextEndpoint,
+        /base_api:TestAiContextAuthIsolation
 
     steps:
       - name: Checkout

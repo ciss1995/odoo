@@ -5027,40 +5027,66 @@ class SimpleApiController(http.Controller):
                 except Exception:
                     return []
 
+            # Gate each category by module access — stock Odoo lets every
+            # internal user read crm.stage / account.journal / hr.department
+            # via ORM ACLs, so without this gate a sales-only user would see
+            # accounting journal names and HR department names.
+            module_access = self._get_module_access()
+
+            def _accessible(*keys):
+                return any(
+                    (module_access.get(k) or {}).get('accessible')
+                    for k in keys
+                )
+
+            data = {
+                'crm_stages': [],
+                'crm_teams': [],
+                'account_journals': [],
+                'hr_departments': [],
+                'product_categories': [],
+                'product_uoms': [],
+                'project_stages': [],
+            }
+            if _accessible('crm'):
+                data['crm_stages'] = _safe_search(
+                    'crm.stage',
+                    ['id', 'name', 'sequence', 'is_won', 'team_id'],
+                    order='sequence,id',
+                )
+                data['crm_teams'] = _safe_search(
+                    'crm.team', ['id', 'name'], order='name',
+                )
+            if _accessible('accounting'):
+                data['account_journals'] = _safe_search(
+                    'account.journal',
+                    ['id', 'name', 'code', 'type'],
+                    order='sequence,id',
+                )
+            if _accessible('hr'):
+                data['hr_departments'] = _safe_search(
+                    'hr.department',
+                    ['id', 'name', 'parent_id', 'manager_id'],
+                    order='name',
+                )
+            if _accessible('products', 'inventory', 'sales', 'purchase'):
+                data['product_categories'] = _safe_search(
+                    'product.category',
+                    ['id', 'name', 'parent_id'],
+                    order='parent_path',
+                )
+                data['product_uoms'] = _safe_search(
+                    'uom.uom', ['id', 'name'], order='name',
+                )
+            if _accessible('project'):
+                data['project_stages'] = _safe_search(
+                    'project.task.type',
+                    ['id', 'name', 'sequence'],
+                    order='sequence,id',
+                )
+
             return self._json_response(
-                data={
-                    'crm_stages': _safe_search(
-                        'crm.stage',
-                        ['id', 'name', 'sequence', 'is_won', 'team_id'],
-                        order='sequence,id',
-                    ),
-                    'crm_teams': _safe_search(
-                        'crm.team', ['id', 'name'], order='name',
-                    ),
-                    'account_journals': _safe_search(
-                        'account.journal',
-                        ['id', 'name', 'code', 'type'],
-                        order='sequence,id',
-                    ),
-                    'hr_departments': _safe_search(
-                        'hr.department',
-                        ['id', 'name', 'parent_id', 'manager_id'],
-                        order='name',
-                    ),
-                    'product_categories': _safe_search(
-                        'product.category',
-                        ['id', 'name', 'parent_id'],
-                        order='parent_path',
-                    ),
-                    'product_uoms': _safe_search(
-                        'uom.uom', ['id', 'name'], order='name',
-                    ),
-                    'project_stages': _safe_search(
-                        'project.task.type',
-                        ['id', 'name', 'sequence'],
-                        order='sequence,id',
-                    ),
-                },
+                data=data,
                 message='Taxonomy retrieved',
             )
         except Exception as e:
@@ -5103,11 +5129,17 @@ class SimpleApiController(http.Controller):
                             'department': [emp.department_id.id, emp.department_id.name] if emp.department_id else None,
                             'manager': [emp.parent_id.id, emp.parent_id.name] if emp.parent_id else None,
                         }
-                        # Walk up the manager chain (max 5 to avoid cycles)
+                        # Walk up the manager chain (max 5 to avoid cycles).
+                        # Bound by the employee's own company — the search is
+                        # sudo'd, so without this filter a manager in another
+                        # company could appear in the chain.
+                        emp_company_id = emp.company_id.id if emp.company_id else False
                         current = emp.parent_id
                         seen = set()
                         while current and current.id not in seen and len(manager_chain) < 5:
                             seen.add(current.id)
+                            if emp_company_id and current.company_id and current.company_id.id != emp_company_id:
+                                break
                             manager_chain.append({
                                 'id': current.id,
                                 'name': current.name,
