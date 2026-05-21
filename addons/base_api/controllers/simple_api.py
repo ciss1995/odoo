@@ -5473,8 +5473,14 @@ class SimpleApiController(http.Controller):
         Returns list of dicts: {account_id, code, name, account_type, balance}.
         balance = sum(debit) - sum(credit) over posted move lines in window.
         """
-        AccountAccount = request.env['account.account']
-        MoveLine = request.env['account.move.line']
+        # In Odoo 17+, `account.account.code` is computed per-company from
+        # `code_store` ({company_id: code}). Under auth='none' HTTP routes
+        # `env.company` is sometimes blank, so we pin the company explicitly
+        # to the user's main company and fall back to reading `code_store`
+        # directly if `code` still resolves to a falsy value.
+        company = request.env.user.company_id
+        AccountAccount = request.env['account.account'].with_company(company)
+        MoveLine = request.env['account.move.line'].with_company(company)
 
         accounts = AccountAccount.search([
             ('account_type', 'in', list(account_types)),
@@ -5495,15 +5501,19 @@ class SimpleApiController(http.Controller):
         rg = MoveLine.read_group(ml_domain, ['balance:sum', 'debit:sum', 'credit:sum'], ['account_id'])
         by_id = {row['account_id'][0]: row for row in rg if row.get('account_id')}
 
+        company_key = str(company.id)
         rows = []
         for acc in accounts:
             row = by_id.get(acc.id)
             balance = (row.get('balance', 0.0) if row else 0.0) or 0.0
             debit = (row.get('debit', 0.0) if row else 0.0) or 0.0
             credit = (row.get('credit', 0.0) if row else 0.0) or 0.0
+            code = acc.code
+            if not code and hasattr(acc, 'code_store'):
+                code = (acc.code_store or {}).get(company_key) or ''
             rows.append({
                 'account_id': acc.id,
-                'code': acc.code,
+                'code': code or '',
                 'name': acc.name,
                 'account_type': acc.account_type,
                 'reconcile': bool(acc.reconcile),
@@ -5891,6 +5901,265 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Cash flow error: %s", str(e))
             return self._error_response("Error retrieving cash flow", 500, "ANALYTICS_ERROR")
+
+    # -----------------------------------------------------------------------
+    # Tax reports — declaration, per-tax breakdown, fiscal position reconciliation.
+    # All three read posted account.move.line rows in the analytics window;
+    # sale-side amounts come back as -balance (credit-natural), purchase-side
+    # as +balance (debit-natural), so credit notes naturally net the totals.
+    # -----------------------------------------------------------------------
+    def _tax_lines_in_period(self, params):
+        """Aggregate posted tax lines for the period, grouped by tax_line_id.
+
+        Returns list of dicts: {tax_id, balance, tax_base_amount}.
+        """
+        MoveLine = request.env['account.move.line']
+        domain = [
+            ('parent_state', '=', 'posted'),
+            ('tax_line_id', '!=', False),
+            ('date', '>=', params['from_date'].isoformat()),
+            ('date', '<=', params['to_date'].isoformat()),
+        ]
+        rg = MoveLine.read_group(
+            domain,
+            ['balance:sum', 'tax_base_amount:sum'],
+            ['tax_line_id'],
+        )
+        out = []
+        for row in rg:
+            tax_ref = row.get('tax_line_id')
+            if not tax_ref:
+                continue
+            out.append({
+                'tax_id': tax_ref[0],
+                'balance': row.get('balance', 0.0) or 0.0,
+                'tax_base_amount': row.get('tax_base_amount', 0.0) or 0.0,
+            })
+        return out
+
+    @http.route('/api/v2/analytics/accounting/tax-declaration', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_tax_declaration(self, **_kwargs):
+        """VAT/sales-tax declaration: collected, deductible, net to remit."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.move.line' not in request.env or not self._check_model_access('account.move.line'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            rows = self._tax_lines_in_period(params)
+
+            Tax = request.env['account.tax']
+            tax_ids = [r['tax_id'] for r in rows]
+            taxes = {t.id: t for t in Tax.browse(tax_ids)} if tax_ids else {}
+
+            collected = 0.0
+            deductible = 0.0
+            by_group = {}
+
+            for r in rows:
+                tax = taxes.get(r['tax_id'])
+                if not tax:
+                    continue
+                # Sale-side tax lines are credit-natural; flip so positive = owed.
+                if tax.type_tax_use == 'sale':
+                    amount = -r['balance']
+                    base = -r['tax_base_amount']
+                    bucket = 'collected'
+                elif tax.type_tax_use == 'purchase':
+                    amount = r['balance']
+                    base = r['tax_base_amount']
+                    bucket = 'deductible'
+                else:
+                    continue
+
+                if bucket == 'collected':
+                    collected += amount
+                else:
+                    deductible += amount
+
+                gid = tax.tax_group_id.id if tax.tax_group_id else 0
+                gname = tax.tax_group_id.name if tax.tax_group_id else 'Other'
+                if gid not in by_group:
+                    by_group[gid] = {
+                        'id': gid, 'label': gname,
+                        'collected': 0.0, 'deductible': 0.0,
+                        'collected_base': 0.0, 'deductible_base': 0.0,
+                    }
+                by_group[gid][bucket] += amount
+                by_group[gid][bucket + '_base'] += base
+
+            groups = [
+                {
+                    'id': g['id'],
+                    'label': g['label'],
+                    'collected': round(g['collected'], 2),
+                    'deductible': round(g['deductible'], 2),
+                    'collected_base': round(g['collected_base'], 2),
+                    'deductible_base': round(g['deductible_base'], 2),
+                    'net': round(g['collected'] - g['deductible'], 2),
+                }
+                for g in by_group.values()
+            ]
+            groups.sort(key=lambda r: -abs(r['net']))
+
+            return self._json_response(data={
+                'period': {
+                    'from': params['from_date'].isoformat(),
+                    'to': params['to_date'].isoformat(),
+                },
+                'totals': {
+                    'collected': round(collected, 2),
+                    'deductible': round(deductible, 2),
+                    'net': round(collected - deductible, 2),
+                },
+                'by_group': groups,
+                'meta': self._analytics_meta(params),
+            }, message="Tax declaration retrieved")
+
+        except Exception as e:
+            _logger.error("Tax declaration error: %s", str(e))
+            return self._error_response("Error retrieving tax declaration", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/tax-breakdown', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_tax_breakdown(self, **_kwargs):
+        """Per-tax breakdown: each account.tax with its base + tax amount for the period."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.move.line' not in request.env or not self._check_model_access('account.move.line'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            rows = self._tax_lines_in_period(params)
+
+            Tax = request.env['account.tax']
+            tax_ids = [r['tax_id'] for r in rows]
+            taxes = {t.id: t for t in Tax.browse(tax_ids)} if tax_ids else {}
+
+            breakdown = []
+            for r in rows:
+                tax = taxes.get(r['tax_id'])
+                if not tax or tax.type_tax_use not in ('sale', 'purchase'):
+                    continue
+                if tax.type_tax_use == 'sale':
+                    amount = -r['balance']
+                    base = -r['tax_base_amount']
+                else:
+                    amount = r['balance']
+                    base = r['tax_base_amount']
+                breakdown.append({
+                    'id': tax.id,
+                    'name': tax.name,
+                    'rate': float(tax.amount),
+                    'type': tax.type_tax_use,
+                    'group': tax.tax_group_id.name if tax.tax_group_id else None,
+                    'base': round(base, 2),
+                    'amount': round(amount, 2),
+                })
+            breakdown.sort(key=lambda r: (r['type'], -abs(r['amount'])))
+
+            return self._json_response(data={
+                'period': {
+                    'from': params['from_date'].isoformat(),
+                    'to': params['to_date'].isoformat(),
+                },
+                'by_tax': breakdown,
+                'meta': self._analytics_meta(params),
+            }, message="Tax breakdown retrieved")
+
+        except Exception as e:
+            _logger.error("Tax breakdown error: %s", str(e))
+            return self._error_response("Error retrieving tax breakdown", 500, "ANALYTICS_ERROR")
+
+    @http.route('/api/v2/analytics/accounting/fiscal-position-reconciliation', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def accounting_fiscal_position_reconciliation(self, **_kwargs):
+        """Invoices/bills grouped by fiscal_position_id over the analytics window."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'account.move' not in request.env or not self._check_model_access('account.move'):
+                return self._error_response("Accounting not accessible", 403, "ACCESS_DENIED")
+            if not self._user_has_module_role(user, 'accounting'):
+                return self._error_response("Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+
+            params = self._parse_analytics_params()
+            Move = request.env['account.move']
+            move_types = ['out_invoice', 'in_invoice', 'out_refund', 'in_refund']
+
+            base_domain = [
+                ('state', '=', 'posted'),
+                ('date', '>=', params['from_date'].isoformat()),
+                ('date', '<=', params['to_date'].isoformat()),
+                ('move_type', 'in', move_types),
+            ]
+
+            mapped = Move.read_group(
+                base_domain + [('fiscal_position_id', '!=', False)],
+                ['amount_total:sum', 'amount_untaxed:sum', 'amount_tax:sum'],
+                ['fiscal_position_id'],
+            )
+            by_position = []
+            for row in mapped:
+                fp_ref = row.get('fiscal_position_id')
+                if not fp_ref:
+                    continue
+                by_position.append({
+                    'id': fp_ref[0],
+                    'name': fp_ref[1],
+                    'invoices_count': row.get('__count', 0),
+                    'amount_total': round(row.get('amount_total', 0) or 0, 2),
+                    'amount_untaxed': round(row.get('amount_untaxed', 0) or 0, 2),
+                    'amount_tax': round(row.get('amount_tax', 0) or 0, 2),
+                })
+            by_position.sort(key=lambda r: -abs(r['amount_total']))
+
+            unmapped_count = Move.search_count(base_domain + [('fiscal_position_id', '=', False)])
+
+            return self._json_response(data={
+                'period': {
+                    'from': params['from_date'].isoformat(),
+                    'to': params['to_date'].isoformat(),
+                },
+                'by_position': by_position,
+                'unmapped_count': unmapped_count,
+                'meta': self._analytics_meta(params),
+            }, message="Fiscal position reconciliation retrieved")
+
+        except Exception as e:
+            _logger.error("Fiscal position reconciliation error: %s", str(e))
+            return self._error_response("Error retrieving fiscal position reconciliation", 500, "ANALYTICS_ERROR")
 
     # ===== INTERNAL: CACHE INVALIDATION =====
 
