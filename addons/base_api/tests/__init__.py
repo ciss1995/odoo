@@ -14,3 +14,4 @@ from . import test_inventory_expiry
 from . import test_public_branding
 from . import test_ai_context
 from . import test_error_safety
+from . import test_idempotency

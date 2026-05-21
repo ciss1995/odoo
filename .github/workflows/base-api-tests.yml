@@ -51,7 +51,8 @@ jobs:
         /base_api:TestInventoryExpiringSoon,
         /base_api:TestAiContextEndpoint,
         /base_api:TestAiContextAuthIsolation,
-        /base_api:TestSafeExcMessage
+        /base_api:TestSafeExcMessage,
+        /base_api:TestIdempotencyKey
 
     steps:
       - name: Checkout

@@ -110,6 +110,101 @@ class SimpleApiController(http.Controller):
         )
         return self._finalize_response(response, status_code)
 
+    # ===== Idempotency =====
+
+    _IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key'
+    _IDEMPOTENCY_KEY_MAX_LEN = 64
+
+    def _idempotency_lookup(self, user):
+        """Check the Idempotency-Key header and decide replay/proceed/conflict.
+
+        Returns one of:
+            (None, None)              — no key supplied, caller proceeds normally
+            (response, None)          — replay the cached response
+            (None, idem_record)       — first time seeing this key; caller proceeds
+                                        and MUST call _idempotency_store(idem_record, ...)
+                                        once the work succeeds.
+            (error_response, None)    — key reused with different body → 409
+        """
+        raw_key = request.httprequest.headers.get(self._IDEMPOTENCY_KEY_HEADER) or ''
+        raw_key = raw_key.strip()
+        if not raw_key:
+            return None, None
+        if len(raw_key) > self._IDEMPOTENCY_KEY_MAX_LEN:
+            return self._error_response(
+                "Idempotency-Key too long (max 64)", 400, "IDEMPOTENCY_KEY_INVALID",
+            ), None
+        # Allowlist: UUIDs, opaque alphanumeric ids. Reject anything that
+        # could be log-poisoning or path-traversal-shaped.
+        if not all(c.isalnum() or c in '-_' for c in raw_key):
+            return self._error_response(
+                "Idempotency-Key has invalid characters", 400, "IDEMPOTENCY_KEY_INVALID",
+            ), None
+
+        try:
+            body = request.httprequest.get_data(cache=True) or b''
+        except Exception:
+            body = b''
+        request_hash = request.env['api.idempotency'].hash_request(
+            request.httprequest.method,
+            request.httprequest.path,
+            body,
+        )
+
+        Idem = request.env['api.idempotency'].sudo()
+        existing = Idem.search(
+            [('user_id', '=', user.id), ('key', '=', raw_key)], limit=1,
+        )
+        if existing and not existing.is_expired():
+            if existing.request_hash != request_hash:
+                return self._error_response(
+                    "Idempotency-Key reused with a different request body",
+                    409, "IDEMPOTENCY_KEY_CONFLICT",
+                ), None
+            cached_data, status_code = existing.replay()
+            if cached_data is not None:
+                # Re-wrap so headers and finalization match a fresh response.
+                response = request.make_response(
+                    json.dumps(cached_data, default=str),
+                    headers=[('Content-Type', 'application/json')],
+                )
+                return self._finalize_response(response, status_code), None
+            # Stored but parse failed → treat as miss and overwrite.
+            existing.unlink()
+
+        # First time seeing this key — create a placeholder so concurrent
+        # retries collide on the UNIQUE(user_id, key) constraint instead
+        # of both creating records.
+        idem = Idem.create({
+            'user_id': user.id,
+            'key': raw_key,
+            'request_hash': request_hash,
+            'response_status': 0,  # filled in by _idempotency_store
+        })
+        return None, idem
+
+    def _idempotency_store(self, idem_record, response):
+        """Persist the response body + status against an idempotency placeholder.
+
+        Called after the wrapped operation succeeds. If response is an
+        Odoo Response object, we pull the body and status off it.
+        Failures here are logged but never raised — idempotency is a
+        latency optimisation, not a correctness guarantee, and breaking
+        the real response on a cache write would be worse.
+        """
+        if idem_record is None:
+            return response
+        try:
+            body = response.get_data(as_text=True) if hasattr(response, 'get_data') else ''
+            status = response.status_code if hasattr(response, 'status_code') else 200
+            idem_record.sudo().write({
+                'response_json': body,
+                'response_status': status,
+            })
+        except Exception:
+            _logger.exception("Failed to persist idempotency response")
+        return response
+
     def _safe_exc_message(self, exc, fallback="Internal error"):
         """Return a user-facing message for an exception, suppressing internals.
 
@@ -1788,6 +1883,13 @@ class SimpleApiController(http.Controller):
         if quota_error:
             return quota_error
 
+        # Idempotency-Key check — a double-click / retried POST with the
+        # same key replays the cached response instead of creating a
+        # second record. No-op when no header is supplied.
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         try:
             # Parse JSON data
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -1846,7 +1948,7 @@ class SimpleApiController(http.Controller):
                 safe_fields = ['id']
             record_data = new_record.read(safe_fields)[0]
 
-            return self._json_response(
+            response = self._json_response(
                 data={
                     'id': new_record.id,
                     'record': record_data
@@ -1854,6 +1956,7 @@ class SimpleApiController(http.Controller):
                 message=f"Record created in {model}",
                 status_code=201
             )
+            return self._idempotency_store(idem, response)
 
         except AccessError as e:
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
