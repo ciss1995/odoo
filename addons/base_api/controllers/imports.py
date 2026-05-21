@@ -24,7 +24,6 @@ opening stock, opening balances, etc. follow the same shape and are added
 incrementally to keep this file from sprawling.
 """
 
-import json
 import logging
 import os
 import time as _time
