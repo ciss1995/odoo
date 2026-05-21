@@ -110,6 +110,22 @@ class SimpleApiController(http.Controller):
         )
         return self._finalize_response(response, status_code)
 
+    def _safe_exc_message(self, exc, fallback="Internal error"):
+        """Return a user-facing message for an exception, suppressing internals.
+
+        Odoo's UserError / ValidationError / MissingError / AccessError carry
+        strings that are designed to be shown to end users (business-rule
+        violations, missing records, access denial). Anything else — psycopg
+        IntegrityError, KeyError, AttributeError, etc. — may contain SQL
+        fragments, file paths, or internal IDs that an attacker could mine to
+        map the backend. For those, return ``fallback`` and log the full
+        traceback server-side instead.
+        """
+        if isinstance(exc, (UserError, ValidationError, MissingError, AccessError)):
+            return str(exc)
+        _logger.exception("Unhandled exception leaked to API caller (suppressed): %s", exc)
+        return fallback
+
     MAX_PAGE_LIMIT = 1000
 
     def _is_model_blocked(self, model_name):
@@ -661,7 +677,7 @@ class SimpleApiController(http.Controller):
             }
             return self._json_response(data=data)
         except Exception as e:
-            return self._error_response(str(e), 500, 'INTERNAL_ERROR')
+            return self._error_response(self._safe_exc_message(e), 500, 'INTERNAL_ERROR')
 
     @http.route('/api/v2/auth/test', type='http', auth='none', methods=['GET'], csrf=False)
     def test_auth(self):
@@ -995,7 +1011,7 @@ class SimpleApiController(http.Controller):
                 403, "ACCESS_DENIED",
             )
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "CREATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "CREATE_ERROR")
         except Exception as e:
             _logger.error("Error creating product category: %s", str(e))
             return self._error_response("Error creating product category", 500, "CREATE_ERROR")
@@ -1171,7 +1187,7 @@ class SimpleApiController(http.Controller):
                 403, "ACCESS_DENIED",
             )
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "SEARCH_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "SEARCH_ERROR")
         except Exception as e:
             _logger.error("Error searching %s: %s", model, str(e))
             return self._error_response("Error searching records", 500, "SEARCH_ERROR")
@@ -1273,7 +1289,7 @@ class SimpleApiController(http.Controller):
             )
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "GET_RECORD_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "GET_RECORD_ERROR")
         except Exception as e:
             _logger.error("Error getting record %s from %s: %s", record_id, model, str(e))
             return self._error_response("Error retrieving record", 500, "GET_RECORD_ERROR")
@@ -1842,7 +1858,7 @@ class SimpleApiController(http.Controller):
         except AccessError as e:
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "CREATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "CREATE_ERROR")
         except Exception as e:
             _logger.error("Error creating %s: %s", model, str(e))
             return self._error_response("Error creating record", 500, "CREATE_ERROR")
@@ -2670,7 +2686,7 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "UPDATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "UPDATE_ERROR")
         except Exception as e:
             _logger.error("Error updating %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error updating record", 500, "UPDATE_ERROR")
@@ -2807,9 +2823,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "NOTHING_TO_INVOICE")
+            return self._error_response(self._safe_exc_message(e), 400, "NOTHING_TO_INVOICE")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "INVOICE_CREATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "INVOICE_CREATE_ERROR")
         except Exception as e:
             _logger.error("Error creating invoice from SO %s: %s", order_id, str(e))
             return self._error_response("Error creating invoice", 500, "INVOICE_CREATE_ERROR")
@@ -3111,9 +3127,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "PURCHASE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "PURCHASE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "PURCHASE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "PURCHASE_ERROR")
         except Exception as e:
             _logger.error("In-store purchase error: %s", str(e))
             return self._error_response(
@@ -3189,7 +3205,10 @@ class SimpleApiController(http.Controller):
                 })
             return self._json_response(data={'enabled': True, 'lots': results})
         except Exception as e:
-            return self._error_response(f"expiring-soon failed: {e}", 500, "EXPIRY_ERROR")
+            return self._error_response(
+                self._safe_exc_message(e, fallback="expiring-soon failed"),
+                500, "EXPIRY_ERROR",
+            )
 
     @http.route('/api/v2/inventory/adjust', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def inventory_adjust(self):
@@ -3674,9 +3693,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "CONFIRM_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "CONFIRM_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "CONFIRM_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "CONFIRM_ERROR")
         except Exception as e:
             _logger.error("Error confirming PO %s: %s", order_id, str(e))
             return self._error_response(
@@ -3864,9 +3883,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "VALIDATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "VALIDATE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "VALIDATE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "VALIDATE_ERROR")
         except Exception as e:
             _logger.error("Error validating picking %s: %s", picking_id, str(e))
             return self._error_response(
@@ -4031,9 +4050,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "RETURN_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "RETURN_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "RETURN_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "RETURN_ERROR")
         except Exception as e:
             _logger.error("Error returning picking %s: %s", picking_id, str(e))
             return self._error_response(
@@ -4207,9 +4226,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "REFUSE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "REFUSE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "REFUSE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "REFUSE_ERROR")
         except Exception as e:
             _logger.error("Error refusing applicant %s: %s", applicant_id, str(e))
             return self._error_response(
@@ -4280,9 +4299,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "HIRE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "HIRE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "HIRE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "HIRE_ERROR")
         except Exception as e:
             _logger.error("Error hiring applicant %s: %s", applicant_id, str(e))
             return self._error_response(
@@ -4381,9 +4400,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "APPROVE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "APPROVE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "APPROVE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "APPROVE_ERROR")
         except Exception as e:
             _logger.error("Error approving leave %s: %s", leave_id, str(e))
             return self._error_response(
@@ -4432,9 +4451,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "REFUSE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "REFUSE_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "REFUSE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "REFUSE_ERROR")
         except Exception as e:
             _logger.error("Error refusing leave %s: %s", leave_id, str(e))
             return self._error_response(
@@ -4506,9 +4525,9 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
-            return self._error_response(str(e), 400, "POST_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "POST_ERROR")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "POST_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "POST_ERROR")
         except Exception as e:
             _logger.error("Error posting journal entry %s: %s", move_id, str(e))
             return self._error_response(
@@ -4564,7 +4583,7 @@ class SimpleApiController(http.Controller):
         except AccessError:
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
         except (MissingError, ValidationError) as e:
-            return self._error_response(str(e), 400, "DELETE_ERROR")
+            return self._error_response(self._safe_exc_message(e), 400, "DELETE_ERROR")
         except Exception as e:
             _logger.error("Error deleting %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error deleting record", 500, "DELETE_ERROR")
