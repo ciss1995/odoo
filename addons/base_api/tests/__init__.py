@@ -12,3 +12,4 @@ from . import test_imports
 from . import test_public_jobs
 from . import test_inventory_expiry
 from . import test_public_branding
+from . import test_ai_context

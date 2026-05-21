@@ -4769,12 +4769,121 @@ class SimpleApiController(http.Controller):
 
     # ===== AI CONTEXT =====
 
+    def _build_tenant_block(self, user):
+        """Build the tenant context block for the AI agent.
+
+        Authoritative facts that the LLM otherwise hallucinates: today's
+        date in the tenant's timezone, currency, locale, company,
+        fiscal year, and installed modules. Without this, Claude falls
+        back to its training cutoff (e.g. infers "last month" as a date
+        from 2024).
+        """
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:  # pragma: no cover — Python <3.9
+            ZoneInfo = None
+
+        company = user.company_id or request.env.company
+        tz_name = user.tz or (company.partner_id.tz if company and company.partner_id else None) or 'UTC'
+        try:
+            tz = ZoneInfo(tz_name) if ZoneInfo else None
+        except Exception:
+            tz = None
+            tz_name = 'UTC'
+
+        now_local = datetime.now(tz) if tz else datetime.utcnow()
+        today_local = now_local.date()
+
+        # Currency — falls back to USD if company has none.
+        currency = company.currency_id if company else None
+        currency_block = {
+            'code': currency.name if currency else 'USD',
+            'symbol': currency.symbol if currency else '$',
+            'position': currency.position if currency else 'before',
+            'decimal_places': currency.decimal_places if currency else 2,
+        }
+
+        # Country
+        country_name = None
+        if company and company.country_id:
+            country_name = company.country_id.name
+        country_code = None
+        if company and company.country_id:
+            country_code = company.country_id.code
+
+        # Fiscal year — only present when account module is installed.
+        fiscal_year = None
+        if hasattr(company, 'fiscalyear_last_month') and hasattr(company, 'fiscalyear_last_day'):
+            try:
+                last_month = int(company.fiscalyear_last_month or 12)
+                last_day = int(company.fiscalyear_last_day or 31)
+                # Build current FY window: ends on last_month/last_day of current or next year.
+                year = today_local.year
+                try:
+                    fy_end = today_local.replace(year=year, month=last_month, day=last_day)
+                except ValueError:
+                    fy_end = today_local.replace(year=year, month=last_month, day=28)
+                if today_local > fy_end:
+                    try:
+                        fy_end = fy_end.replace(year=year + 1)
+                    except ValueError:
+                        pass
+                # Start = day after previous FY end
+                try:
+                    fy_start = fy_end.replace(year=fy_end.year - 1) + timedelta(days=1)
+                except ValueError:
+                    fy_start = fy_end.replace(year=fy_end.year - 1, day=1) + timedelta(days=1)
+                fiscal_year = {
+                    'last_month': last_month,
+                    'last_day': last_day,
+                    'current_start': fy_start.isoformat(),
+                    'current_end': fy_end.isoformat(),
+                }
+            except Exception:
+                fiscal_year = None
+
+        # Multi-company list (only ones the user can switch to)
+        companies = []
+        try:
+            for c in user.company_ids:
+                companies.append({'id': c.id, 'name': c.name})
+        except Exception:
+            pass
+
+        # Installed modules (technical names) — sudo because ir.module.module is restricted.
+        installed_modules = []
+        try:
+            modules = request.env['ir.module.module'].sudo().search([
+                ('state', '=', 'installed'),
+            ])
+            installed_modules = [m.name for m in modules]
+        except Exception:
+            pass
+
+        return {
+            'today': today_local.isoformat(),
+            'now': now_local.isoformat(),
+            'timezone': tz_name,
+            'locale': user.lang or 'en_US',
+            'company': {
+                'id': company.id if company else None,
+                'name': company.name if company else None,
+                'country': country_name,
+                'country_code': country_code,
+                'currency': currency_block,
+            },
+            'companies': companies,
+            'fiscal_year': fiscal_year,
+            'installed_modules': installed_modules,
+        }
+
     @http.route('/api/v2/ai/context', type='http', auth='none', methods=['GET'], csrf=False)
     def ai_context(self):
         """Return a compact context blob for the AI agent in a single call.
 
-        Combines: user info, permissions, module access, and a lightweight
-        activity summary so the agent doesn't need 3-4 separate requests.
+        Combines: user info, permissions, module access, tenant facts
+        (date, currency, locale, fiscal year), and a lightweight activity
+        summary so the agent doesn't need 3-4 separate requests.
         """
         is_valid, user = self._authenticate_session()
         if not is_valid:
@@ -4847,6 +4956,8 @@ class SimpleApiController(http.Controller):
             except Exception:
                 pass
 
+            tenant_block = self._build_tenant_block(user)
+
             return self._json_response(
                 data={
                     'user': {
@@ -4864,6 +4975,7 @@ class SimpleApiController(http.Controller):
                     'module_access': module_access,
                     'accessible_modules': accessible_modules,
                     'recent_summary': recent_summary,
+                    'tenant': tenant_block,
                 },
                 message="AI context retrieved"
             )
@@ -4871,6 +4983,163 @@ class SimpleApiController(http.Controller):
         except Exception as e:
             _logger.error("Error building AI context: %s", str(e))
             return self._error_response("Error building AI context", 500, "AI_CONTEXT_ERROR")
+
+    # ===== AI TAXONOMY =====
+
+    @http.route('/api/v2/ai/taxonomy', type='http', auth='none', methods=['GET'], csrf=False)
+    def ai_taxonomy(self):
+        """Return tenant-specific entity names the LLM needs for grounding.
+
+        CRM stages, journals, departments, product categories — all with
+        the tenant's actual (often translated) names. Without this, the
+        agent guesses English defaults like "New" / "Won" which may not
+        match what the tenant set up.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            def _safe_search(model_name, fields, domain=None, order=None, limit=200):
+                if model_name not in request.env:
+                    return []
+                try:
+                    rs = request.env[model_name].search(domain or [], limit=limit, order=order or 'id')
+                    out = []
+                    for r in rs:
+                        item = {}
+                        for f in fields:
+                            v = getattr(r, f, False)
+                            # Many2one → [id, name]
+                            if hasattr(v, '_name') and hasattr(v, 'id'):
+                                item[f] = [v.id, v.display_name] if v else None
+                            else:
+                                item[f] = v
+                        out.append(item)
+                    return out
+                except Exception:
+                    return []
+
+            return self._json_response(
+                data={
+                    'crm_stages': _safe_search(
+                        'crm.stage',
+                        ['id', 'name', 'sequence', 'is_won', 'team_id'],
+                        order='sequence,id',
+                    ),
+                    'crm_teams': _safe_search(
+                        'crm.team', ['id', 'name'], order='name',
+                    ),
+                    'account_journals': _safe_search(
+                        'account.journal',
+                        ['id', 'name', 'code', 'type'],
+                        order='sequence,id',
+                    ),
+                    'hr_departments': _safe_search(
+                        'hr.department',
+                        ['id', 'name', 'parent_id', 'manager_id'],
+                        order='name',
+                    ),
+                    'product_categories': _safe_search(
+                        'product.category',
+                        ['id', 'name', 'parent_id'],
+                        order='parent_path',
+                    ),
+                    'product_uoms': _safe_search(
+                        'uom.uom', ['id', 'name'], order='name',
+                    ),
+                    'project_stages': _safe_search(
+                        'project.task.type',
+                        ['id', 'name', 'sequence'],
+                        order='sequence,id',
+                    ),
+                },
+                message='Taxonomy retrieved',
+            )
+        except Exception as e:
+            _logger.error("Error building AI taxonomy: %s", str(e))
+            return self._error_response("Error building taxonomy", 500, "AI_TAXONOMY_ERROR")
+
+    # ===== AI ME (user-specific employee context) =====
+
+    @http.route('/api/v2/ai/me', type='http', auth='none', methods=['GET'], csrf=False)
+    def ai_me(self):
+        """Return user-specific HR context: employee record, manager chain, team.
+
+        Lets the LLM answer "my deals", "my team", "who's my manager" without
+        guessing the user→employee mapping.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            employee_data = None
+            manager_chain = []
+            if 'hr.employee' in request.env:
+                try:
+                    Employee = request.env['hr.employee'].sudo()
+                    emp = Employee.search([('user_id', '=', user.id)], limit=1)
+                    if emp:
+                        employee_data = {
+                            'id': emp.id,
+                            'name': emp.name,
+                            'job_title': emp.job_title,
+                            'work_email': emp.work_email,
+                            'department': [emp.department_id.id, emp.department_id.name] if emp.department_id else None,
+                            'manager': [emp.parent_id.id, emp.parent_id.name] if emp.parent_id else None,
+                        }
+                        # Walk up the manager chain (max 5 to avoid cycles)
+                        current = emp.parent_id
+                        seen = set()
+                        while current and current.id not in seen and len(manager_chain) < 5:
+                            seen.add(current.id)
+                            manager_chain.append({
+                                'id': current.id,
+                                'name': current.name,
+                                'job_title': current.job_title,
+                            })
+                            current = current.parent_id
+                except Exception:
+                    pass
+
+            crm_teams = []
+            if 'crm.team' in request.env:
+                try:
+                    teams = request.env['crm.team'].search([
+                        '|', ('user_id', '=', user.id), ('member_ids', 'in', [user.id]),
+                    ])
+                    crm_teams = [{'id': t.id, 'name': t.name} for t in teams]
+                except Exception:
+                    pass
+
+            return self._json_response(
+                data={
+                    'user_id': user.id,
+                    'partner_id': user.partner_id.id if user.partner_id else None,
+                    'employee': employee_data,
+                    'manager_chain': manager_chain,
+                    'crm_teams': crm_teams,
+                },
+                message='User context retrieved',
+            )
+        except Exception as e:
+            _logger.error("Error building AI me: %s", str(e))
+            return self._error_response("Error building user context", 500, "AI_ME_ERROR")
 
     # ===== ANALYTICS ENDPOINTS =====
 
