@@ -4,3 +4,4 @@ from . import simple_api
 from . import notifications
 from . import avatars
 from . import imports
+from . import tax
