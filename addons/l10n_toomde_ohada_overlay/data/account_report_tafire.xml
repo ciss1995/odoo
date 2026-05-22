@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <!--
   TAFIRE — Tableau Financier des Ressources et Emplois (Acte Uniforme
   révisé 2018, article 26-3). Mandatory annual report alongside Bilan
@@ -31,8 +31,7 @@
   computed by `_class_totals` style helpers in dsf_export.py.
 
   Reference: OHADA AUDCIF article 27, Annexe (TAFIRE — Tableau N°4).
--->
-<odoo>
+--><odoo>
   <data>
 
   <record id="syscohada_tafire_report" model="account.report">
@@ -40,9 +39,9 @@
     <field name="filter_period_comparison" eval="True"/>
     <field name="filter_unfold_all" eval="True"/>
     <field name="column_ids">
-      <field name="name">Exercice N</field>
+      <record id="syscohada_tafire_report_col_default" model="account.report.column"><field name="name">Exercice N</field>
       <field name="expression_label">balance</field>
-    </field>
+    </record></field>
 
     <field name="line_ids">
 
@@ -60,11 +59,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FA</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FA_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '20%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_FB" model="account.report.line">
@@ -73,11 +72,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FB</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FB_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '21%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_FC" model="account.report.line">
@@ -86,11 +85,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FC</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FC_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('22', '23', '24'))]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_FD" model="account.report.line">
@@ -99,11 +98,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FD</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FD_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('26', '27'))]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_FE" model="account.report.line">
@@ -112,11 +111,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FE</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FE_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '16%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_FF" model="account.report.line">
@@ -125,11 +124,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_FF</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_FF_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('3', '40', '41'))]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <!-- ============================================================
@@ -146,11 +145,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_GA</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_GA_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('13', '68'))]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_GB" model="account.report.line">
@@ -159,11 +158,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_GB</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_GB_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('82', '822'))]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_GC" model="account.report.line">
@@ -172,11 +171,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_GC</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_GC_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '10%')]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_GD" model="account.report.line">
@@ -185,11 +184,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_GD</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_GD_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '14%')]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_tafire_GE" model="account.report.line">
@@ -198,11 +197,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_GE</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_GE_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('16', '17'))]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <!-- ============================================================
@@ -219,11 +218,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_TAF_HA</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_tafire_HA_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '5%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
     </field>

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <!--
   Compte de Résultat SYSCOHADA — Système Normal (Acte Uniforme révisé 2018).
 
@@ -19,8 +19,7 @@
   account-code lines that downstream consumers (DSF/Form 1004) compose
   arithmetically in Python. For the SPA Compte de résultat view, the
   flat-list layout below is what the user sees.
--->
-<odoo>
+--><odoo>
   <data>
 
   <record id="syscohada_resultat_report" model="account.report">
@@ -28,9 +27,9 @@
     <field name="filter_period_comparison" eval="True"/>
     <field name="filter_unfold_all" eval="True"/>
     <field name="column_ids">
-      <field name="name">N</field>
+      <record id="syscohada_resultat_report_col_default" model="account.report.column"><field name="name">N</field>
       <field name="expression_label">balance</field>
-    </field>
+    </record></field>
 
     <field name="line_ids">
 
@@ -48,11 +47,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_TA</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_TA_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '701%')]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_TB" model="account.report.line">
@@ -61,11 +60,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_TB</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_TB_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '702%')]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_TC" model="account.report.line">
@@ -74,11 +73,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_TC</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_TC_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('704', '705', '706', '707'))]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RA" model="account.report.line">
@@ -87,11 +86,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RA</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RA_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '601%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RC" model="account.report.line">
@@ -100,11 +99,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RC</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RC_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '602%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RD" model="account.report.line">
@@ -113,11 +112,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RD</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RD_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', 'in', ('604', '605', '608'))]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RE" model="account.report.line">
@@ -126,11 +125,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RE</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RE_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '61%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RF" model="account.report.line">
@@ -139,11 +138,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RF</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RF_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '62%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RG" model="account.report.line">
@@ -152,11 +151,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RG</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RG_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '64%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RH" model="account.report.line">
@@ -165,11 +164,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RH</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RH_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '65%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RK" model="account.report.line">
@@ -178,11 +177,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RK</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RK_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '66%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RL" model="account.report.line">
@@ -191,11 +190,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RL</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RL_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '68%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <!-- ============================================================
@@ -212,11 +211,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_TK</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_TK_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '77%')]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RM" model="account.report.line">
@@ -225,11 +224,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RM</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RM_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '67%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <!-- ============================================================
@@ -246,11 +245,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_TN</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_TN_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '8%'), ('balance', '&lt;', 0)]</field>
           <field name="subformula">-sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RN" model="account.report.line">
@@ -259,11 +258,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RN</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RN_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '8%'), ('balance', '&gt;', 0)]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
       <record id="syscohada_cr_RP" model="account.report.line">
@@ -272,11 +271,11 @@
         <field name="hierarchy_level">1</field>
         <field name="code">SC_CR_RP</field>
         <field name="expression_ids">
-          <field name="label">balance</field>
+          <record id="syscohada_cr_RP_expr" model="account.report.expression"><field name="label">balance</field>
           <field name="engine">domain</field>
           <field name="formula">[('account_id.code', '=like', '89%')]</field>
           <field name="subformula">sum</field>
-        </field>
+        </record></field>
       </record>
 
     </field>
