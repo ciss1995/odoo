@@ -66,12 +66,24 @@ def _set_invoice_sequences_no_gap(env):
     gaps. Odoo's default `standard` implementation allows gaps when a draft
     is deleted before posting — switch to `no_gap` so deletes don't burn
     a number.
+
+    Odoo 17+ removed `account.journal.sequence_id` — invoice numbering is
+    now assigned at POST time directly on `account.move.name`, so drafts
+    never reserve a number and the SYSCOHADA gap-less rule is satisfied
+    by the engine. When the field is absent we no-op and log.
     """
-    # Customer-invoice journals (`type='sale'`) and their underlying
-    # `account.move` sequence. Walk each company's sale journals and flip
-    # their sequence implementation. `sequence_id` is the year-agnostic
-    # parent; year/period sub-sequences (`date_range_ids`) inherit.
-    sale_journals = env["account.journal"].search([("type", "=", "sale")])
+    Journal = env["account.journal"]
+    if "sequence_id" not in Journal._fields:
+        _logger.info(
+            "OHADA overlay: account.journal.sequence_id absent (Odoo 17+); "
+            "customer-invoice numbering is gap-less by post-time assignment"
+        )
+        return
+
+    # Older Odoo (≤16) path — flip each company's sale-journal sequence to
+    # no_gap. `sequence_id` is the year-agnostic parent; year/period
+    # sub-sequences (`date_range_ids`) inherit.
+    sale_journals = Journal.search([("type", "=", "sale")])
     count = 0
     for journal in sale_journals:
         seq = journal.sequence_id
