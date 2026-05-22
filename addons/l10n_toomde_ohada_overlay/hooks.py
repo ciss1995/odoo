@@ -165,9 +165,13 @@ def _enable_multi_currency(env):
         return
     # Add the group to every internal user. Avoids the "Show me the
     # currency column" toggle hidden in Settings.
-    admins = env["res.users"].search([("share", "=", False)])
+    # Odoo 17+ renamed `res.users.groups_id` to `group_ids`; fall back
+    # to the legacy name when running on ≤16.
+    Users = env["res.users"]
+    group_field = "group_ids" if "group_ids" in Users._fields else "groups_id"
+    admins = Users.search([("share", "=", False)])
     if admins:
-        admins.write({"groups_id": [(4, group_mc.id)]})
+        admins.write({group_field: [(4, group_mc.id)]})
     _logger.info(
         "OHADA overlay: enabled multi-currency for %d internal user(s)",
         len(admins),
