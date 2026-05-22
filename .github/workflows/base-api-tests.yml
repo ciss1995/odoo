@@ -24,11 +24,13 @@ on:
     branches: [main]
     paths:
       - 'addons/base_api/**'
+      - 'addons/l10n_toomde_ohada_overlay/**'
       - '.github/workflows/base-api-tests.yml'
   pull_request:
     branches: [main]
     paths:
       - 'addons/base_api/**'
+      - 'addons/l10n_toomde_ohada_overlay/**'
       - '.github/workflows/base-api-tests.yml'
   workflow_dispatch:
 
@@ -52,7 +54,10 @@ jobs:
         /base_api:TestAiContextEndpoint,
         /base_api:TestAiContextAuthIsolation,
         /base_api:TestSafeExcMessage,
-        /base_api:TestIdempotencyKey
+        /base_api:TestIdempotencyKey,
+        /l10n_toomde_ohada_overlay:TestOhadaOverlayPostInit,
+        /l10n_toomde_ohada_overlay:TestEInvoicingQR,
+        /l10n_toomde_ohada_overlay:TestAnnualExports
 
     steps:
       - name: Checkout
@@ -110,7 +115,7 @@ jobs:
               --addons-path=/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons \
               --db_host=pg --db_user=odoo --db_password=odoo \
               --database=base_api_test \
-              --init=base_api \
+              --init=base_api,l10n_toomde_ohada_overlay \
               --test-enable \
               --test-tags="$TAGS" \
               --stop-after-init \

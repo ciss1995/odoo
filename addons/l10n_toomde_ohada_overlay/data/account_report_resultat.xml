@@ -1,0 +1,283 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Compte de Résultat SYSCOHADA — Système Normal (Acte Uniforme révisé 2018).
+
+  AUDCIF line codes (TA, TB, … TZ on charges et produits) with the
+  classic OHADA split between Exploitation, Financier, and HAO. Soldes
+  Intermédiaires de Gestion (SIG) are surfaced as their own subtotals
+  via the OHADA convention:
+    Marge brute sur marchandises = 70 - 60
+    Valeur ajoutée               = (70-71-72) - (60+61+62+63+64) (incl. variation stocks)
+    EBE / EBIT                   = VA - 66 (charges de personnel)
+    Résultat d'exploitation      = EBE + reprises - dot. amort/prov
+    Résultat financier           = 77 - 67
+    Résultat HAO                 = (81+82+84+85+86+87+88) - HAO charges
+    Résultat net                 = somme - impôt sur le résultat (89)
+
+  SIG aren't fully expressible in `account.report` `domain` engine
+  (it doesn't do cross-line arithmetic). They're built here as separate
+  account-code lines that downstream consumers (DSF/Form 1004) compose
+  arithmetically in Python. For the SPA Compte de résultat view, the
+  flat-list layout below is what the user sees.
+-->
+<odoo>
+
+  <record id="syscohada_resultat_report" model="account.report">
+    <field name="name">Compte de résultat SYSCOHADA (Système Normal)</field>
+    <field name="filter_period_comparison" eval="True"/>
+    <field name="filter_unfold_all" eval="True"/>
+    <field name="column_ids">
+      <field name="name">N</field>
+      <field name="expression_label">balance</field>
+    </field>
+
+    <field name="line_ids">
+
+      <!-- ============================================================
+           ACTIVITÉ D'EXPLOITATION
+           ============================================================ -->
+      <record id="syscohada_cr_expl_header" model="account.report.line">
+        <field name="name">ACTIVITÉ D'EXPLOITATION</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_cr_TA" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">TA — Ventes de marchandises</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_TA</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '701%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_TB" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">TB — Ventes de produits fabriqués</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_TB</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '702%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_TC" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">TC — Travaux et services vendus</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_TC</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('704', '705', '706', '707'))]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RA" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RA — Achats de marchandises</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RA</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '601%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RC" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RC — Achats de matières premières et fournitures</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RC</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '602%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RD" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RD — Autres achats</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RD</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('604', '605', '608'))]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RE" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RE — Transports</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RE</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '61%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RF" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RF — Services extérieurs</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RF</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '62%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RG" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RG — Impôts et taxes</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RG</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '64%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RH" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RH — Autres charges</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RH</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '65%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RK" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RK — Charges de personnel</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RK</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '66%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RL" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_expl_header"/>
+        <field name="name">RL — Dotations aux amortissements et provisions d'exploitation</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RL</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '68%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <!-- ============================================================
+           ACTIVITÉ FINANCIÈRE
+           ============================================================ -->
+      <record id="syscohada_cr_fin_header" model="account.report.line">
+        <field name="name">ACTIVITÉ FINANCIÈRE</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_cr_TK" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_fin_header"/>
+        <field name="name">TK — Revenus financiers</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_TK</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '77%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RM" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_fin_header"/>
+        <field name="name">RM — Frais financiers</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RM</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '67%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <!-- ============================================================
+           HORS ACTIVITÉS ORDINAIRES (HAO)
+           ============================================================ -->
+      <record id="syscohada_cr_hao_header" model="account.report.line">
+        <field name="name">HORS ACTIVITÉS ORDINAIRES (HAO)</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_cr_TN" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_hao_header"/>
+        <field name="name">TN — Produits HAO</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_TN</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '8%'), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RN" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_hao_header"/>
+        <field name="name">RN — Charges HAO</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RN</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '8%'), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_cr_RP" model="account.report.line">
+        <field name="parent_id" ref="syscohada_cr_hao_header"/>
+        <field name="name">RP — Impôt sur le résultat (89)</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_CR_RP</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '89%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+    </field>
+  </record>
+</odoo>

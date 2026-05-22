@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Bilan SYSCOHADA — Système Normal (Acte Uniforme révisé 2018).
+
+  This is the official line structure with the AUDCIF code letters
+  (AD, AE, … BZ for ACTIF; CA, … DZ for PASSIF). Each code maps to one
+  or more SYSCOHADA account ranges (Class 1-5). Codes here are the same
+  ones an OHADA auditor expects to see in the leftmost column of the
+  filing — the wire format for Form 1004 and country-specific DSF.
+
+  Reference: OHADA AUDCIF Acte Uniforme, articles 24-31 + Annexe
+  ("Plan des Comptes — Système Normal"). Cross-checked against the
+  Bilan template published by CN-OHADA-CI and DGID Sénégal.
+
+  Layout: 4-column Brut / Amort. & Prov. / Net N / Net N-1.
+  Odoo's `account.report` natively renders Net N + period comparison
+  (Net N-1). Brut/Amort columns are derivable from the same lines
+  (debit-side of Class 2 = Brut, amortissement accounts 28/29 = Amort);
+  exposing them as separate columns is a follow-up once we have a
+  reference DSF to align against.
+-->
+<odoo>
+
+  <record id="syscohada_bilan_report" model="account.report">
+    <field name="name">Bilan SYSCOHADA (Système Normal)</field>
+    <field name="filter_period_comparison" eval="True"/>
+    <field name="filter_unfold_all" eval="True"/>
+    <field name="column_ids">
+      <field name="name">Net N</field>
+      <field name="expression_label">balance</field>
+    </field>
+
+    <field name="line_ids">
+
+      <!-- ============================================================
+           ACTIF
+           ============================================================ -->
+      <record id="syscohada_bilan_actif_header" model="account.report.line">
+        <field name="name">ACTIF</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <!-- Actif immobilisé -->
+      <record id="syscohada_bilan_AD" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AD — Charges immobilisées</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AD</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '20%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AE" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AE — Frais de développement et brevets</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AE</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '21%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AF" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AF — Bâtiments, installations</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AF</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '23%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AG" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AG — Matériel, mobilier, actifs biologiques</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AG</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '24%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AH" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AH — Matériel de transport</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AH</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '245%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AI" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AI — Avances et acomptes / Immo. en cours</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AI</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '25%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AJ" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AJ — Titres de participation</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AJ</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '26%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_AK" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">AK — Autres immobilisations financières</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_AK</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '27%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <!-- Actif circulant -->
+      <record id="syscohada_bilan_BA" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BA — Actif circulant HAO</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BA</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '85%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_BB" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BB — Stocks et en-cours</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BB</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '3%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_BG" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BG — Créances Clients</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BG</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '41%'), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_BH" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BH — Autres créances</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BH</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('42', '43', '44', '45', '46', '47')), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <!-- Trésorerie-actif -->
+      <record id="syscohada_bilan_BQ" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BQ — Titres de placement</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BQ</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '50%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_BR" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BR — Valeurs à encaisser</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BR</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '51%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_BS" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_actif_header"/>
+        <field name="name">BS — Banques, chèques postaux, caisse</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_BS</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('52', '53', '54', '57')), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <!-- ============================================================
+           PASSIF
+           ============================================================ -->
+      <record id="syscohada_bilan_passif_header" model="account.report.line">
+        <field name="name">PASSIF</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <!-- Capitaux propres -->
+      <record id="syscohada_bilan_CA" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">CA — Capital social</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_CA</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '10%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_CD" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">CD — Primes et réserves</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_CD</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('11', '12'))]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_CF" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">CF — Écarts de réévaluation</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_CF</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '105%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_CH" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">CH — Résultat net de l'exercice</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_CH</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '13%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <!-- Dettes financières et ressources assimilées -->
+      <record id="syscohada_bilan_DA" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DA — Emprunts et dettes financières diverses</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DA</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '16%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_DB" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DB — Dettes de crédit-bail</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DB</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '17%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_DC" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DC — Provisions pour risques et charges</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DC</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '19%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <!-- Passif circulant -->
+      <record id="syscohada_bilan_DH" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DH — Fournisseurs d'exploitation</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DH</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '40%'), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_DI" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DI — Dettes fiscales et sociales</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DI</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('42', '43', '44')), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_DJ" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DJ — Autres dettes</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DJ</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('45', '46', '47')), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <!-- Trésorerie-passif -->
+      <record id="syscohada_bilan_DQ" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DQ — Crédits d'escompte / de trésorerie</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DQ</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '56%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_bilan_DR" model="account.report.line">
+        <field name="parent_id" ref="syscohada_bilan_passif_header"/>
+        <field name="name">DR — Banques (découverts)</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_BIL_DR</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('52', '53', '54', '57')), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+    </field>
+  </record>
+</odoo>

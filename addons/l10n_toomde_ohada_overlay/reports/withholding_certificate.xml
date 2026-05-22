@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Withholding-tax certificate (AFR-6).
+
+  Issued to a supplier whenever the tenant withholds TVA / BIC / IUTS on
+  a vendor payment. SYSCOHADA + each member state's tax code requires
+  delivering this certificate so the supplier can claim the credit on
+  their own return.
+
+  The template is intentionally generic across all OHADA countries —
+  the only country-specific bits are the tax-authority label (DGI XX)
+  and the tax-code reference, which we pull from the company country.
+  When a country needs a country-specific template (CI's "fiche
+  d'attestation BIC" has a different layout), copy this file and
+  inherit on `is_l10n_toomde_<iso2>_certificate`.
+
+  Triggered via the report registered in `report_withholding_certificate.xml`.
+-->
+<odoo>
+  <template id="report_withholding_certificate_template">
+    <t t-call="web.html_container">
+      <t t-foreach="docs" t-as="o">
+        <t t-call="web.external_layout">
+          <div class="page" style="font-family: sans-serif; font-size: 12px;">
+            <h2 style="text-align: center; margin-bottom: 20px;">
+              Attestation de retenue à la source
+            </h2>
+            <p style="text-align: center; font-style: italic;">
+              Withholding Tax Certificate
+            </p>
+
+            <table style="width: 100%; margin-top: 20px;">
+              <tr>
+                <td style="width: 50%; vertical-align: top;">
+                  <strong>Émise par / Issued by:</strong>
+                  <br/>
+                  <span t-field="o.company_id.name"/>
+                  <br/>
+                  <span t-field="o.company_id.partner_id.contact_address"/>
+                  <br/>
+                  <strong>NIF / Tax ID:</strong>
+                  <span t-field="o.company_id.partner_id.vat"/>
+                </td>
+                <td style="width: 50%; vertical-align: top;">
+                  <strong>Bénéficiaire / Beneficiary:</strong>
+                  <br/>
+                  <span t-field="o.partner_id.name"/>
+                  <br/>
+                  <span t-field="o.partner_id.contact_address"/>
+                  <br/>
+                  <strong>NIF / Tax ID:</strong>
+                  <span t-field="o.partner_id.vat"/>
+                </td>
+              </tr>
+            </table>
+
+            <hr style="margin: 20px 0;"/>
+
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background-color: #f0f0f0;">
+                  <th style="border: 1px solid #888; padding: 6px; text-align: left;">Référence</th>
+                  <th style="border: 1px solid #888; padding: 6px; text-align: right;">Montant brut</th>
+                  <th style="border: 1px solid #888; padding: 6px; text-align: right;">Retenue</th>
+                  <th style="border: 1px solid #888; padding: 6px; text-align: right;">Net payé</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style="border: 1px solid #888; padding: 6px;">
+                    <span t-field="o.name"/>
+                  </td>
+                  <td style="border: 1px solid #888; padding: 6px; text-align: right;">
+                    <span t-esc="o._toomde_wht_gross_display()"/>
+                  </td>
+                  <td style="border: 1px solid #888; padding: 6px; text-align: right;">
+                    <span t-esc="o._toomde_wht_withheld_display()"/>
+                  </td>
+                  <td style="border: 1px solid #888; padding: 6px; text-align: right;">
+                    <span t-esc="o._toomde_wht_net_display()"/>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p style="margin-top: 24px;">
+              Période concernée:
+              <strong><span t-field="o.date"/></strong>
+            </p>
+            <p>
+              Cette attestation est délivrée pour servir et valoir ce que de droit,
+              conformément aux dispositions du Code Général des Impôts en vigueur
+              dans
+              <span t-field="o.company_id.country_id"/>.
+            </p>
+
+            <p style="margin-top: 60px; text-align: right;">
+              Fait le
+              <span t-esc="o._toomde_wht_today_display()"/>
+              <br/><br/>
+              Signature / cachet:
+              <br/><br/>
+              ________________________________
+            </p>
+          </div>
+        </t>
+      </t>
+    </t>
+  </template>
+
+  <record id="report_withholding_certificate" model="ir.actions.report">
+    <field name="name">Attestation de retenue</field>
+    <field name="model">account.payment</field>
+    <field name="report_type">qweb-pdf</field>
+    <field name="report_name">l10n_toomde_ohada_overlay.report_withholding_certificate_template</field>
+    <field name="report_file">l10n_toomde_ohada_overlay.report_withholding_certificate_template</field>
+    <field name="binding_model_id" ref="account.model_account_payment"/>
+    <field name="binding_type">report</field>
+  </record>
+</odoo>

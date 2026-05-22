@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AFR-2 / AFR-3 — inject the e-invoicing QR code into Odoo's stock
+  customer-invoice PDF for CI / SN tenants. Inheritance is additive:
+  on countries outside the e-invoicing list (`toomde_einv_required ==
+  False`) the block is hidden, keeping the report visually identical
+  to the upstream template.
+-->
+<odoo>
+  <template id="report_invoice_document_einv_qr_inherit"
+            inherit_id="account.report_invoice_document"
+            name="OHADA e-invoicing QR block">
+    <xpath expr="//div[hasclass('page')]" position="inside">
+      <t t-if="o.toomde_einv_required">
+        <hr style="margin-top: 24px;"/>
+        <div style="margin-top: 12px; text-align: center; font-size: 11px;">
+          <strong>Facture certifiée — vérifiez avec la DGI/DGID</strong>
+          <br/>
+          <t t-if="o.toomde_einv_qr">
+            <img t-att-src="image_data_uri(o.toomde_einv_qr)"
+                 alt="QR code"
+                 style="width: 110px; height: 110px; margin-top: 6px;"/>
+          </t>
+          <t t-else="">
+            <div style="border: 1px dashed #888; padding: 8px;
+                        font-family: monospace; font-size: 9px;
+                        margin: 6px auto; max-width: 380px;">
+              <t t-esc="o._toomde_einv_payload(o)"/>
+            </div>
+          </t>
+        </div>
+      </t>
+    </xpath>
+  </template>
+</odoo>

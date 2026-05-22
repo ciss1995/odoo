@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+  <record id="view_ohada_annual_export_wizard_form" model="ir.ui.view">
+    <field name="name">toomde.ohada.annual.export.wizard.form</field>
+    <field name="model">toomde.ohada.annual.export.wizard</field>
+    <field name="arch" type="xml">
+      <form string="Export annuel SYSCOHADA">
+        <group>
+          <field name="fiscal_year"/>
+          <field name="export_kind"/>
+        </group>
+        <group attrs="{'invisible': [('output_file', '=', False)]}">
+          <field name="output_filename" readonly="1"/>
+          <field name="output_file" filename="output_filename" readonly="1"/>
+        </group>
+        <footer>
+          <button name="action_generate"
+                  type="object"
+                  string="Générer"
+                  class="btn-primary"/>
+          <button string="Annuler" class="btn-secondary" special="cancel"/>
+        </footer>
+      </form>
+    </field>
+  </record>
+
+  <record id="action_ohada_annual_export_wizard" model="ir.actions.act_window">
+    <field name="name">Export annuel SYSCOHADA</field>
+    <field name="res_model">toomde.ohada.annual.export.wizard</field>
+    <field name="view_mode">form</field>
+    <field name="target">new</field>
+  </record>
+
+  <menuitem id="menu_ohada_root"
+            name="SYSCOHADA"
+            parent="account.menu_finance_reports"
+            sequence="50"/>
+
+  <menuitem id="menu_ohada_annual_export"
+            name="Export annuel (DSF / Form 1004)"
+            parent="menu_ohada_root"
+            action="action_ohada_annual_export_wizard"
+            sequence="10"/>
+</odoo>

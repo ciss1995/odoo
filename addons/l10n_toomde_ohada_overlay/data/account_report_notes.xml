@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Notes annexes SYSCOHADA — Acte Uniforme révisé 2018, articles 33-34.
+
+  The Acte Uniforme defines 35 standardized notes; an OHADA filing must
+  produce all that apply to the company's situation. Each note is a
+  detail break-down of a Bilan or CR line, with rules for how the
+  numbers reconcile to the main statements.
+
+  Implementing all 35 as full account.reports is a multi-month effort
+  (each note has its own column layout, some have movement schedules,
+  some compare to N-1, etc.). This data file ships the *structure*
+  (note title + the account ranges it draws from) and surfaces totals
+  per note in a single flat report. The full per-note breakdowns are a
+  follow-up scoped during the COMP-11 attestation engagement — the
+  accountant typically tells us which 6-12 notes their cabinet actually
+  reviews in a year-end filing, so we can prioritize.
+
+  Reference: AUDCIF article 33, Annexe (Notes 1 à 35).
+-->
+<odoo>
+
+  <record id="syscohada_notes_report" model="account.report">
+    <field name="name">Notes annexes SYSCOHADA</field>
+    <field name="filter_period_comparison" eval="True"/>
+    <field name="filter_unfold_all" eval="True"/>
+    <field name="column_ids">
+      <field name="name">Exercice N</field>
+      <field name="expression_label">balance</field>
+    </field>
+
+    <field name="line_ids">
+
+      <record id="syscohada_notes_actif_header" model="account.report.line">
+        <field name="name">NOTES SUR L'ACTIF DU BILAN</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_notes_3" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 3 — Immobilisations incorporelles et corporelles</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N3</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('21', '22', '23', '24'))]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_4" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 4 — Amortissements</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N4</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('28', '29'))]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_5" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 5 — Immobilisations financières</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N5</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('26', '27'))]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_6" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 6 — Stocks</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N6</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '3%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_7" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 7 — Créances clients</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N7</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '41%'), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_8" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_actif_header"/>
+        <field name="name">Note 8 — Autres créances</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N8</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('42', '43', '44', '45', '46', '47')), ('balance', '&gt;', 0)]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_passif_header" model="account.report.line">
+        <field name="name">NOTES SUR LE PASSIF DU BILAN</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_notes_13" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_passif_header"/>
+        <field name="name">Note 13 — Capital social, primes, réserves</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N13</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('10', '11', '12'))]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_15" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_passif_header"/>
+        <field name="name">Note 15 — Provisions pour risques et charges</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N15</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '19%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_16" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_passif_header"/>
+        <field name="name">Note 16 — Emprunts et dettes financières</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N16</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('16', '17'))]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_17" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_passif_header"/>
+        <field name="name">Note 17 — Dettes fournisseurs</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N17</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '40%'), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_18" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_passif_header"/>
+        <field name="name">Note 18 — Dettes fiscales et sociales</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N18</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('42', '43', '44')), ('balance', '&lt;', 0)]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_cr_header" model="account.report.line">
+        <field name="name">NOTES SUR LE COMPTE DE RÉSULTAT</field>
+        <field name="hierarchy_level">0</field>
+      </record>
+
+      <record id="syscohada_notes_21" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 21 — Chiffre d'affaires (ventilation)</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N21</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '70%')]</field>
+          <field name="subformula">-sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_22" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 22 — Achats consommés</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N22</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '60%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_25" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 25 — Charges de personnel</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N25</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '66%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_26" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 26 — Impôts et taxes</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N26</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '64%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_28" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 28 — Charges et produits financiers</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N28</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', 'in', ('67', '77'))]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+      <record id="syscohada_notes_29" model="account.report.line">
+        <field name="parent_id" ref="syscohada_notes_cr_header"/>
+        <field name="name">Note 29 — Charges et produits HAO</field>
+        <field name="hierarchy_level">1</field>
+        <field name="code">SC_N29</field>
+        <field name="expression_ids">
+          <field name="label">balance</field>
+          <field name="engine">domain</field>
+          <field name="formula">[('account_id.code', '=like', '8%')]</field>
+          <field name="subformula">sum</field>
+        </field>
+      </record>
+
+    </field>
+  </record>
+</odoo>
