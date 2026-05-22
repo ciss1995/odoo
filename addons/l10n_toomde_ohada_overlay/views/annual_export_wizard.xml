@@ -11,7 +11,7 @@
           <field name="fiscal_year"/>
           <field name="export_kind"/>
         </group>
-        <group attrs="{'invisible': [('output_file', '=', False)]}">
+        <group invisible="not output_file">
           <field name="output_filename" readonly="1"/>
           <field name="output_file" filename="output_filename" readonly="1"/>
         </group>
