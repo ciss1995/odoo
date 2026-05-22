@@ -69,21 +69,23 @@ def _control_plane_token():
     return os.environ.get("CONTROL_PLANE_TOKEN", "")
 
 
-def _resolve_tenant_id():
-    """Tenant UUID used in /admin/tenants/{id}/ URLs.
+def _resolve_tenant_slug():
+    """Tenant slug used in /internal/tenants/{slug}/tax-* URLs.
 
-    Stored at provisioning as the ``toomde.tenant_id`` system parameter.
-    Falls back to ``TOOMDE_TENANT_ID`` env var for dev. None means we
-    can't proxy — the SPA gets a 503 with a clear message.
+    Sourced from the ``TENANT_ID`` container env var (set at
+    provisioning by the docker-compose template). Falls back to the
+    ``toomde.tenant_slug`` ir.config_parameter for tenants where the
+    env is missing. None means the proxy returns 503.
     """
-    val = (
+    val = os.environ.get("TENANT_ID", "").strip()
+    if val:
+        return val
+    param = (
         request.env["ir.config_parameter"]
         .sudo()
-        .get_param("toomde.tenant_id")
+        .get_param("toomde.tenant_slug")
     )
-    if val:
-        return val.strip()
-    return os.environ.get("TOOMDE_TENANT_ID", "").strip() or None
+    return (param or "").strip() or None
 
 
 class TaxController(BaseApiController):
@@ -324,44 +326,56 @@ class TaxController(BaseApiController):
             )
         return True, user
 
+    def _proxy_url(self, path):
+        slug = _resolve_tenant_slug()
+        if not slug:
+            return None, self._error_response(
+                "Tenant slug not configured", 503, "TENANT_SLUG_MISSING",
+            )
+        return (
+            f"{_control_plane_base_url()}/internal/tenants/{_urlquote(slug)}{path}",
+            None,
+        )
+
+    def _proxy_headers(self):
+        # Forward the Odoo user's email so the control-plane audit log
+        # captures the human who initiated the change, not the proxy.
+        email = ""
+        user = request.env.user
+        if user:
+            email = (user.login or "").strip() or (user.email or "").strip()
+        headers = {
+            "Authorization": f"Bearer {_control_plane_token()}",
+        }
+        if email:
+            headers["X-User-Email"] = email
+        return headers
+
     def _proxy_get(self, path):
-        tenant_id = _resolve_tenant_id()
-        if not tenant_id:
-            return self._error_response(
-                "Tenant ID not configured", 503, "TENANT_ID_MISSING",
-            )
-        url = f"{_control_plane_base_url()}/admin/tenants/{_urlquote(tenant_id)}{path}"
+        url, err = self._proxy_url(path)
+        if err:
+            return err
         try:
-            resp = requests.get(
-                url,
-                headers={"Authorization": f"Bearer {_control_plane_token()}"},
-                timeout=10,
-            )
+            resp = requests.get(url, headers=self._proxy_headers(), timeout=10)
         except requests.RequestException as exc:
             _logger.warning("Control-plane proxy GET %s failed: %s", url, exc)
             return self._error_response(
                 "Control plane unreachable", 502, "CONTROL_PLANE_UNREACHABLE",
             )
-        return self._json_response(data=resp.json(), status_code=resp.status_code)
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {"detail": resp.text}
+        return self._json_response(data=data, status_code=resp.status_code)
 
     def _proxy_json(self, method, path, body):
-        tenant_id = _resolve_tenant_id()
-        if not tenant_id:
-            return self._error_response(
-                "Tenant ID not configured", 503, "TENANT_ID_MISSING",
-            )
-        url = f"{_control_plane_base_url()}/admin/tenants/{_urlquote(tenant_id)}{path}"
+        url, err = self._proxy_url(path)
+        if err:
+            return err
+        headers = self._proxy_headers()
+        headers["Content-Type"] = "application/json"
         try:
-            resp = requests.request(
-                method,
-                url,
-                headers={
-                    "Authorization": f"Bearer {_control_plane_token()}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-                timeout=10,
-            )
+            resp = requests.request(method, url, headers=headers, json=body, timeout=10)
         except requests.RequestException as exc:
             _logger.warning("Control-plane proxy %s %s failed: %s", method, url, exc)
             return self._error_response(
