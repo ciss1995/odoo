@@ -17,6 +17,7 @@
   Triggered via the report registered in `report_withholding_certificate.xml`.
 -->
 <odoo>
+  <data>
   <template id="report_withholding_certificate_template">
     <t t-call="web.html_container">
       <t t-foreach="docs" t-as="o">
@@ -117,4 +118,5 @@
     <field name="binding_model_id" ref="account.model_account_payment"/>
     <field name="binding_type">report</field>
   </record>
+  </data>
 </odoo>

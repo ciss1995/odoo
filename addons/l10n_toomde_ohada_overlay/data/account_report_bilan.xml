@@ -20,6 +20,7 @@
   reference DSF to align against.
 -->
 <odoo>
+  <data>
 
   <record id="syscohada_bilan_report" model="account.report">
     <field name="name">Bilan SYSCOHADA (Système Normal)</field>
@@ -408,4 +409,5 @@
 
     </field>
   </record>
+  </data>
 </odoo>

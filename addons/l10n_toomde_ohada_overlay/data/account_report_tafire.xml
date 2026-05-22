@@ -33,6 +33,7 @@
   Reference: OHADA AUDCIF article 27, Annexe (TAFIRE — Tableau N°4).
 -->
 <odoo>
+  <data>
 
   <record id="syscohada_tafire_report" model="account.report">
     <field name="name">TAFIRE — Tableau Financier des Ressources et Emplois</field>
@@ -227,4 +228,5 @@
 
     </field>
   </record>
+  </data>
 </odoo>

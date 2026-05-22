@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+  <data>
 
   <record id="view_ohada_annual_export_wizard_form" model="ir.ui.view">
     <field name="name">toomde.ohada.annual.export.wizard.form</field>
@@ -42,4 +43,5 @@
             parent="menu_ohada_root"
             action="action_ohada_annual_export_wizard"
             sequence="10"/>
+  </data>
 </odoo>

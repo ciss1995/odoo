@@ -19,6 +19,7 @@
   Reference: AUDCIF article 33, Annexe (Notes 1 à 35).
 -->
 <odoo>
+  <data>
 
   <record id="syscohada_notes_report" model="account.report">
     <field name="name">Notes annexes SYSCOHADA</field>
@@ -269,4 +270,5 @@
 
     </field>
   </record>
+  </data>
 </odoo>
