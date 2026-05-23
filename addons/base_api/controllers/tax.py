@@ -50,7 +50,7 @@ from urllib.parse import quote as _urlquote
 
 import requests
 
-from odoo import SUPERUSER_ID, http
+from odoo import http
 from odoo.http import request
 
 from .base import BaseApiController
@@ -141,17 +141,26 @@ class TaxController(BaseApiController):
         if not ok:
             return err
 
-        # ir.module.module access checks call self.env.user._get_group_ids()
-        # which ensure_one()s on the user record. The env coming out of
-        # `update_env(user=admin.id)` is sometimes left without a fully
-        # populated user record on `auth="none"` routes (observed in
-        # Odoo 19 on freshly restarted containers), so use the
-        # SUPERUSER-scoped env explicitly. Read-only query against a
-        # public module list — safe to run as superuser.
-        Module = request.env(user=SUPERUSER_ID)["ir.module.module"]
-        rows = Module.search([("state", "=", "installed")]).read(["name"])
+        # In Odoo 19 the ir.module.module ORM access path calls
+        # ``self.env.user._get_group_ids()`` which ensure_one()s on the
+        # user record. On `auth="none"` routes the request env's user
+        # is sometimes left as an empty recordset after a fresh
+        # container restart, even after ``update_env(user=admin.id)``
+        # or ``env(user=SUPERUSER_ID)`` — observed in practice and
+        # documented at the top of the controller.
+        #
+        # Sidestep with raw SQL: ir_module_module is a public,
+        # read-only table for our purposes (the endpoint is already
+        # internal-token gated, no PII exposed). This is the same
+        # pattern as ``push_cache_invalidation`` which also bypasses
+        # the ORM for an internal endpoint.
+        request.env.cr.execute(
+            "SELECT name FROM ir_module_module "
+            "WHERE state = 'installed' ORDER BY name"
+        )
+        names = [row[0] for row in request.env.cr.fetchall()]
         return self._json_response(
-            data={"modules": [r["name"] for r in rows], "count": len(rows)}
+            data={"modules": names, "count": len(names)}
         )
 
     @http.route(
