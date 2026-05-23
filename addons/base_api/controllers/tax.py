@@ -50,7 +50,7 @@ from urllib.parse import quote as _urlquote
 
 import requests
 
-from odoo import http
+from odoo import SUPERUSER_ID, http
 from odoo.http import request
 
 from .base import BaseApiController
@@ -94,7 +94,16 @@ class TaxController(BaseApiController):
     # =================================================================
 
     def _authenticate_internal(self):
-        """Bearer-token auth shared with imports.py / invalidate-cache."""
+        """Bearer-token auth for control-plane → tenant calls.
+
+        Pure token check + ``update_env(user=SUPERUSER_ID, su=True)``.
+        Deliberately avoids any ORM access (no env.ref, no .sudo() on
+        Models) because on Odoo 19 the ``auth='none'`` request env
+        has no user, so any access-checked read on res.users / admin
+        lookups blows up with ``Expected singleton: res.users()``.
+        Switching directly to SUPERUSER + ``su=True`` is safe — the
+        endpoint is gated by the shared INTERNAL_API_KEY.
+        """
         auth_header = request.httprequest.headers.get("Authorization", "") or ""
         if not auth_header.startswith("Bearer "):
             return False, self._error_response(
@@ -110,18 +119,7 @@ class TaxController(BaseApiController):
             return False, self._error_response(
                 "Invalid internal token", 401, "INVALID_INTERNAL_TOKEN",
             )
-        admin = request.env.ref("base.user_admin", raise_if_not_found=False)
-        if admin is None or not admin.active:
-            admin = (
-                request.env["res.users"]
-                .sudo()
-                .search([("login", "=", "admin"), ("active", "=", True)], limit=1)
-            )
-        if not admin:
-            return False, self._error_response(
-                "Admin user not available", 500, "NO_ADMIN",
-            )
-        request.update_env(user=admin.id)
+        request.update_env(user=SUPERUSER_ID, su=True)
         return True, None
 
     @http.route(
