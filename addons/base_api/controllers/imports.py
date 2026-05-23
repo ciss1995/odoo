@@ -28,7 +28,7 @@ import logging
 import os
 import time as _time
 
-from odoo import http
+from odoo import SUPERUSER_ID, http
 from odoo.http import request
 from odoo.exceptions import AccessError, ValidationError
 
@@ -65,10 +65,19 @@ class ImportsController(BaseApiController):
         """Accept internal token OR session token.
 
         Internal token: ``Authorization: Bearer <CONTROL_PLANE_TOKEN env>``.
-        Validated against the same env var as /internal/invalidate-cache.
-        On success the env is switched to the admin user (id from
-        base.user_admin xmlid, falling back to login='admin') and the
-        request is flagged as quota-exempt.
+        Validated against the env var. On success the request env is
+        switched to SUPERUSER_ID with ``su=True``, which short-circuits
+        every later access check. This is safe because the endpoint is
+        gated by the shared INTERNAL_API_KEY and the path is invoked
+        only by the control plane.
+
+        Why SUPERUSER_ID + su=True instead of the previous
+        ``env.ref('base.user_admin')`` dance: the auth='none' request
+        env starts with an empty ``env.user`` recordset. Any ORM read
+        before ``update_env`` (e.g. ``env.ref(...)`` or ``admin.active``)
+        triggers an access check that calls ``env.user._get_group_ids``
+        and crashes with ``Expected singleton: res.users()``. See the
+        matching fix in tax.py::_authenticate_internal.
 
         Session token: standard /api/v2/* header-or-cookie auth. The caller
         must already have create rights on res.partner; quota counts.
@@ -90,17 +99,8 @@ class ImportsController(BaseApiController):
                 return False, None, False, self._error_response(
                     "Invalid internal token", 401, "INVALID_INTERNAL_TOKEN",
                 )
-            admin = request.env.ref('base.user_admin', raise_if_not_found=False)
-            if admin is None or not admin.active:
-                admin = request.env['res.users'].sudo().search(
-                    [('login', '=', 'admin'), ('active', '=', True)], limit=1,
-                )
-            if not admin:
-                return False, None, False, self._error_response(
-                    "Admin user not available", 500, "NO_ADMIN",
-                )
-            request.update_env(user=admin.id)
-            return True, admin, True, None
+            request.update_env(user=SUPERUSER_ID, su=True)
+            return True, request.env.user, True, None
 
         ok, result = self._authenticate_session()
         if not ok:

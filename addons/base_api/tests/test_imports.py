@@ -113,6 +113,39 @@ class TestImportPartnersEndpoint(HttpCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(self._body(resp)['success'])
 
+    def test_internal_token_path_does_not_500_on_env_user_lookup(self):
+        """Regression — _authenticate_dual must not trigger ORM access
+        checks before establishing the env user.
+
+        Symptom of the regression: ``Expected singleton: res.users()``
+        from inside ``env.ref('base.user_admin')`` or ``admin.active``
+        when the auth='none' request env arrived with empty env.user.
+        The fix switches the env to SUPERUSER_ID + su=True before any
+        ORM read.
+
+        This test asserts the contract by issuing a single internal-token
+        request that immediately exercises ORM-heavy import logic
+        (xmlid creation, partner write, ir.model.data linkage). If
+        _authenticate_dual ever regresses, every code path here 500s
+        in lock-step with the helper.
+        """
+        resp = self._post(
+            {'rows': [self._row('AUTH-REGRESSION', 'Auth Regression Co')]},
+            internal_token='test-internal-token',
+        )
+        # 500 is the failure mode we're guarding against; anything else
+        # (200 success, 4xx for validation) is acceptable.
+        self.assertNotEqual(
+            resp.status_code, 500,
+            f"_authenticate_dual regressed: server 500'd before reaching the "
+            f"route body. Response: {resp.text[:500]}",
+        )
+        self.assertEqual(resp.status_code, 200, resp.text)
+        # Sanity: the partner was actually written, which means everything
+        # downstream of _authenticate_dual (sudo creates, ir.model.data
+        # binding) ran with a usable env.
+        self.assertIsNotNone(self._xmlid_lookup('AUTH-REGRESSION'))
+
     def test_accepts_session_token(self):
         token = self._session_token()
         resp = self._post(
