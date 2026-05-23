@@ -464,6 +464,34 @@ class SimpleApiController(http.Controller):
             return self._error_response(error['message'], error['status_code'], error['code'])
         return None
 
+    def _auto_apply_fiscal_position(self, partner):
+        """Resolve and assign the partner's fiscal position via Odoo's
+        canonical resolver.
+
+        Called after create/update of res.partner when the payload
+        didn't pin ``property_account_position_id`` explicitly. Uses
+        ``account.fiscal.position._get_fiscal_position(partner)``,
+        which respects the partner's country / state / vat against the
+        FPs the company has seeded (typically by an ``l10n_*`` addon —
+        domestic / export / intracom / non-resident services).
+
+        Safe to call even when the resolver returns nothing — we simply
+        leave the field untouched. Errors are swallowed and logged
+        rather than failing the parent request: an FP miss is a quality
+        signal, not a reason to 500 the partner create.
+        """
+        try:
+            FP = request.env['account.fiscal.position'].sudo()
+            resolved = FP._get_fiscal_position(partner)
+            if resolved:
+                partner.with_context(active_test=False).sudo().property_account_position_id = resolved.id
+        except Exception:  # noqa: BLE001 — diagnostic-only side effect
+            _logger.exception(
+                "Auto-apply fiscal position failed for partner %s; "
+                "leaving property_account_position_id unset",
+                partner.id,
+            )
+
     def _enforce_user_rate_limit(self, user):
         """Check per-user API rate limit. Returns None if OK, or 429 error response."""
         from odoo.addons.base_api.services.rate_limiter import check_api_rate_limit
@@ -1940,6 +1968,21 @@ class SimpleApiController(http.Controller):
             # Create record
             new_record = model_obj.create(data)
 
+            # Fiscal-position auto-apply: when the caller didn't pin one
+            # explicitly, ask Odoo which FP matches the partner's country
+            # / state / VAT and write it. Lets SPA tenants get correct
+            # tax math (export vs domestic vs intracom) without having
+            # to know fiscal positions exist. Manual override always
+            # wins because we only fire when the field is ABSENT from
+            # the payload — explicit values flow through `create(data)`
+            # above and are respected.
+            if (
+                model == 'res.partner'
+                and 'property_account_position_id' not in data
+                and 'account.fiscal.position' in request.env
+            ):
+                self._auto_apply_fiscal_position(new_record)
+
             # Return a safe subset of fields to avoid post-create AccessError
             # on models where some fields are not readable by the creator.
             basic_fields = ['id', 'name', 'display_name', 'create_date']
@@ -2774,6 +2817,21 @@ class SimpleApiController(http.Controller):
                 return self._error_response(f"Record {record_id} not found in {model}", 404, "RECORD_NOT_FOUND")
 
             record.write(data)
+
+            # Fiscal-position auto-apply on update — same trigger as
+            # create: only when the caller didn't supply the field AND
+            # something that affects FP resolution changed (country,
+            # state, or vat). Without those guards every benign update
+            # ("rename customer") would re-run the resolver, which is
+            # wasteful and would re-trigger auto-apply after a user
+            # deliberately cleared the FP.
+            if (
+                model == 'res.partner'
+                and 'property_account_position_id' not in data
+                and 'account.fiscal.position' in request.env
+                and any(k in data for k in ('country_id', 'state_id', 'vat'))
+            ):
+                self._auto_apply_fiscal_position(record)
 
             basic_fields = ['id', 'name', 'display_name', 'write_date']
             safe_fields = [f for f in basic_fields if f in request.env[model]._fields]

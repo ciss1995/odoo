@@ -15,3 +15,4 @@ from . import test_public_branding
 from . import test_ai_context
 from . import test_error_safety
 from . import test_idempotency
+from . import test_fiscal_position_autoapply

@@ -125,6 +125,29 @@ class TaxController(BaseApiController):
         return True, None
 
     @http.route(
+        "/api/v2/internal/modules/installed",
+        type="http", auth="none", methods=["GET"], csrf=False,
+    )
+    def installed_modules(self):
+        """List installed ir.module.module names. Internal-token only.
+
+        Used by the control plane to verify per-tenant invariants
+        ("OHADA tenant must have l10n_<iso2> + l10n_toomde_ohada_overlay
+        installed") without operators having to SSH into each tenant.
+        Returns a short list of names, not full module records, to keep
+        the payload trivially cacheable on the control plane.
+        """
+        ok, err = self._authenticate_internal()
+        if not ok:
+            return err
+
+        Module = request.env["ir.module.module"].sudo()
+        rows = Module.search([("state", "=", "installed")]).read(["name"])
+        return self._json_response(
+            data={"modules": [r["name"] for r in rows], "count": len(rows)}
+        )
+
+    @http.route(
         "/api/v2/internal/tax/rollout",
         type="http", auth="none", methods=["POST"], csrf=False, readonly=False,
     )
