@@ -51,8 +51,14 @@ class ApiCallLogger:
                 cls._instance = cls(tenant_id, cp_url, cp_token)
         return cls._instance
 
+    _EMPTY_BUFFER = {
+        "calls": 0, "read_calls": 0, "write_calls": 0,
+        "delete_calls": 0, "failed_calls": 0, "response_ms": 0,
+    }
+
     def log_call(self, method, status_code, response_time_ms):
         """Record a single API call. Non-blocking."""
+        batch_to_send = None
         with self._buffer_lock:
             self._buffer["calls"] += 1
             self._buffer["response_ms"] += response_time_ms
@@ -65,18 +71,18 @@ class ApiCallLogger:
             if status_code >= 400:
                 self._buffer["failed_calls"] += 1
             if self._buffer["calls"] >= self.FLUSH_THRESHOLD:
-                self._flush_async()
+                batch_to_send = self._buffer
+                self._buffer = dict(self._EMPTY_BUFFER)
+        if batch_to_send is not None:
+            threading.Thread(target=self._send, args=(batch_to_send,), daemon=True).start()
 
     def _flush_async(self):
         """Flush buffer to Control Plane in a background thread."""
         with self._buffer_lock:
             if self._buffer["calls"] == 0:
                 return
-            batch = self._buffer.copy()
-            self._buffer = {
-                "calls": 0, "read_calls": 0, "write_calls": 0,
-                "delete_calls": 0, "failed_calls": 0, "response_ms": 0,
-            }
+            batch = self._buffer
+            self._buffer = dict(self._EMPTY_BUFFER)
         threading.Thread(target=self._send, args=(batch,), daemon=True).start()
 
     def _send(self, batch):
