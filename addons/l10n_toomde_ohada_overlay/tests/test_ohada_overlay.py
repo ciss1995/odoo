@@ -100,6 +100,33 @@ class TestOhadaOverlayPostInit(TransactionCase):
                 f"OHADA storefronts expect TTC pricing end-to-end",
             )
 
+    def test_domestic_fiscal_position_country_matches_company(self):
+        """AFR-2: every auto-apply, country-restricted fiscal position must
+        be bound to the company's actual country. Charts loaded before the
+        company's country is set bind Domestic FPs to Odoo's default
+        United States, then BF/SN/CI customers fall through to the
+        catch-all 'Foreign Trade' FP and lose every TVA mapping (invoices
+        post with amount_tax=0). The post-install hook rebinds them.
+
+        Catch-all FPs use country_id=NULL on purpose and are excluded.
+        """
+        FP = self.env["account.fiscal.position"]
+        for company in self.env["res.company"].search([]):
+            if not company.country_id:
+                continue
+            misbound = FP.search([
+                ("company_id", "=", company.id),
+                ("auto_apply", "=", True),
+                ("country_id", "!=", False),
+                ("country_id", "!=", company.country_id.id),
+            ])
+            self.assertFalse(
+                misbound,
+                f"company {company.name!r} has {len(misbound)} fiscal "
+                f"position(s) bound to a country other than "
+                f"{company.country_id.code}: {misbound.mapped('name')}",
+            )
+
     def test_journal_code_helper_truncates_and_upper(self):
         """AFR-1: journal codes must fit Odoo's 5-char limit + be uppercase
         alphanumeric. Tested as a pure unit so we don't need a multi-company

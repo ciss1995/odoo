@@ -33,6 +33,7 @@ def _post_init_ohada_overlay(env):
     _enable_multi_currency(env)
     _seed_mobile_money_journals(env)
     _set_company_prices_tax_included(env)
+    _rebind_domestic_fiscal_position(env)
 
 
 # Mobile money operators available per OHADA member country, normalized
@@ -268,6 +269,75 @@ def _set_company_prices_tax_included(env):
             len(skipped),
             ", ".join(skipped),
         )
+
+
+def _rebind_domestic_fiscal_position(env):
+    """Bind country-restricted fiscal positions to the company's real country.
+
+    Background. Odoo's per-country l10n charts (l10n_bf, l10n_sn, l10n_ci…)
+    declare their Domestic fiscal position with `country_id='base.<iso2>'`.
+    During provisioning the chart is loaded right after `account`, when the
+    company's `country_id` is still Odoo's default (typically United States).
+    Whatever country was on the company at chart-load time is what ends up
+    on the Domestic FP — not the company's eventual country. Once the
+    operator sets country=BF (or SN, CI…) on the partner, the Domestic FP
+    is permanently bound to the wrong country: BF customers can no longer
+    match it, fall through to the catch-all "Foreign Trade" FP, and every
+    sale tax gets mapped to 0% Exports. Visible symptom: invoices post
+    with `amount_tax=0` even though the product carries a 15%/18% TVA.
+
+    Fix. For every company with a country, point every auto-apply FP that
+    has a country_id (i.e. the "Domestic" ones — the catch-all FPs use
+    NULL country deliberately and are left alone) at the company's actual
+    country. Then re-resolve `property_account_position_id` on every sale
+    partner so existing customers stop being stuck on "Foreign Trade".
+
+    Catch-all FPs (country_id=NULL) are by design — they match any partner
+    that hasn't matched a country-specific FP first — so we never touch
+    them. The condition `country_id != False AND != company.country_id`
+    selects exactly the broken Domestic-style records.
+
+    See tax.md Phase 7 (AFR-2 / TVA collectée chain).
+    """
+    Partner = env["res.partner"]
+    FP = env["account.fiscal.position"]
+
+    for company in env["res.company"].search([]):
+        country = company.country_id
+        if not country:
+            continue
+
+        misbound = FP.search([
+            ("company_id", "=", company.id),
+            ("auto_apply", "=", True),
+            ("country_id", "!=", False),
+            ("country_id", "!=", country.id),
+        ])
+        if misbound:
+            misbound.country_id = country
+            _logger.info(
+                "OHADA overlay: rebound %d fiscal position(s) to %s on company %r",
+                len(misbound), country.code, company.name,
+            )
+
+        # Re-resolve auto-apply on every sale partner so customers stuck on
+        # the catch-all FP swap to the now-correct Domestic FP.
+        partners = Partner.with_company(company).search([
+            ("customer_rank", ">", 0),
+            "|", ("company_id", "=", False), ("company_id", "=", company.id),
+        ])
+        rebound = 0
+        for partner in partners:
+            resolved = FP.with_company(company)._get_fiscal_position(partner)
+            current = partner.with_company(company).property_account_position_id
+            if resolved != current:
+                partner.with_company(company).property_account_position_id = resolved
+                rebound += 1
+        if rebound:
+            _logger.info(
+                "OHADA overlay: re-applied fiscal position on %d/%d sale partner(s)",
+                rebound, len(partners),
+            )
 
 
 def _journal_code(operator: str) -> str:
