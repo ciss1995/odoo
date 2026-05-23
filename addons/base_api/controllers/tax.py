@@ -50,7 +50,7 @@ from urllib.parse import quote as _urlquote
 
 import requests
 
-from odoo import http
+from odoo import SUPERUSER_ID, http
 from odoo.http import request
 
 from .base import BaseApiController
@@ -141,7 +141,14 @@ class TaxController(BaseApiController):
         if not ok:
             return err
 
-        Module = request.env["ir.module.module"].sudo()
+        # ir.module.module access checks call self.env.user._get_group_ids()
+        # which ensure_one()s on the user record. The env coming out of
+        # `update_env(user=admin.id)` is sometimes left without a fully
+        # populated user record on `auth="none"` routes (observed in
+        # Odoo 19 on freshly restarted containers), so use the
+        # SUPERUSER-scoped env explicitly. Read-only query against a
+        # public module list — safe to run as superuser.
+        Module = request.env(user=SUPERUSER_ID)["ir.module.module"]
         rows = Module.search([("state", "=", "installed")]).read(["name"])
         return self._json_response(
             data={"modules": [r["name"] for r in rows], "count": len(rows)}
