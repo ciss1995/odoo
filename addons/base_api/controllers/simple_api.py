@@ -2991,6 +2991,75 @@ class SimpleApiController(http.Controller):
             _logger.error("Error creating invoice from SO %s: %s", order_id, str(e))
             return self._error_response("Error creating invoice", 500, "INVOICE_CREATE_ERROR")
 
+    @http.route('/api/v2/sales/<int:order_id>/confirm', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def confirm_sale_order(self, order_id):
+        """Confirm a quotation via Odoo's canonical ``action_confirm()``.
+
+        Why this exists rather than just ``PUT /update/sale.order/{id}``
+        with ``state='sale'``: Odoo's CRM-Sales bridge
+        (``addons/sale_crm/models/sale_order.py::action_confirm``) is what
+        moves the linked ``crm.lead`` to its "Won" stage and updates
+        expected revenue. That bridge fires from ``action_confirm()``,
+        not from a raw ``state`` write — so going through write() leaves
+        leads stranded in their current stage.
+
+        The endpoint also runs the rest of the standard confirmation
+        plumbing (delivery picking creation, stock reservation,
+        sequence assignment, etc.) that ``action_confirm`` does.
+
+        Returns the refreshed order's state plus opportunity_id so the
+        caller can verify the lead linkage took.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'sale.order' not in request.env:
+                return self._error_response("Sales module not installed", 404, "MODULE_NOT_FOUND")
+            if not self._check_model_access('sale.order', 'write'):
+                return self._error_response("Access denied for sale.order", 403, "ACCESS_DENIED")
+
+            order = request.env['sale.order'].browse(order_id)
+            if not order.exists():
+                return self._error_response(f"Sale order {order_id} not found", 404, "NOT_FOUND")
+
+            if order.state in ('sale', 'done'):
+                # Idempotent: already confirmed.
+                pass
+            elif order.state == 'cancel':
+                return self._error_response(
+                    "Cancelled orders cannot be confirmed.", 400, "INVALID_STATE",
+                )
+            else:
+                order.action_confirm()
+
+            data = order.read(['id', 'name', 'state', 'opportunity_id'])[0]
+            return self._json_response(
+                data={'order': data},
+                message=f"Sale order {order_id} confirmed",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CONFIRM_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CONFIRM_ERROR")
+        except Exception as e:
+            _logger.error("Error confirming SO %s: %s", order_id, str(e))
+            return self._error_response("Error confirming sale order", 500, "CONFIRM_ERROR")
+
     # ===== IN-STORE PURCHASE (one-shot) =====
 
     @http.route('/api/v2/sales/in-store-purchase', type='http',
