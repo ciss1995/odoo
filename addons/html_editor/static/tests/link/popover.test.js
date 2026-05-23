@@ -473,6 +473,14 @@ describe("Link creation", () => {
             await insertText(editor, " ");
             expect(cleanLinkArtifacts(getContent(el))).toBe("<p>www.odoo []</p>");
         });
+        test("typing uppercase URL + space should convert to link", async () => {
+            const { editor, el } = await setupEditor("<p>[]</p>");
+            await insertText(editor, "http://ODOO.COM");
+            await insertSpace(editor);
+            expect(cleanLinkArtifacts(getContent(el))).toBe(
+                '<p><a href="http://ODOO.COM">http://ODOO.COM</a>&nbsp;[]</p>'
+            );
+        });
     });
     describe("Creation by powerbox", () => {
         test("click on link command in powerbox should not (yet) create a link element and open the linkpopover", async () => {
@@ -1184,18 +1192,10 @@ describe("shortcut", () => {
         expect(".o_we_discard_link").toBeFocused();
     });
     test("should not create a link via shortcut for partial selection inside contenteditable false", async () => {
-        const { el } = await setupEditor(`<p contenteditable="false">T[e]st</p>`);
+        await setupEditor(`<p contenteditable="false">T[e]st</p>`);
         await press(["ctrl", "k"]);
         await animationFrame();
-        await click(".o_command_name:first");
-        await waitFor(".o_notification_manager .o_notification", { timeout: 1000 });
-        expect(queryOne(".o_notification_content").textContent).toBe(
-            "Unable to create a link on the current selection."
-        );
-        expect(getContent(el)).toBe(
-            '<p data-selection-placeholder=""><br></p><p contenteditable="false">T[e]st</p><p data-selection-placeholder="" style="margin: -9px 0px 8px;"><br></p>'
-        );
-        expect(queryOne(`p[contenteditable="false"]`).childNodes.length).toBe(1);
+        expect('.o_command span[title="Create link"]').toHaveCount(0);
     });
 });
 

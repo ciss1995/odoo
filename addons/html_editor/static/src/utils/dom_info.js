@@ -286,7 +286,10 @@ export function isVisible(node) {
             isMediaElement(node) ||
             hasVisibleContent(node) ||
             isProtecting(node) ||
-            isEmbeddedComponent(node))
+            isEmbeddedComponent(node) ||
+            // Keep editor tables visible even when cells only contain
+            // placeholder ZWS content, as `.o_table` tables are always visible.
+            (node.nodeName === "TD" && !!closestElement(node, "table.o_table")))
     );
 }
 export function hasVisibleContent(node) {
@@ -352,6 +355,34 @@ export function isMediaElement(node) {
                 node.classList.contains("media_iframe_video"))) ||
         node.nodeName === "CANVAS"
     );
+}
+
+/**
+ * Checks whether the content of mediaContainerEl is only made of "media"
+ * (image, video, icon, document) - or links around "media".
+ *
+ * @param {HTMLElement} mediaContainerEl element within which to check
+ * @param {boolean} [requiresSingleMedia=false] if true, limits the positive
+ *     result to situations where only a single media is present
+ * @returns {boolean}
+ */
+export function hasMediaOnly(mediaContainerEl, requiresSingleMedia = false) {
+    const nonEmptyContent = [...mediaContainerEl.childNodes].filter(
+        (node) =>
+            node.tagName !== "BR" &&
+            (node.nodeType !== Node.TEXT_NODE || node.textContent.replaceAll(/\s+/g, ""))
+    );
+    if (requiresSingleMedia && nonEmptyContent.length !== 1) {
+        return false;
+    }
+    return nonEmptyContent.every((el) => {
+        if (isMediaElement(el) || el.tagName === "IMG") {
+            return true;
+        }
+        if (el.tagName === "A") {
+            return hasMediaOnly(el, requiresSingleMedia);
+        }
+    });
 }
 
 // See https://developer.mozilla.org/en-US/docs/Web/HTML/Content_categories#phrasing_content
