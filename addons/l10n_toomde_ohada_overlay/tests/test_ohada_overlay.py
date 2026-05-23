@@ -127,6 +127,99 @@ class TestOhadaOverlayPostInit(TransactionCase):
                 f"{company.country_id.code}: {misbound.mapped('name')}",
             )
 
+    def test_income_accounts_have_default_sale_tax(self):
+        """AFR-2: every income account on every OHADA company has at least
+        one sale tax bound as a default.
+
+        Without this binding, standalone customer invoices created with a
+        free-form description (no product_id on the line — consulting
+        fees, services, repairs) post with amount_tax=0 because
+        `_compute_tax_ids` has nothing to fall back to after the missing
+        product. TVA collectée account 4431 never gets a credit and the
+        DSF export under-reports."""
+        Account = self.env["account.account"]
+        for company in self.env["res.company"].search([]):
+            income_accounts = Account.search([
+                ("company_ids", "in", company.id),
+                ("account_type", "in", ("income", "income_other")),
+            ])
+            if not income_accounts:
+                continue
+            for account in income_accounts:
+                sale_taxes = account.tax_ids.filtered(
+                    lambda t: t.type_tax_use == "sale",
+                )
+                self.assertTrue(
+                    sale_taxes,
+                    f"income account {account.display_name!r} on company "
+                    f"{company.name!r} has no default sale tax — standalone "
+                    f"invoices on this account will post with amount_tax=0",
+                )
+
+    def test_default_sale_tax_binding_is_idempotent(self):
+        """Running the binding hook twice must not double-bind. Migration
+        scripts re-run during every upgrade; if the hook isn't
+        idempotent, account.tax_ids would accumulate duplicates and
+        Odoo's tax computation would multiply the rate."""
+        from odoo.addons.l10n_toomde_ohada_overlay.hooks import (
+            _bind_default_sale_tax_to_income_accounts,
+        )
+
+        Account = self.env["account.account"]
+        before = {
+            account.id: set(account.tax_ids.ids)
+            for account in Account.search([
+                ("account_type", "in", ("income", "income_other")),
+            ])
+        }
+        _bind_default_sale_tax_to_income_accounts(self.env)
+        after = {
+            account.id: set(account.tax_ids.ids)
+            for account in Account.search([
+                ("account_type", "in", ("income", "income_other")),
+            ])
+        }
+        self.assertEqual(
+            before, after,
+            "Re-running _bind_default_sale_tax_to_income_accounts changed "
+            "tax_ids — the hook is no longer idempotent and re-applying it "
+            "via migration would corrupt tax computation",
+        )
+
+    def test_standalone_invoice_line_picks_up_default_tax(self):
+        """End-to-end behaviour: an invoice line with no product_id but
+        with an income account_id must auto-resolve tax_ids from the
+        account's default. This is the failure mode the binding hook
+        is fixing — without it, the line ends up with tax_ids=False and
+        amount_tax=0 on post."""
+        Account = self.env["account.account"]
+        income = Account.search([
+            ("account_type", "in", ("income", "income_other")),
+            ("tax_ids.type_tax_use", "=", "sale"),
+        ], limit=1)
+        if not income:
+            self.skipTest("no income account with a sale tax to exercise")
+
+        partner = self.env["res.partner"].create({"name": "Acme Test"})
+        invoice = self.env["account.move"].create({
+            "move_type": "out_invoice",
+            "partner_id": partner.id,
+            "invoice_line_ids": [(0, 0, {
+                "name": "Consulting fee",
+                "quantity": 1,
+                "price_unit": 100000.0,
+                "account_id": income.id,
+            })],
+        })
+        product_line = invoice.invoice_line_ids.filtered(
+            lambda l: l.display_type == "product",
+        )
+        self.assertTrue(
+            product_line.tax_ids,
+            f"line on account {income.display_name!r} has no tax_ids after "
+            f"create — _compute_tax_ids didn't pick up the account default",
+        )
+
     def test_journal_code_helper_truncates_and_upper(self):
         """AFR-1: journal codes must fit Odoo's 5-char limit + be uppercase
         alphanumeric. Tested as a pure unit so we don't need a multi-company

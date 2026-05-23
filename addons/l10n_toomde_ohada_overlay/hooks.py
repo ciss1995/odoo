@@ -34,6 +34,7 @@ def _post_init_ohada_overlay(env):
     _seed_mobile_money_journals(env)
     _set_company_prices_tax_included(env)
     _rebind_domestic_fiscal_position(env)
+    _bind_default_sale_tax_to_income_accounts(env)
 
 
 # Mobile money operators available per OHADA member country, normalized
@@ -338,6 +339,72 @@ def _rebind_domestic_fiscal_position(env):
                 "OHADA overlay: re-applied fiscal position on %d/%d sale partner(s)",
                 rebound, len(partners),
             )
+
+
+def _bind_default_sale_tax_to_income_accounts(env):
+    """Wire the standard sale tax to income accounts so service invoices
+    bear TVA even when no product is set on the line.
+
+    Background. Odoo's `account.move.line._compute_tax_ids` falls through
+    in this order: product taxes → account default taxes → none. The
+    OHADA per-country charts (l10n_bf, l10n_sn, l10n_ci…) declare TVA
+    rates but never bind them to the income accounts as defaults. So
+    when an operator creates a standalone customer invoice with a
+    free-form description (consulting fee, repair, service) and no
+    product, the line ends up with tax_ids=False — invoice posts with
+    amount_tax=0, TVA collectée account 4431 stays empty, the DSF
+    export under-reports. We saw this on demo for `FAC/2026/00006-00008`
+    (consulting + atelier + agro-alimentaire service invoices).
+
+    Hook walks each company, picks the highest-rate positive sale tax
+    (highest because in West Africa the standard rate is the more
+    common one — reduced rates apply only to specific food/basic
+    necessities goods, which always go through a product line where
+    product taxes win the precedence anyway), and binds it as the
+    default on every income-type account that has no sale tax yet.
+    Accounts that already have a sale tax bound are left untouched so
+    we never trample manual operator configuration.
+
+    The fallback is per-company so multi-company tenants get the
+    right rate per company (BF=15%, SN=18%, CI=18%…).
+
+    See tax.md Phase 7 (AFR-2 / TVA collectée chain).
+    """
+    Account = env["account.account"]
+    Tax = env["account.tax"]
+
+    for company in env["res.company"].search([]):
+        default_tax = Tax.search([
+            ("company_id", "=", company.id),
+            ("type_tax_use", "=", "sale"),
+            ("amount", ">", 0),
+        ], order="amount desc, id asc", limit=1)
+        if not default_tax:
+            _logger.info(
+                "OHADA overlay: company %r has no positive sale tax to bind",
+                company.name,
+            )
+            continue
+
+        income_accounts = Account.search([
+            ("company_ids", "in", company.id),
+            ("account_type", "in", ("income", "income_other")),
+        ])
+        bound = 0
+        for account in income_accounts:
+            existing_sale = account.tax_ids.filtered(
+                lambda t: t.type_tax_use == "sale",
+            )
+            if existing_sale:
+                continue
+            account.tax_ids = [(4, default_tax.id)]
+            bound += 1
+        _logger.info(
+            "OHADA overlay: bound default sale tax %r (%g%%) to %d/%d "
+            "income account(s) on company %r",
+            default_tax.name, default_tax.amount, bound, len(income_accounts),
+            company.name,
+        )
 
 
 def _journal_code(operator: str) -> str:

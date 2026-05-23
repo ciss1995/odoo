@@ -1,6 +1,6 @@
 {
     "name": "Toomde — OHADA / SYSCOHADA compliance overlay",
-    "version": "19.0.1.2.0",
+    "version": "19.0.1.3.0",
     "category": "Accounting/Localizations",
     "summary": "Enforces SYSCOHADA mandatory controls on top of Odoo's per-country l10n_<iso2> modules.",
     "description": """
