@@ -1,6 +1,6 @@
 {
     "name": "Toomde — OHADA / SYSCOHADA compliance overlay",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.1.0",
     "category": "Accounting/Localizations",
     "summary": "Enforces SYSCOHADA mandatory controls on top of Odoo's per-country l10n_<iso2> modules.",
     "description": """
@@ -11,6 +11,7 @@ enable by default:
 * hash-chained immutable posted entries on customer/vendor/misc journals
 * French locale defaults on the admin partner + company
 * period locking surfaced server-side
+* customer-facing TVA marked tax-included so storefront prices are TTC end-to-end
 
 Installed automatically on tenants whose `res.company.country_id` is in
 the OHADA zone (SN, CI, BF, ML, NE, TG, BJ, GW, CM, GA, CD).

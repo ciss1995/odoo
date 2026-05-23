@@ -73,6 +73,33 @@ class TestOhadaOverlayPostInit(TransactionCase):
                 f"internal user {user.login} is missing multi-currency group",
             )
 
+    def test_company_default_is_tax_included(self):
+        """AFR-2: OHADA companies default to tax-included (TTC) sale prices.
+
+        Storefront UX assumes one shelf price — cashier enters the
+        customer-paying amount; Odoo derives the HT base. Setting the
+        company-wide default (rather than per-tax overrides) means every
+        existing AND future sale tax inherits TTC automatically.
+
+        Companies with pre-existing accounting entries can't have the
+        flag flipped (Odoo guards it). Skip those — they're an operator
+        problem, not a test failure.
+        """
+        for company in self.env["res.company"].search([]):
+            has_accounting = bool(
+                self.env["account.move.line"].sudo().search_count(
+                    [("company_id", "child_of", company.id)], limit=1,
+                )
+            )
+            if has_accounting:
+                continue
+            self.assertEqual(
+                company.account_price_include,
+                "tax_included",
+                f"company {company.name!r} is not on TTC defaults — "
+                f"OHADA storefronts expect TTC pricing end-to-end",
+            )
+
     def test_journal_code_helper_truncates_and_upper(self):
         """AFR-1: journal codes must fit Odoo's 5-char limit + be uppercase
         alphanumeric. Tested as a pure unit so we don't need a multi-company

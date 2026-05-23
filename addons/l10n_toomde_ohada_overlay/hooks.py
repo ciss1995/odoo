@@ -32,6 +32,7 @@ def _post_init_ohada_overlay(env):
     _set_french_default_language(env)
     _enable_multi_currency(env)
     _seed_mobile_money_journals(env)
+    _set_company_prices_tax_included(env)
 
 
 # Mobile money operators available per OHADA member country, normalized
@@ -217,6 +218,56 @@ def _seed_mobile_money_journals(env):
         created,
         len(companies),
     )
+
+
+def _set_company_prices_tax_included(env):
+    """Default OHADA companies to tax-included (TTC) sale prices.
+
+    West African retail (OHADA zone) convention: shelf prices, receipts,
+    and storefront listings show one price that already includes TVA
+    (TTC). Cashiers enter the customer-paying amount; Odoo derives the
+    HT base and the embedded tax internally.
+
+    Implementation: flip `res.company.account_price_include='tax_included'`.
+    This is the same setting Odoo exposes in Settings → Accounting →
+    "Default Sales Price Include" — it cascades to every existing AND
+    future sale tax on the company (each tax's `price_include` is a
+    computed field that falls back to the company default unless the
+    tax has an explicit `price_include_override`).
+
+    Constraint: Odoo refuses to change `account_price_include` on a
+    company that already has any `account.move.line` records (see
+    `account.company._check_set_account_price_include`). We catch the
+    ValidationError and skip — that company stays HT until an operator
+    clears its accounting and re-runs `-u l10n_toomde_ohada_overlay`.
+    This is the safe default: existing tenants with real history are
+    untouched; fresh tenants get TTC end-to-end.
+
+    See tax.md Phase 7 (AFR-2 / store-app TTC parity).
+    """
+    from odoo.exceptions import ValidationError
+
+    set_count = 0
+    skipped = []
+    for company in env["res.company"].search([]):
+        if company.account_price_include == "tax_included":
+            continue
+        try:
+            company.account_price_include = "tax_included"
+            set_count += 1
+        except ValidationError:
+            skipped.append(company.name)
+    _logger.info(
+        "OHADA overlay: defaulted %d company/ies to tax-included (TTC) sale prices",
+        set_count,
+    )
+    if skipped:
+        _logger.warning(
+            "OHADA overlay: %d company/ies already have accounting entries "
+            "and stayed HT — clear move lines and re-run -u to apply TTC: %s",
+            len(skipped),
+            ", ".join(skipped),
+        )
 
 
 def _journal_code(operator: str) -> str:
