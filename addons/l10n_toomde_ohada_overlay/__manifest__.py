@@ -1,6 +1,6 @@
 {
     "name": "Toomde — OHADA / SYSCOHADA compliance overlay",
-    "version": "19.0.1.4.0",
+    "version": "19.0.1.5.0",
     "category": "Accounting/Localizations",
     "summary": "Enforces SYSCOHADA mandatory controls on top of Odoo's per-country l10n_<iso2> modules.",
     "description": """
@@ -33,6 +33,7 @@ See `tax.md` Phase 7 (COMP-4 / COMP-5 / COMP-6 / COMP-7).
         "reports/invoice_qr.xml",
         "views/annual_export_wizard.xml",
     ],
+    "pre_init_hook": "_pre_init_ohada_overlay",
     "post_init_hook": "_post_init_ohada_overlay",
     "installable": True,
     "auto_install": False,

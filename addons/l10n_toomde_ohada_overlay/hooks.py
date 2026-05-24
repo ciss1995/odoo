@@ -22,7 +22,60 @@ from __future__ import annotations
 
 import logging
 
+from odoo.exceptions import UserError
+
 _logger = logging.getLogger(__name__)
+
+
+# ISO2 country codes governed by the OHADA Acte Uniforme + SYSCOHADA chart.
+# Mirrors `control-plane/.../provisioning_service._OHADA_L10N_COUNTRIES`
+# and `control-plane/.../tenant_l10n_check._OHADA_COUNTRIES`. Keep these
+# three lists in sync — updates need to happen everywhere.
+_OHADA_COUNTRIES = frozenset({
+    # West Africa — UEMOA
+    "SN", "CI", "BF", "ML", "NE", "TG", "BJ", "GW",
+    # Central Africa — CEMAC + DRC
+    "CM", "GA", "CD",
+})
+
+
+def _pre_init_ohada_overlay(env):
+    """Refuse install when no res.company is in the OHADA zone.
+
+    The overlay enforces SYSCOHADA mandatory controls (gap-less invoice
+    numbering, hash-chained posted journals, French defaults, mobile
+    money journals). Those rules are legally meaningful only for
+    companies governed by the AUDCIF Acte Uniforme; applying them to a
+    US / EU / generic-chart company silently changes audit-trail
+    semantics and locks fields the local tax authority doesn't expect.
+
+    Belt to the control-plane provisioning suspenders: provisioning is
+    already country-gated, but a manual ``-i l10n_toomde_ohada_overlay``
+    from an admin shell would bypass it. This hook is the second
+    barrier — it runs before any data file loads, so a refused install
+    leaves the database completely untouched.
+
+    Caller can recover by:
+      1. setting the company country to an OHADA member, then
+         re-running ``-i l10n_toomde_ohada_overlay``, OR
+      2. accepting that the overlay isn't appropriate for this tenant.
+    """
+    companies = env["res.company"].sudo().search([])
+    ohada_companies = companies.filtered(
+        lambda c: c.country_id and c.country_id.code in _OHADA_COUNTRIES
+    )
+    if not ohada_companies:
+        non_ohada = ", ".join(
+            f"{c.name} ({c.country_id.code or 'no country'})"
+            for c in companies
+        ) or "no companies present"
+        raise UserError(
+            "l10n_toomde_ohada_overlay requires at least one res.company "
+            "in an OHADA member state "
+            "(SN, CI, BF, ML, NE, TG, BJ, GW, CM, GA, CD). "
+            f"Found: {non_ohada}. "
+            "Set the company country first, or do not install this addon."
+        )
 
 
 def _post_init_ohada_overlay(env):
