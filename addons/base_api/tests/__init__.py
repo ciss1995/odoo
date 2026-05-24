@@ -16,3 +16,6 @@ from . import test_ai_context
 from . import test_error_safety
 from . import test_idempotency
 from . import test_fiscal_position_autoapply
+from . import test_lettrage
+from . import test_bank_reconciliation
+from . import test_ohada_reports

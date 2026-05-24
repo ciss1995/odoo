@@ -6711,6 +6711,1418 @@ class SimpleApiController(http.Controller):
             _logger.error("Fiscal position reconciliation error: %s", str(e))
             return self._error_response("Error retrieving fiscal position reconciliation", 500, "ANALYTICS_ERROR")
 
+    # ===== LETTRAGE (RECONCILIATION) =====
+    #
+    # Saari-style account-by-account reconciliation. The SPA reads unmatched
+    # / matched lines on a chosen account (411XXX / 401XXX typically),
+    # selects a balanced subset, and POSTs to /reconcile. Letter codes
+    # (A, B, ..., AA, AB, ...) are assigned by the OHADA overlay on
+    # `account.full.reconcile.create`.
+
+    def _lettrage_check_access(self, user, write=False):
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response(
+                "Access denied: requires Accounting role", 403, "ROLE_ACCESS_DENIED")
+        op = 'write' if write else 'read'
+        if not self._check_model_access('account.move.line', op):
+            return self._error_response(
+                "Accounting not accessible", 403, "ACCESS_DENIED")
+        return None
+
+    def _lettrage_account(self, account_id):
+        Account = request.env['account.account']
+        try:
+            acc = Account.browse(int(account_id))
+        except (TypeError, ValueError):
+            return None
+        if not acc.exists():
+            return None
+        return acc
+
+    def _lettrage_line_payload(self, line):
+        full = line.full_reconcile_id
+        return {
+            'id': line.id,
+            'date': str(line.date) if line.date else None,
+            'move_id': line.move_id.id,
+            'move_name': line.move_id.name or '',
+            'ref': line.ref or '',
+            'label': line.name or '',
+            'partner_id': line.partner_id.id if line.partner_id else None,
+            'partner_name': line.partner_id.name if line.partner_id else '',
+            'debit': round(line.debit or 0.0, 2),
+            'credit': round(line.credit or 0.0, 2),
+            'amount_residual': round(line.amount_residual or 0.0, 2),
+            'currency': line.currency_id.name if line.currency_id else (
+                line.company_currency_id.name if line.company_currency_id else None),
+            'matching_number': line.matching_number or None,
+            'full_reconcile_id': full.id if full else None,
+            # `lettrage_code` is provided by l10n_toomde_ohada_overlay; falls
+            # back to None on non-OHADA tenants. getattr keeps the endpoint
+            # usable without the overlay installed.
+            'lettrage_code': getattr(full, 'lettrage_code', None) if full else None,
+            'reconciled': bool(line.reconciled),
+        }
+
+    @http.route('/api/v2/accounting/lettrage/lines', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def lettrage_lines(self, **_kwargs):
+        """Move lines on an account, filterable by state/partner/date range.
+
+        Query params:
+          - account_id (required): account.account id
+          - partner_id (optional): filter to one partner
+          - state: 'unmatched' (default) | 'matched' | 'all'
+          - date_from / date_to: ISO dates (account.move.line.date)
+          - limit (default 200, max 1000), offset
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        args = request.httprequest.args
+        account = self._lettrage_account(args.get('account_id'))
+        if not account:
+            return self._error_response("account_id required and must exist", 400, "INVALID_PARAMS")
+
+        domain = [('account_id', '=', account.id), ('parent_state', '=', 'posted')]
+
+        partner_id = args.get('partner_id')
+        if partner_id:
+            try:
+                domain.append(('partner_id', '=', int(partner_id)))
+            except (TypeError, ValueError):
+                return self._error_response("partner_id must be integer", 400, "INVALID_PARAMS")
+
+        state = (args.get('state') or 'unmatched').lower()
+        if state == 'unmatched':
+            domain.append(('reconciled', '=', False))
+        elif state == 'matched':
+            domain.append(('full_reconcile_id', '!=', False))
+        elif state != 'all':
+            return self._error_response("state must be 'unmatched', 'matched', or 'all'",
+                                        400, "INVALID_PARAMS")
+
+        date_from = args.get('date_from')
+        date_to = args.get('date_to')
+        if date_from:
+            domain.append(('date', '>=', date_from))
+        if date_to:
+            domain.append(('date', '<=', date_to))
+
+        try:
+            limit = max(1, min(int(args.get('limit', 200)), 1000))
+        except (ValueError, TypeError):
+            limit = 200
+        try:
+            offset = max(0, int(args.get('offset', 0)))
+        except (ValueError, TypeError):
+            offset = 0
+
+        try:
+            Line = request.env['account.move.line']
+            total = Line.search_count(domain)
+            lines = Line.search(domain, order='date, id', limit=limit, offset=offset)
+            payload = [self._lettrage_line_payload(l) for l in lines]
+            debit_total = sum(l['debit'] for l in payload)
+            credit_total = sum(l['credit'] for l in payload)
+            return self._json_response(data={
+                'account': {
+                    'id': account.id,
+                    'code': account.code,
+                    'name': account.name,
+                    'allow_reconciliation': account.reconcile,
+                },
+                'lines': payload,
+                'totals': {
+                    'debit': round(debit_total, 2),
+                    'credit': round(credit_total, 2),
+                    'balance': round(debit_total - credit_total, 2),
+                },
+                'pagination': {
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': offset + limit < total,
+                },
+            }, message="Lettrage lines retrieved")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Lettrage lines error: %s", str(e))
+            return self._error_response("Error retrieving lettrage lines", 500, "LETTRAGE_ERROR")
+
+    @http.route('/api/v2/accounting/lettrage/groups', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def lettrage_groups(self, **_kwargs):
+        """Already-lettered reconcile groups on an account."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        args = request.httprequest.args
+        account = self._lettrage_account(args.get('account_id'))
+        if not account:
+            return self._error_response("account_id required and must exist", 400, "INVALID_PARAMS")
+
+        Full = request.env['account.full.reconcile']
+        if 'lettrage_account_id' in Full._fields:
+            domain = [('lettrage_account_id', '=', account.id)]
+        else:
+            # No overlay: filter via the reconciled lines' account.
+            domain = [('reconciled_line_ids.account_id', '=', account.id)]
+        partner_id = args.get('partner_id')
+        if partner_id:
+            try:
+                domain.append(('reconciled_line_ids.partner_id', '=', int(partner_id)))
+            except (TypeError, ValueError):
+                return self._error_response("partner_id must be integer", 400, "INVALID_PARAMS")
+
+        try:
+            limit = max(1, min(int(args.get('limit', 100)), 500))
+        except (ValueError, TypeError):
+            limit = 100
+        try:
+            offset = max(0, int(args.get('offset', 0)))
+        except (ValueError, TypeError):
+            offset = 0
+
+        try:
+            total = Full.search_count(domain)
+            fulls = Full.search(domain, order='id desc', limit=limit, offset=offset)
+            groups = []
+            for full in fulls:
+                lines = full.reconciled_line_ids
+                groups.append({
+                    'id': full.id,
+                    'lettrage_code': getattr(full, 'lettrage_code', None),
+                    'line_count': len(lines),
+                    'lines': [self._lettrage_line_payload(l) for l in lines],
+                    'debit_total': round(sum(l.debit or 0 for l in lines), 2),
+                    'credit_total': round(sum(l.credit or 0 for l in lines), 2),
+                })
+            return self._json_response(data={
+                'account': {
+                    'id': account.id,
+                    'code': account.code,
+                    'name': account.name,
+                },
+                'groups': groups,
+                'pagination': {
+                    'total': total,
+                    'limit': limit,
+                    'offset': offset,
+                    'has_more': offset + limit < total,
+                },
+            }, message="Lettrage groups retrieved")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Lettrage groups error: %s", str(e))
+            return self._error_response("Error retrieving lettrage groups", 500, "LETTRAGE_ERROR")
+
+    @http.route('/api/v2/accounting/lettrage/reconcile', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def lettrage_reconcile(self, **_kwargs):
+        """Reconcile a set of move lines. Body: {"line_ids": [int, ...]}.
+
+        Lines must share the same account and that account must allow
+        reconciliation. Totals (sum debit == sum credit) are recommended
+        but not enforced — Odoo creates a partial reconcile when amounts
+        differ, and the residual stays on the books.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user, write=True)
+        if acc_error:
+            return acc_error
+
+        content_type = request.httprequest.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            return self._error_response("Content-Type must be application/json",
+                                        400, "INVALID_CONTENT_TYPE")
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        raw_ids = data.get('line_ids') or []
+        if not isinstance(raw_ids, list) or len(raw_ids) < 2:
+            return self._error_response("line_ids must be a list of at least 2 ids",
+                                        400, "INVALID_PARAMS")
+        try:
+            ids = [int(i) for i in raw_ids]
+        except (TypeError, ValueError):
+            return self._error_response("line_ids must be integers", 400, "INVALID_PARAMS")
+
+        try:
+            Line = request.env['account.move.line']
+            lines = Line.browse(ids).exists()
+            if len(lines) != len(ids):
+                return self._error_response("Some line ids do not exist",
+                                            404, "NOT_FOUND")
+
+            accounts = lines.mapped('account_id')
+            if len(accounts) != 1:
+                return self._error_response("All lines must share the same account",
+                                            400, "MIXED_ACCOUNTS")
+            account = accounts
+            if not account.reconcile:
+                return self._error_response(
+                    f"Account {account.code} does not allow reconciliation",
+                    400, "ACCOUNT_NOT_RECONCILABLE")
+
+            already = lines.filtered(lambda l: l.reconciled)
+            if already:
+                return self._error_response(
+                    "One or more lines are already fully reconciled",
+                    400, "ALREADY_RECONCILED")
+
+            lines.reconcile()
+            full = lines.mapped('full_reconcile_id')[:1]
+            return self._json_response(data={
+                'full_reconcile_id': full.id if full else None,
+                'lettrage_code': getattr(full, 'lettrage_code', None) if full else None,
+                'partial': not bool(full),
+                'line_ids': lines.ids,
+            }, message="Lines reconciled")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "RECONCILE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "RECONCILE_ERROR")
+        except Exception as e:
+            _logger.error("Lettrage reconcile error: %s", str(e))
+            return self._error_response("Error reconciling lines", 500, "LETTRAGE_ERROR")
+
+    @http.route('/api/v2/accounting/lettrage/unreconcile', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def lettrage_unreconcile(self, **_kwargs):
+        """Délettrage. Body: either {"full_reconcile_id": int} or {"line_ids": [int,...]}."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user, write=True)
+        if acc_error:
+            return acc_error
+
+        content_type = request.httprequest.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            return self._error_response("Content-Type must be application/json",
+                                        400, "INVALID_CONTENT_TYPE")
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        try:
+            Line = request.env['account.move.line']
+            target_lines = Line.browse()
+            if data.get('full_reconcile_id'):
+                Full = request.env['account.full.reconcile']
+                full = Full.browse(int(data['full_reconcile_id']))
+                if not full.exists():
+                    return self._error_response("full_reconcile not found", 404, "NOT_FOUND")
+                target_lines = full.reconciled_line_ids
+            elif data.get('line_ids'):
+                try:
+                    ids = [int(i) for i in data['line_ids']]
+                except (TypeError, ValueError):
+                    return self._error_response("line_ids must be integers",
+                                                400, "INVALID_PARAMS")
+                target_lines = Line.browse(ids).exists()
+            else:
+                return self._error_response(
+                    "Provide either full_reconcile_id or line_ids",
+                    400, "INVALID_PARAMS")
+
+            if not target_lines:
+                return self._error_response("Nothing to unreconcile", 400, "INVALID_PARAMS")
+
+            target_lines.remove_move_reconcile()
+            return self._json_response(data={
+                'unreconciled_line_ids': target_lines.ids,
+            }, message="Lines unreconciled")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "UNRECONCILE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "UNRECONCILE_ERROR")
+        except Exception as e:
+            _logger.error("Lettrage unreconcile error: %s", str(e))
+            return self._error_response("Error unreconciling", 500, "LETTRAGE_ERROR")
+
+    @http.route('/api/v2/accounting/lettrage/suggest', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def lettrage_suggest(self, **_kwargs):
+        """Auto-suggest balanced groups of unmatched lines.
+
+        Body: {"account_id": int, "partner_id": int?, "amount_tolerance": float?}.
+
+        Algorithm v1: per partner, find debit/credit pairs whose absolute
+        amounts match within tolerance. Catches >80% of payment-against-
+        invoice matches on a clean ledger. Heuristics can grow later.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        content_type = request.httprequest.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            return self._error_response("Content-Type must be application/json",
+                                        400, "INVALID_CONTENT_TYPE")
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        account = self._lettrage_account(data.get('account_id'))
+        if not account:
+            return self._error_response("account_id required and must exist",
+                                        400, "INVALID_PARAMS")
+        try:
+            tolerance = float(data.get('amount_tolerance', 0.0))
+        except (TypeError, ValueError):
+            return self._error_response("amount_tolerance must be a number",
+                                        400, "INVALID_PARAMS")
+
+        domain = [
+            ('account_id', '=', account.id),
+            ('parent_state', '=', 'posted'),
+            ('reconciled', '=', False),
+        ]
+        partner_id = data.get('partner_id')
+        if partner_id:
+            try:
+                domain.append(('partner_id', '=', int(partner_id)))
+            except (TypeError, ValueError):
+                return self._error_response("partner_id must be integer",
+                                            400, "INVALID_PARAMS")
+
+        try:
+            Line = request.env['account.move.line']
+            lines = Line.search(domain, order='partner_id, date, id', limit=2000)
+            # Bucket by partner; within each, pair off debits and credits
+            # that match within tolerance. Greedy O(n²) per partner is fine
+            # for typical lettrage workflows (< few hundred open lines per
+            # partner). We can switch to amount-indexed lookups later.
+            by_partner = {}
+            for l in lines:
+                pid = l.partner_id.id if l.partner_id else 0
+                by_partner.setdefault(pid, []).append(l)
+
+            suggestions = []
+            for pid, plines in by_partner.items():
+                debits = [l for l in plines if (l.debit or 0) > 0]
+                credits = [l for l in plines if (l.credit or 0) > 0]
+                used = set()
+                for d in debits:
+                    if d.id in used:
+                        continue
+                    for c in credits:
+                        if c.id in used:
+                            continue
+                        if abs((d.debit or 0) - (c.credit or 0)) <= max(tolerance, 0.005):
+                            suggestions.append({
+                                'partner_id': pid or None,
+                                'partner_name': d.partner_id.name if d.partner_id else '',
+                                'amount': round(d.debit or 0, 2),
+                                'line_ids': [d.id, c.id],
+                                'lines': [
+                                    self._lettrage_line_payload(d),
+                                    self._lettrage_line_payload(c),
+                                ],
+                            })
+                            used.add(d.id)
+                            used.add(c.id)
+                            break
+
+            return self._json_response(data={
+                'account': {
+                    'id': account.id,
+                    'code': account.code,
+                    'name': account.name,
+                },
+                'suggestions': suggestions,
+                'total': len(suggestions),
+            }, message="Suggestions computed")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Lettrage suggest error: %s", str(e))
+            return self._error_response("Error computing suggestions", 500, "LETTRAGE_ERROR")
+
+    # ===== BANK RECONCILIATION =====
+    #
+    # Statement import (CSV / OFX) + per-line listing + matching against
+    # existing payments / invoices + statement close. Targets the common
+    # WA workflow: comptable uploads the monthly bank export, system
+    # proposes matches, comptable confirms.
+
+    def _bank_journal(self, journal_id):
+        Journal = request.env['account.journal']
+        try:
+            j = Journal.browse(int(journal_id))
+        except (TypeError, ValueError):
+            return None
+        if not j.exists() or j.type not in ('bank', 'cash'):
+            return None
+        return j
+
+    def _statement_line_payload(self, sl):
+        suspense_aml = sl.move_id.line_ids.filtered(
+            lambda l: not l.account_id.account_type or l.account_id.id != (
+                sl.journal_id.default_account_id.id))[:1]
+        return {
+            'id': sl.id,
+            'date': str(sl.date) if sl.date else None,
+            'label': sl.payment_ref or '',
+            'partner_id': sl.partner_id.id if sl.partner_id else None,
+            'partner_name': sl.partner_id.name if sl.partner_id else (sl.partner_name or ''),
+            'amount': round(sl.amount or 0.0, 2),
+            'account_number': sl.account_number or '',
+            'is_reconciled': bool(sl.is_reconciled),
+            'suspense_aml_id': suspense_aml.id if suspense_aml else None,
+        }
+
+    def _statement_payload(self, st, include_lines=True):
+        data = {
+            'id': st.id,
+            'name': st.name or '',
+            'reference': st.reference or '',
+            'date': str(st.date) if st.date else None,
+            'journal_id': st.journal_id.id,
+            'journal_name': st.journal_id.name,
+            'balance_start': round(st.balance_start or 0.0, 2),
+            'balance_end': round(st.balance_end or 0.0, 2),
+            'balance_end_real': round(st.balance_end_real or 0.0, 2),
+            'line_count': len(st.line_ids),
+            'unreconciled_count': sum(1 for l in st.line_ids if not l.is_reconciled),
+        }
+        if include_lines:
+            data['lines'] = [self._statement_line_payload(l) for l in st.line_ids]
+        return data
+
+    @staticmethod
+    def _parse_csv_statement(file_bytes, decimal_sep='auto'):
+        """Best-effort CSV bank statement parser.
+
+        Required headers (case-insensitive, any order): `date`, `amount`,
+        and at least one of `label`/`description`/`memo`. Optional:
+        `partner`, `ref`/`reference`.
+
+        Decimal separator auto-detected unless overridden — French exports
+        use `,` and English exports use `.`.
+        """
+        import csv
+        import io
+        text = file_bytes.decode('utf-8-sig', errors='replace')
+        # Sniff dialect
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096])
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        rows = []
+        for raw in reader:
+            row = {(k or '').strip().lower(): (v or '').strip() for k, v in raw.items()}
+            date_str = row.get('date') or row.get('transaction date') or row.get('value date') or ''
+            label = (row.get('label') or row.get('description') or row.get('memo') or
+                     row.get('libelle') or row.get('libellé') or '')
+            amount_str = row.get('amount') or row.get('montant') or ''
+            if not amount_str:
+                debit_str = row.get('debit') or row.get('débit') or '0'
+                credit_str = row.get('credit') or row.get('crédit') or '0'
+                amount_str = credit_str if credit_str and credit_str != '0' else f'-{debit_str}'
+            # Decimal sep auto-detection
+            sep = decimal_sep
+            if sep == 'auto':
+                sep = ',' if (',' in amount_str and '.' not in amount_str) else '.'
+            normalized = amount_str.replace(' ', '').replace(' ', '')
+            if sep == ',':
+                normalized = normalized.replace('.', '').replace(',', '.')
+            try:
+                amount = float(normalized) if normalized else 0.0
+            except ValueError:
+                continue  # skip malformed row
+            partner_name = row.get('partner') or row.get('tiers') or ''
+            ref = row.get('ref') or row.get('reference') or row.get('référence') or ''
+            rows.append({
+                'date': date_str,
+                'label': label,
+                'amount': amount,
+                'partner_name': partner_name,
+                'ref': ref,
+            })
+        return rows
+
+    @staticmethod
+    def _parse_ofx_statement(file_bytes):
+        """Best-effort OFX 1.x parser. Tolerant of SGML quirks.
+
+        Extracts every <STMTTRN>...</STMTTRN> block and pulls DTPOSTED,
+        TRNAMT, NAME, MEMO, FITID. Returns same shape as CSV parser.
+        """
+        import re
+        text = file_bytes.decode('utf-8', errors='replace')
+
+        def _tag(block, name):
+            m = re.search(rf'<{name}>([^<\r\n]*)', block, re.IGNORECASE)
+            return (m.group(1) if m else '').strip()
+
+        rows = []
+        for block in re.findall(r'<STMTTRN>(.*?)</STMTTRN>',
+                                text, re.DOTALL | re.IGNORECASE):
+            dt = _tag(block, 'DTPOSTED')
+            iso_date = ''
+            if len(dt) >= 8 and dt[:8].isdigit():
+                iso_date = f'{dt[:4]}-{dt[4:6]}-{dt[6:8]}'
+            try:
+                amount = float(_tag(block, 'TRNAMT') or '0')
+            except ValueError:
+                amount = 0.0
+            rows.append({
+                'date': iso_date,
+                'label': _tag(block, 'NAME') or _tag(block, 'MEMO'),
+                'amount': amount,
+                'partner_name': _tag(block, 'NAME'),
+                'ref': _tag(block, 'FITID'),
+            })
+        return rows
+
+    @http.route('/api/v2/accounting/bank-statement/import', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def bank_statement_import(self, **_kwargs):
+        """Upload a bank statement (CSV or OFX) on a bank journal.
+
+        Multipart form fields:
+          - file (required): the statement file
+          - journal_id (required): account.journal id (must be type bank/cash)
+          - statement_date (optional): ISO date — overrides file's earliest
+
+        Returns the created `account.bank.statement` summary.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user, write=True)
+        if acc_error:
+            return acc_error
+
+        files = request.httprequest.files
+        form = request.httprequest.form
+        upload = files.get('file')
+        journal = self._bank_journal(form.get('journal_id'))
+        if not upload or not upload.filename:
+            return self._error_response("file is required", 400, "INVALID_PARAMS")
+        if not journal:
+            return self._error_response("journal_id required and must be bank/cash type",
+                                        400, "INVALID_PARAMS")
+
+        raw = upload.read()
+        fname = upload.filename.lower()
+        try:
+            if fname.endswith('.ofx') or raw[:1024].lstrip().startswith(b'OFXHEADER'):
+                rows = self._parse_ofx_statement(raw)
+            else:
+                rows = self._parse_csv_statement(raw)
+        except Exception as e:
+            _logger.exception("Bank statement parse failed")
+            return self._error_response(
+                f"Could not parse file: {self._safe_exc_message(e)}",
+                400, "PARSE_ERROR")
+
+        if not rows:
+            return self._error_response("No transactions parsed from file",
+                                        400, "EMPTY_FILE")
+
+        line_vals = []
+        for r in rows:
+            line_vals.append((0, 0, {
+                'date': r['date'] or False,
+                'payment_ref': r['label'] or r['ref'] or 'Bank line',
+                'amount': r['amount'],
+                'partner_name': r['partner_name'] or False,
+                'journal_id': journal.id,
+            }))
+        try:
+            statement = request.env['account.bank.statement'].create({
+                'journal_id': journal.id,
+                'name': form.get('statement_name') or upload.filename,
+                'reference': upload.filename,
+                'date': form.get('statement_date') or False,
+                'line_ids': line_vals,
+            })
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "IMPORT_ERROR")
+        except Exception as e:
+            _logger.error("Bank statement import error: %s", str(e))
+            return self._error_response("Error importing statement", 500, "IMPORT_ERROR")
+
+        return self._json_response(
+            data={'statement': self._statement_payload(statement)},
+            message="Bank statement imported",
+        )
+
+    @http.route('/api/v2/accounting/bank-statement', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def bank_statement_list(self, **_kwargs):
+        """List bank statements, optionally filtered by journal."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        args = request.httprequest.args
+        domain = []
+        if args.get('journal_id'):
+            try:
+                domain.append(('journal_id', '=', int(args['journal_id'])))
+            except (TypeError, ValueError):
+                return self._error_response("journal_id must be integer",
+                                            400, "INVALID_PARAMS")
+        try:
+            limit = max(1, min(int(args.get('limit', 50)), 200))
+        except (ValueError, TypeError):
+            limit = 50
+        try:
+            offset = max(0, int(args.get('offset', 0)))
+        except (ValueError, TypeError):
+            offset = 0
+
+        Statement = request.env['account.bank.statement']
+        total = Statement.search_count(domain)
+        statements = Statement.search(domain, order='date desc, id desc',
+                                      limit=limit, offset=offset)
+        return self._json_response(data={
+            'statements': [self._statement_payload(st, include_lines=False)
+                           for st in statements],
+            'pagination': {
+                'total': total, 'limit': limit, 'offset': offset,
+                'has_more': offset + limit < total,
+            },
+        }, message="Statements retrieved")
+
+    @http.route('/api/v2/accounting/bank-statement/<int:statement_id>',
+                type='http', auth='none', methods=['GET'], csrf=False)
+    def bank_statement_detail(self, statement_id, **_kwargs):
+        """Statement detail with all lines + reconciliation status."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        st = request.env['account.bank.statement'].browse(statement_id)
+        if not st.exists():
+            return self._error_response("Statement not found", 404, "NOT_FOUND")
+        return self._json_response(data={'statement': self._statement_payload(st)},
+                                   message="Statement retrieved")
+
+    @http.route('/api/v2/accounting/bank-statement/lines/<int:line_id>/suggestions',
+                type='http', auth='none', methods=['GET'], csrf=False)
+    def bank_statement_line_suggestions(self, line_id, **_kwargs):
+        """Suggest move lines to reconcile against a bank statement line.
+
+        Heuristic: open AMLs on receivable / payable accounts whose amount
+        matches the bank line's amount (within 1 unit of the journal
+        currency) and partner matches when known. Catches the common case
+        of "customer paid invoice X by bank transfer".
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user)
+        if acc_error:
+            return acc_error
+
+        st_line = request.env['account.bank.statement.line'].browse(line_id)
+        if not st_line.exists():
+            return self._error_response("Line not found", 404, "NOT_FOUND")
+
+        amount = abs(st_line.amount or 0.0)
+        is_inflow = (st_line.amount or 0.0) > 0
+
+        # For inflows (customer paid us), suggest open receivable AMLs.
+        # For outflows (we paid supplier), suggest open payable AMLs.
+        target_types = ['asset_receivable'] if is_inflow else ['liability_payable']
+        domain = [
+            ('account_id.account_type', 'in', target_types),
+            ('parent_state', '=', 'posted'),
+            ('reconciled', '=', False),
+            ('amount_residual', '!=', 0.0),
+        ]
+        if st_line.partner_id:
+            domain.append(('partner_id', '=', st_line.partner_id.id))
+
+        Line = request.env['account.move.line']
+        candidates = Line.search(domain, order='date desc, id desc', limit=200)
+
+        suggestions = []
+        tolerance = 1.0  # 1 unit of currency
+        for c in candidates:
+            residual = abs(c.amount_residual or 0.0)
+            if abs(residual - amount) <= tolerance:
+                suggestions.append({
+                    'move_line_id': c.id,
+                    'move_id': c.move_id.id,
+                    'move_name': c.move_id.name or '',
+                    'partner_id': c.partner_id.id if c.partner_id else None,
+                    'partner_name': c.partner_id.name if c.partner_id else '',
+                    'date': str(c.date) if c.date else None,
+                    'amount_residual': round(c.amount_residual or 0.0, 2),
+                    'currency': c.currency_id.name if c.currency_id else None,
+                    'confidence': 'high' if st_line.partner_id else 'medium',
+                })
+        return self._json_response(data={
+            'bank_line': self._statement_line_payload(st_line),
+            'suggestions': suggestions,
+        }, message="Suggestions computed")
+
+    @http.route('/api/v2/accounting/bank-statement/lines/<int:line_id>/match',
+                type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def bank_statement_line_match(self, line_id, **_kwargs):
+        """Match a bank statement line against one or more open move lines.
+
+        Body: {"move_line_ids": [int, ...]}.
+
+        Mechanism: rewrite the bank line's suspense-side AML onto the
+        target account (the receivable/payable of the matched lines),
+        then reconcile. Single-account constraint applies — all targets
+        must share an account.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user, write=True)
+        if acc_error:
+            return acc_error
+
+        content_type = request.httprequest.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            return self._error_response("Content-Type must be application/json",
+                                        400, "INVALID_CONTENT_TYPE")
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        st_line = request.env['account.bank.statement.line'].browse(line_id)
+        if not st_line.exists():
+            return self._error_response("Bank line not found", 404, "NOT_FOUND")
+
+        raw_ids = data.get('move_line_ids') or []
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return self._error_response("move_line_ids must be a non-empty list",
+                                        400, "INVALID_PARAMS")
+        try:
+            target_ids = [int(i) for i in raw_ids]
+        except (TypeError, ValueError):
+            return self._error_response("move_line_ids must be integers",
+                                        400, "INVALID_PARAMS")
+
+        try:
+            Line = request.env['account.move.line']
+            targets = Line.browse(target_ids).exists()
+            if len(targets) != len(target_ids):
+                return self._error_response("Some target lines not found",
+                                            404, "NOT_FOUND")
+            target_accounts = targets.mapped('account_id')
+            if len(target_accounts) != 1:
+                return self._error_response("Target lines must share a single account",
+                                            400, "MIXED_ACCOUNTS")
+            target_account = target_accounts
+
+            bank_default = st_line.journal_id.default_account_id
+            suspense_aml = st_line.move_id.line_ids.filtered(
+                lambda l: l.account_id != bank_default)[:1]
+            if not suspense_aml:
+                return self._error_response(
+                    "Bank statement line has no suspense leg to reconcile",
+                    500, "NO_SUSPENSE_LEG")
+
+            # Rewrite the suspense leg's account so reconcile() can pair
+            # it with the receivable/payable target lines.
+            if suspense_aml.account_id != target_account:
+                # Need to reset bank line to draft to mutate the move.
+                st_move = st_line.move_id
+                if st_move.state == 'posted':
+                    st_move.button_draft()
+                suspense_aml.write({'account_id': target_account.id})
+                if st_move.state == 'draft':
+                    st_move.action_post()
+
+            (suspense_aml + targets).reconcile()
+            return self._json_response(data={
+                'bank_line': self._statement_line_payload(st_line),
+                'reconciled_with': targets.ids,
+            }, message="Bank line matched")
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "MATCH_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "MATCH_ERROR")
+        except Exception as e:
+            _logger.error("Bank match error: %s", str(e))
+            return self._error_response("Error matching bank line", 500, "MATCH_ERROR")
+
+    @http.route('/api/v2/accounting/bank-statement/<int:statement_id>/close',
+                type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def bank_statement_close(self, statement_id, **_kwargs):
+        """Validate a statement once balance_end == balance_end_real.
+
+        Soft-close: refuse to validate when lines remain unreconciled
+        unless caller passes {"force": true}.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        acc_error = self._lettrage_check_access(user, write=True)
+        if acc_error:
+            return acc_error
+
+        try:
+            data = request.httprequest.get_json(force=True, silent=True) or {}
+        except Exception:
+            data = {}
+
+        st = request.env['account.bank.statement'].browse(statement_id)
+        if not st.exists():
+            return self._error_response("Statement not found", 404, "NOT_FOUND")
+
+        unreconciled = sum(1 for l in st.line_ids if not l.is_reconciled)
+        if unreconciled and not data.get('force'):
+            return self._error_response(
+                f"{unreconciled} line(s) still unreconciled — pass force:true to close anyway",
+                400, "UNRECONCILED_LINES")
+
+        # Hard-set the real end balance to the computed one to mark it
+        # complete. Odoo's `statement_complete` recomputes from there.
+        st.balance_end_real = st.balance_end
+        return self._json_response(
+            data={'statement': self._statement_payload(st, include_lines=False)},
+            message="Statement closed",
+        )
+
+    # ===== OHADA REPORTS (print-ready HTML / JSON) =====
+    #
+    # Comptables expect to download a PDF formatted like the SYSCOHADA
+    # OHADA filing layout. We render print-ready HTML server-side with
+    # embedded CSS — browser handles PDF via File → Print. Avoids the
+    # wkhtmltopdf / QWeb / Enterprise account_reports stack.
+
+    _OHADA_REPORT_CSS = """
+        @page { size: A4; margin: 14mm 12mm; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+               font-size: 10pt; color: #111; margin: 16px; }
+        .report-header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+        .report-header h1 { font-size: 16pt; margin: 0 0 4px; }
+        .report-header .meta { font-size: 9pt; color: #555; }
+        .section-title { background: #f0f0f0; padding: 6px 8px; margin-top: 16px;
+                         font-weight: 600; border-left: 4px solid #111; }
+        table.lines { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        table.lines th, table.lines td { padding: 4px 8px; border-bottom: 1px solid #eee;
+                                          text-align: left; font-size: 9.5pt; }
+        table.lines th { background: #fafafa; font-weight: 600; }
+        table.lines td.num { text-align: right; font-family: ui-monospace, 'SF Mono', monospace; }
+        table.lines tr.total td { border-top: 1px solid #111; border-bottom: 2px solid #111;
+                                  font-weight: 700; background: #fafafa; }
+        table.lines tr.grand-total td { border-top: 2px solid #111; border-bottom: 3px double #111;
+                                         font-weight: 700; font-size: 11pt; background: #f8f8f8; }
+        .footer { margin-top: 24px; font-size: 8pt; color: #777; border-top: 1px solid #ddd;
+                  padding-top: 6px; }
+        @media print { body { margin: 0; } .no-print { display: none; } .print-button { display: none; } }
+        .print-button { position: fixed; top: 16px; right: 16px; background: #111; color: white;
+                        padding: 8px 14px; border-radius: 6px; cursor: pointer; border: 0;
+                        font-size: 10pt; }
+    """
+
+    def _html_escape(self, value):
+        try:
+            import markupsafe
+            return str(markupsafe.escape(value or ''))
+        except ImportError:
+            return (str(value) if value else '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    def _format_xof(self, amount):
+        """Display amount with thousands separator, no decimals (OHADA convention)."""
+        try:
+            value = int(round(float(amount or 0)))
+        except (TypeError, ValueError):
+            return ''
+        sign = '-' if value < 0 else ''
+        s = f'{abs(value):,}'.replace(',', ' ')
+        return f'{sign}{s}'
+
+    def _render_report_html(self, title, subtitle, sections_html, params, currency_code='XOF'):
+        """Wrap section HTML in the OHADA report shell."""
+        company = request.env.user.company_id
+        company_name = self._html_escape(company.name if company else '')
+        country = self._html_escape(company.country_id.name if company and company.country_id else '')
+        vat = self._html_escape(company.vat if company else '')
+        period_from = params.get('from_date').isoformat() if params.get('from_date') else ''
+        period_to = params.get('to_date').isoformat() if params.get('to_date') else ''
+        generated = datetime.now().strftime('%Y-%m-%d %H:%M')
+        html = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>{self._html_escape(title)} — {company_name}</title>
+<style>{self._OHADA_REPORT_CSS}</style>
+</head>
+<body>
+<button class="print-button no-print" onclick="window.print()">Imprimer / PDF</button>
+<div class="report-header">
+  <h1>{self._html_escape(title)}</h1>
+  <div class="meta">
+    <strong>{company_name}</strong> · {country}{' · NIF ' + vat if vat else ''}
+  </div>
+  <div class="meta">
+    {self._html_escape(subtitle)} ·
+    Période : {period_from} → {period_to} ·
+    Devise : {self._html_escape(currency_code)} ·
+    Édité le {generated}
+  </div>
+</div>
+{sections_html}
+<div class="footer">
+  Édité depuis Toomde — conformité OHADA / SYSCOHADA Révisé.
+</div>
+</body>
+</html>"""
+        return html
+
+    def _html_response(self, html):
+        return request.make_response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
+
+    def _section_html(self, label, rows, key_label='Compte', show_grand_total=True):
+        """Render one section (table) with accounts + total."""
+        body = []
+        total = 0.0
+        for r in rows:
+            amount = r.get('balance') if 'balance' in r else r.get('amount', 0)
+            total += amount
+            body.append(
+                f'<tr>'
+                f'<td>{self._html_escape(r.get("code") or "")}</td>'
+                f'<td>{self._html_escape(r.get("name") or "")}</td>'
+                f'<td class="num">{self._format_xof(amount)}</td>'
+                f'</tr>'
+            )
+        rows_html = ''.join(body) if body else (
+            '<tr><td colspan="3" style="color:#888;font-style:italic;">'
+            'Aucune écriture sur la période.</td></tr>'
+        )
+        total_row = ''
+        if show_grand_total:
+            total_row = (
+                f'<tr class="total"><td colspan="2">Total {self._html_escape(label)}</td>'
+                f'<td class="num">{self._format_xof(total)}</td></tr>'
+            )
+        return f"""
+<div class="section-title">{self._html_escape(label)}</div>
+<table class="lines">
+<thead><tr><th style="width:120px">{self._html_escape(key_label)}</th><th>Intitulé</th><th style="width:140px;text-align:right">Montant</th></tr></thead>
+<tbody>{rows_html}{total_row}</tbody>
+</table>"""
+
+    @http.route('/api/v2/accounting/reports/bilan-sn', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def report_bilan_sn(self, **_kwargs):
+        """Bilan SYSCOHADA Système Normal — print-ready HTML or JSON."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response("Access denied: requires Accounting role",
+                                        403, "ROLE_ACCESS_DENIED")
+
+        params = self._parse_analytics_params()
+        fmt = (request.httprequest.args.get('format') or 'html').lower()
+
+        all_types = self._ACCT_ASSET_TYPES + self._ACCT_LIABILITY_TYPES + self._ACCT_EQUITY_TYPES
+        rows = self._account_balances(all_types, date_to=params['to_date'])
+        actif = [r for r in rows if r['account_type'] in self._ACCT_ASSET_TYPES and r['balance'] != 0]
+        passif = [r for r in rows if r['account_type'] in self._ACCT_LIABILITY_TYPES and r['balance'] != 0]
+        equity = [r for r in rows if r['account_type'] in self._ACCT_EQUITY_TYPES and r['balance'] != 0]
+        # Passif and equity carry credit-natural balances → flip sign for display
+        for r in passif + equity:
+            r['balance'] = -r['balance']
+        for group in (actif, passif, equity):
+            group.sort(key=lambda r: r['code'] or '')
+
+        total_actif = sum(r['balance'] for r in actif)
+        total_passif = sum(r['balance'] for r in passif) + sum(r['balance'] for r in equity)
+
+        if fmt == 'json':
+            return self._json_response(data={
+                'actif': actif, 'passif': passif, 'equity': equity,
+                'totals': {
+                    'actif': round(total_actif, 2),
+                    'passif_equity': round(total_passif, 2),
+                },
+                'as_of': params['to_date'].isoformat(),
+            }, message="Bilan SN")
+
+        sections_html = (
+            self._section_html('ACTIF', actif)
+            + self._section_html('PASSIF', passif)
+            + self._section_html('CAPITAUX PROPRES', equity)
+            + f"""
+<table class="lines" style="margin-top:24px;">
+<tbody>
+<tr class="grand-total"><td>Total ACTIF</td><td class="num">{self._format_xof(total_actif)}</td></tr>
+<tr class="grand-total"><td>Total PASSIF + CAPITAUX PROPRES</td><td class="num">{self._format_xof(total_passif)}</td></tr>
+</tbody>
+</table>"""
+        )
+        html = self._render_report_html(
+            title='Bilan — SYSCOHADA Système Normal',
+            subtitle='Conforme à l\'AUDCIF (Acte Uniforme révisé)',
+            sections_html=sections_html,
+            params=params,
+        )
+        return self._html_response(html)
+
+    @http.route('/api/v2/accounting/reports/compte-resultat-sn', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def report_compte_resultat_sn(self, **_kwargs):
+        """Compte de Résultat SYSCOHADA Système Normal."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response("Access denied: requires Accounting role",
+                                        403, "ROLE_ACCESS_DENIED")
+
+        params = self._parse_analytics_params()
+        fmt = (request.httprequest.args.get('format') or 'html').lower()
+
+        types = self._ACCT_INCOME_TYPES + self._ACCT_EXPENSE_TYPES
+        rows = self._account_balances(
+            types,
+            date_from=params['from_date'], date_to=params['to_date'],
+        )
+        produits = [r for r in rows if r['account_type'] in self._ACCT_INCOME_TYPES and r['balance'] != 0]
+        charges = [r for r in rows if r['account_type'] in self._ACCT_EXPENSE_TYPES and r['balance'] != 0]
+        for r in produits:
+            r['balance'] = -r['balance']  # income natural-credit
+        for group in (produits, charges):
+            group.sort(key=lambda r: r['code'] or '')
+
+        total_produits = sum(r['balance'] for r in produits)
+        total_charges = sum(r['balance'] for r in charges)
+        resultat = total_produits - total_charges
+
+        if fmt == 'json':
+            return self._json_response(data={
+                'produits': produits, 'charges': charges,
+                'totals': {
+                    'produits': round(total_produits, 2),
+                    'charges': round(total_charges, 2),
+                    'resultat_net': round(resultat, 2),
+                },
+            }, message="Compte de Résultat SN")
+
+        result_label = "Résultat net (Bénéfice)" if resultat >= 0 else "Résultat net (Perte)"
+        sections_html = (
+            self._section_html('Produits', produits, key_label='Classe 7')
+            + self._section_html('Charges', charges, key_label='Classe 6')
+            + f"""
+<table class="lines" style="margin-top:24px;">
+<tbody>
+<tr class="grand-total"><td>Total Produits</td><td class="num">{self._format_xof(total_produits)}</td></tr>
+<tr class="grand-total"><td>Total Charges</td><td class="num">{self._format_xof(total_charges)}</td></tr>
+<tr class="grand-total"><td>{result_label}</td><td class="num">{self._format_xof(resultat)}</td></tr>
+</tbody>
+</table>"""
+        )
+        html = self._render_report_html(
+            title='Compte de Résultat — SYSCOHADA Système Normal',
+            subtitle='Conforme à l\'AUDCIF (Acte Uniforme révisé)',
+            sections_html=sections_html,
+            params=params,
+        )
+        return self._html_response(html)
+
+    @http.route('/api/v2/accounting/reports/balance-generale', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def report_balance_generale(self, **_kwargs):
+        """Balance générale — all accounts with debit, credit, balance."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response("Access denied: requires Accounting role",
+                                        403, "ROLE_ACCESS_DENIED")
+
+        params = self._parse_analytics_params()
+        fmt = (request.httprequest.args.get('format') or 'html').lower()
+
+        all_types = (self._ACCT_ASSET_TYPES + self._ACCT_LIABILITY_TYPES
+                     + self._ACCT_EQUITY_TYPES + self._ACCT_INCOME_TYPES
+                     + self._ACCT_EXPENSE_TYPES)
+        rows = self._account_balances(
+            all_types,
+            date_from=params['from_date'], date_to=params['to_date'],
+        )
+        rows = [r for r in rows if r['debit'] or r['credit']]
+        rows.sort(key=lambda r: r['code'] or '')
+
+        if fmt == 'json':
+            return self._json_response(data={'rows': rows}, message="Balance générale")
+
+        body = ''.join(
+            f'<tr>'
+            f'<td>{self._html_escape(r["code"] or "")}</td>'
+            f'<td>{self._html_escape(r["name"] or "")}</td>'
+            f'<td class="num">{self._format_xof(r["debit"])}</td>'
+            f'<td class="num">{self._format_xof(r["credit"])}</td>'
+            f'<td class="num">{self._format_xof(r["balance"])}</td>'
+            f'</tr>'
+            for r in rows
+        )
+        total_debit = sum(r['debit'] for r in rows)
+        total_credit = sum(r['credit'] for r in rows)
+        body += (
+            f'<tr class="grand-total"><td colspan="2">Totaux</td>'
+            f'<td class="num">{self._format_xof(total_debit)}</td>'
+            f'<td class="num">{self._format_xof(total_credit)}</td>'
+            f'<td class="num">{self._format_xof(total_debit - total_credit)}</td>'
+            f'</tr>'
+        )
+        sections_html = f"""
+<table class="lines">
+<thead><tr>
+  <th style="width:100px">Compte</th><th>Intitulé</th>
+  <th style="width:120px;text-align:right">Débit</th>
+  <th style="width:120px;text-align:right">Crédit</th>
+  <th style="width:120px;text-align:right">Solde</th>
+</tr></thead>
+<tbody>{body}</tbody>
+</table>"""
+        html = self._render_report_html(
+            title='Balance générale',
+            subtitle='Soldes de tous les comptes mouvementés',
+            sections_html=sections_html,
+            params=params,
+        )
+        return self._html_response(html)
+
+    @http.route('/api/v2/accounting/reports/grand-livre', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def report_grand_livre(self, **_kwargs):
+        """Grand livre — moves per account over the period."""
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+        if not self._user_has_module_role(user, 'accounting'):
+            return self._error_response("Access denied: requires Accounting role",
+                                        403, "ROLE_ACCESS_DENIED")
+
+        params = self._parse_analytics_params()
+        args = request.httprequest.args
+        fmt = (args.get('format') or 'html').lower()
+
+        account_filter = None
+        if args.get('account_id'):
+            try:
+                account_filter = int(args['account_id'])
+            except (TypeError, ValueError):
+                return self._error_response("account_id must be integer",
+                                            400, "INVALID_PARAMS")
+
+        Line = request.env['account.move.line']
+        domain = [
+            ('parent_state', '=', 'posted'),
+            ('date', '>=', params['from_date'].isoformat()),
+            ('date', '<=', params['to_date'].isoformat()),
+        ]
+        if account_filter:
+            domain.append(('account_id', '=', account_filter))
+        lines = Line.search(domain, order='account_id, date, id', limit=5000)
+
+        # Group by account
+        by_account = {}
+        for l in lines:
+            acc_id = l.account_id.id
+            if acc_id not in by_account:
+                by_account[acc_id] = {
+                    'code': l.account_id.code or '',
+                    'name': l.account_id.name,
+                    'lines': [],
+                }
+            by_account[acc_id]['lines'].append(l)
+
+        if fmt == 'json':
+            return self._json_response(data={
+                'accounts': [
+                    {
+                        'code': v['code'],
+                        'name': v['name'],
+                        'lines': [{
+                            'id': ll.id,
+                            'date': str(ll.date) if ll.date else None,
+                            'move_name': ll.move_id.name,
+                            'partner': ll.partner_id.name if ll.partner_id else '',
+                            'label': ll.name or '',
+                            'debit': round(ll.debit or 0, 2),
+                            'credit': round(ll.credit or 0, 2),
+                        } for ll in v['lines']],
+                    } for v in by_account.values()
+                ],
+            }, message="Grand livre")
+
+        # HTML render
+        sections_html = ''
+        for v in sorted(by_account.values(), key=lambda x: x['code']):
+            running = 0.0
+            rows_html = []
+            for ll in v['lines']:
+                running += (ll.debit or 0) - (ll.credit or 0)
+                rows_html.append(
+                    f'<tr>'
+                    f'<td>{str(ll.date) if ll.date else ""}</td>'
+                    f'<td>{self._html_escape(ll.move_id.name or "")}</td>'
+                    f'<td>{self._html_escape(ll.partner_id.name if ll.partner_id else "")}</td>'
+                    f'<td>{self._html_escape(ll.name or "")}</td>'
+                    f'<td class="num">{self._format_xof(ll.debit) if ll.debit else ""}</td>'
+                    f'<td class="num">{self._format_xof(ll.credit) if ll.credit else ""}</td>'
+                    f'<td class="num">{self._format_xof(running)}</td>'
+                    f'</tr>'
+                )
+            sections_html += f"""
+<div class="section-title">{self._html_escape(v['code'])} — {self._html_escape(v['name'])}</div>
+<table class="lines">
+<thead><tr>
+  <th style="width:90px">Date</th><th style="width:110px">Pièce</th>
+  <th>Tiers</th><th>Libellé</th>
+  <th style="width:100px;text-align:right">Débit</th>
+  <th style="width:100px;text-align:right">Crédit</th>
+  <th style="width:110px;text-align:right">Solde</th>
+</tr></thead>
+<tbody>{''.join(rows_html) or '<tr><td colspan="7" style="color:#888;font-style:italic;">Aucun mouvement.</td></tr>'}</tbody>
+</table>"""
+
+        if not by_account:
+            sections_html = '<p style="color:#888;font-style:italic;">Aucun mouvement sur la période.</p>'
+
+        html = self._render_report_html(
+            title='Grand livre',
+            subtitle='Mouvements détaillés par compte sur la période',
+            sections_html=sections_html,
+            params=params,
+        )
+        return self._html_response(html)
+
     # ===== INTERNAL: CACHE INVALIDATION =====
 
     @http.route('/api/v2/internal/invalidate-cache', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
