@@ -292,3 +292,60 @@ class TestMailEndpoints(HttpCase):
         # The bogus id is silently dropped (no 404 — partial visibility
         # mustn't break the notes UI).
         self.assertEqual(returned, set(ids))
+
+    # ----- record_attachments ----------------------------------------------
+
+    def test_record_attachments_returns_record_scoped_list(self):
+        token, _ = self._login()
+        partner_a = self._make_partner(name='Partner A')
+        partner_b = self._make_partner(name='Partner B')
+        a1 = self._upload(token, 'res.partner', partner_a.id, 'a1.txt', b'aa')
+        a2 = self._upload(token, 'res.partner', partner_a.id, 'a2.txt', b'bb')
+        # An attachment on a different record must NOT leak across.
+        self._upload(token, 'res.partner', partner_b.id, 'b1.txt', b'cc')
+        r = self.url_open(
+            f'/api/v2/record_attachments?model=res.partner&res_id={partner_a.id}',
+            headers={'session-token': token},
+        )
+        self.assertEqual(r.status_code, 200)
+        returned_names = {a['name'] for a in r.json()['data']['records']}
+        self.assertEqual(returned_names, {'a1.txt', 'a2.txt'})
+        # And every returned row carries the right binding.
+        for a in r.json()['data']['records']:
+            self.assertEqual(a['res_model'], 'res.partner')
+            self.assertEqual(a['res_id'], partner_a.id)
+        # Sanity: ids match what upload returned
+        expected_ids = {
+            a1.json()['data']['attachment']['id'],
+            a2.json()['data']['attachment']['id'],
+        }
+        self.assertEqual({a['id'] for a in r.json()['data']['records']}, expected_ids)
+
+    def test_record_attachments_missing_params_rejected(self):
+        token, _ = self._login()
+        r = self.url_open(
+            '/api/v2/record_attachments?model=res.partner',
+            headers={'session-token': token},
+        )
+        self.assertEqual(r.status_code, 400)
+        r = self.url_open(
+            '/api/v2/record_attachments?res_id=1',
+            headers={'session-token': token},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_record_attachments_on_missing_record_returns_404(self):
+        token, _ = self._login()
+        r = self.url_open(
+            '/api/v2/record_attachments?model=res.partner&res_id=99999999',
+            headers={'session-token': token},
+        )
+        self.assertEqual(r.status_code, 404)
+
+    def test_record_attachments_on_blocked_model_returns_403(self):
+        token, _ = self._login()
+        r = self.url_open(
+            '/api/v2/record_attachments?model=ir.cron&res_id=1',
+            headers={'session-token': token},
+        )
+        self.assertEqual(r.status_code, 403)

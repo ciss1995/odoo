@@ -3250,6 +3250,70 @@ class SimpleApiController(http.Controller):
         )
         return self._finalize_response(response, 200)
 
+    @http.route('/api/v2/record_attachments', type='http', auth='none',
+                methods=['GET'], csrf=False)
+    def list_record_attachments(self):
+        """List attachments bound to a single record.
+
+        Query: ``?model=account.payment&res_id=42``. Returns every
+        ``ir.attachment`` whose ``(res_model, res_id)`` matches and which
+        the caller can read. Used to render the receipts/PDFs section on
+        a bill or payment without forcing the SPA to walk message_ids.
+
+        Re-uses ``_resolve_mail_target`` so the same gates (model
+        allowed, module entitled, ACL, scope domain) apply — a caller
+        who cannot read the parent record gets a 404, not a leak of
+        the attachment list. Mail-thread requirement is enforced
+        intentionally: surfaces only attachments living next to a
+        proper chatter, never on free-floating models.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        model_name = (request.httprequest.args.get('model') or '').strip()
+        res_id_raw = (request.httprequest.args.get('res_id') or '').strip()
+        if not model_name or not res_id_raw:
+            return self._error_response(
+                "Both 'model' and 'res_id' query params are required",
+                400, "INVALID_PARAMS",
+            )
+        try:
+            res_id = int(res_id_raw)
+        except ValueError:
+            return self._error_response(
+                "'res_id' must be an integer", 400, "INVALID_PARAMS",
+            )
+        if res_id <= 0:
+            return self._error_response(
+                "'res_id' must be positive", 400, "INVALID_PARAMS",
+            )
+
+        record, err = self._resolve_mail_target(model_name, res_id, user, 'read')
+        if err:
+            return err
+
+        # ir.attachment's own record rules will further filter what
+        # the caller can see; explicit res_model/res_id domain restricts
+        # to this record only.
+        attachments = request.env['ir.attachment'].search([
+            ('res_model', '=', model_name),
+            ('res_id', '=', record.id),
+        ], order='create_date desc')
+        return self._json_response(
+            data={'records': [self._serialize_attachment(a) for a in attachments]},
+            message="OK",
+        )
+
     # ===== SALE → INVOICE =====
 
     @http.route('/api/v2/sales/<int:order_id>/create-invoice', type='http',
