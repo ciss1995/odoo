@@ -8123,6 +8123,109 @@ class SimpleApiController(http.Controller):
         )
         return self._html_response(html)
 
+    # ===== BILLING: SELF-SERVICE PLAN CHANGE =====
+    #
+    # The SPA Settings → Subscription Plan card lets an admin switch
+    # the tenant between store / lite / business. Enterprise + Custom
+    # are sales-assisted and return 403 from this endpoint — the SPA
+    # surfaces "Contact us" instead of a switch button for those.
+
+    _SELF_SERVICE_PLAN_SLUGS = frozenset({"store", "lite", "business"})
+
+    @http.route('/api/v2/billing/change-plan', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def billing_change_plan(self, **_kwargs):
+        """POST {"new_plan_slug": "store|lite|business"} — admin only.
+
+        Proxies to the control plane's internal plan-change endpoint
+        (POST {cp_url}/internal/tenants/{tenant_id}/plan-change). The
+        CP handles validation, module install diff, audit row, and
+        cache invalidation. Synchronous — up to 10 min to give the
+        Odoo install time to finish.
+        """
+        import urllib.request
+        import urllib.error
+
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+
+        # Admin-only — non-admins can't change their own plan even
+        # for downgrades; the operation is billable.
+        if not user.has_group('base.group_system'):
+            return self._error_response(
+                "Only administrators can change the subscription plan.",
+                403, "ADMIN_ONLY",
+            )
+
+        content_type = request.httprequest.headers.get('Content-Type', '')
+        if 'application/json' not in content_type:
+            return self._error_response("Content-Type must be application/json",
+                                        400, "INVALID_CONTENT_TYPE")
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        new_plan_slug = (data.get('new_plan_slug') or '').strip().lower()
+        if new_plan_slug not in self._SELF_SERVICE_PLAN_SLUGS:
+            return self._error_response(
+                f"Plan '{new_plan_slug}' is not available for self-service. "
+                "Contact sales for Enterprise or Custom plans.",
+                403, "PLAN_NOT_SELF_SERVICE",
+            )
+
+        tenant_id = os.environ.get('TENANT_ID', '').strip()
+        cp_url = os.environ.get('CONTROL_PLANE_URL', '').strip().rstrip('/')
+        cp_token = os.environ.get('CONTROL_PLANE_TOKEN', '').strip()
+        if not tenant_id or not cp_url or not cp_token:
+            return self._error_response(
+                "Tenant is not configured for self-service plan changes.",
+                500, "CONFIG_MISSING",
+            )
+
+        payload = json.dumps({
+            'new_plan_slug': new_plan_slug,
+            'changed_by': user.login or user.email or f'user#{user.id}',
+            'reason': data.get('reason') or '',
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            f"{cp_url}/internal/tenants/{tenant_id}/plan-change",
+            data=payload,
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {cp_token}',
+            },
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=600) as resp:
+                body = resp.read().decode('utf-8')
+            return self._json_response(
+                data=json.loads(body),
+                message="Plan changed",
+            )
+        except urllib.error.HTTPError as exc:
+            try:
+                cp_body = exc.read().decode('utf-8')
+                cp_detail = json.loads(cp_body).get('detail', cp_body)
+            except Exception:
+                cp_detail = exc.reason or 'Unknown error'
+            # 403 from CP (not in self-service list) maps to 403 here;
+            # 400 (install failure) maps to 400 so the SPA toast is honest.
+            status = 403 if exc.code == 403 else (exc.code if 400 <= exc.code < 600 else 500)
+            code = "PLAN_NOT_SELF_SERVICE" if exc.code == 403 else "PLAN_CHANGE_FAILED"
+            return self._error_response(str(cp_detail), status, code)
+        except Exception as exc:
+            _logger.error("Plan change proxy failed: %s", exc)
+            return self._error_response(
+                "Could not reach control plane to change plan. Try again later.",
+                503, "CP_UNREACHABLE",
+            )
+
     # ===== INTERNAL: CACHE INVALIDATION =====
 
     @http.route('/api/v2/internal/invalidate-cache', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
