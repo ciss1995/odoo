@@ -2852,6 +2852,404 @@ class SimpleApiController(http.Controller):
             _logger.error("Error updating %s/%s: %s", model, record_id, str(e))
             return self._error_response("Error updating record", 500, "UPDATE_ERROR")
 
+    # ===== MAIL: NOTES + ATTACHMENTS =====
+    #
+    # Generic post-a-note + upload-an-attachment endpoints. Work on any
+    # mail.thread-enabled record (crm.lead, project.task, sale.order, …)
+    # so we don't have to wire per-model routes. Authorization is rooted
+    # in the parent record's ACL: WRITE for posting/uploading, READ for
+    # downloading. ir.attachment stays in BLOCKED_MODELS — these
+    # purpose-built routes are the only sanctioned way to create or
+    # serve attachments through the API, since direct CRUD lets a
+    # caller forge res_model/res_id and bypass the parent's ACL.
+
+    # Hard ceiling per upload. Keeps a runaway client (or an attacker
+    # with valid creds) from filling the tenant volume with one POST.
+    # Matches the soft cap used elsewhere; raise deliberately if a
+    # legit use case needs it.
+    _ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024  # 25 MB
+
+    def _resolve_mail_target(self, model_name, record_id, user, operation='write'):
+        """Resolve (record, error_response). Used by all mail endpoints.
+
+        Centralises the four checks every mail endpoint needs:
+        1. Model exists, is not blocked, and inherits ``mail.thread``
+           (so ``message_post`` / ``message_ids`` actually work).
+        2. The model's module is in the tenant's plan.
+        3. The user holds the requested operation right on the model
+           (typically ``write`` for posting/uploading, ``read`` for
+           downloading).
+        4. The specific record exists AND is inside the user's scope
+           domain — otherwise we'd let a salesman post notes on a lead
+           they can't see, which surfaces existence + leaks audit data.
+        """
+        if model_name not in request.env:
+            return None, self._error_response(
+                f"Model '{model_name}' not found", 404, "MODEL_NOT_FOUND",
+            )
+        if self._is_model_blocked(model_name):
+            return None, self._error_response(
+                f"Access denied for model '{model_name}'", 403, "ACCESS_DENIED",
+            )
+        model_obj = request.env[model_name]
+        if not hasattr(model_obj, 'message_post'):
+            return None, self._error_response(
+                f"Model '{model_name}' does not support messages",
+                400, "MODEL_NOT_MAIL_THREAD",
+            )
+        module_error = self._enforce_module_access(model_name)
+        if module_error:
+            return None, module_error
+        if not self._check_model_access(model_name, operation):
+            return None, self._error_response(
+                f"Access denied for model '{model_name}'", 403, "ACCESS_DENIED",
+            )
+        scope_domain = self._get_record_scope_domain(model_name, user)
+        record = model_obj.search([('id', '=', record_id)] + scope_domain, limit=1)
+        if not record:
+            return None, self._error_response(
+                f"Record {record_id} not found in {model_name}",
+                404, "RECORD_NOT_FOUND",
+            )
+        return record, None
+
+    def _serialize_attachment(self, attachment):
+        """Public-safe attachment dict — never includes the raw bytes.
+
+        Frontend pulls the file body separately via ``GET
+        /api/v2/attachment/<id>``, so omitting ``datas`` here keeps
+        listing/post responses small and avoids re-encoding base64
+        for every note that references the same file.
+        """
+        return {
+            'id': attachment.id,
+            'name': attachment.name,
+            'mimetype': attachment.mimetype or 'application/octet-stream',
+            'file_size': attachment.file_size or 0,
+            'res_model': attachment.res_model or '',
+            'res_id': attachment.res_id or 0,
+            'url': f'/api/v2/attachment/{attachment.id}',
+        }
+
+    @http.route('/api/v2/message_post', type='http', auth='none',
+                methods=['POST'], csrf=False, readonly=False)
+    def message_post(self):
+        """Post an internal note (mt_note) on any mail-thread record.
+
+        Body: ``{"model": "crm.lead", "res_id": 42, "body": "text",
+        "attachment_ids": [1, 2]}``
+
+        ``attachment_ids`` are IDs previously returned by
+        ``/api/v2/attachment/upload`` — Odoo's ``message_post`` will
+        link them to the new mail.message via the M2M.
+
+        Uses ``subtype_xmlid='mail.mt_note'`` so the message is an
+        internal note (not a public comment that notifies followers /
+        sends emails). The SPA's notes UI is internal-only by design.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response(
+                    "Content-Type must be application/json",
+                    400, "INVALID_CONTENT_TYPE",
+                )
+            try:
+                data = request.httprequest.get_json(force=True)
+                if not isinstance(data, dict):
+                    return self._error_response("No data provided", 400, "NO_DATA")
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+            model_name = (data.get('model') or '').strip()
+            res_id = data.get('res_id')
+            body = data.get('body') or ''
+            attachment_ids = data.get('attachment_ids') or []
+
+            if not model_name or not isinstance(res_id, int) or res_id <= 0:
+                return self._error_response(
+                    "Both 'model' (string) and 'res_id' (positive int) are required",
+                    400, "INVALID_PARAMS",
+                )
+            if not isinstance(body, str) or not body.strip():
+                return self._error_response(
+                    "'body' must be a non-empty string", 400, "INVALID_BODY",
+                )
+            if not isinstance(attachment_ids, list) or not all(
+                isinstance(a, int) and a > 0 for a in attachment_ids
+            ):
+                return self._error_response(
+                    "'attachment_ids' must be a list of positive ints",
+                    400, "INVALID_ATTACHMENTS",
+                )
+
+            record, err = self._resolve_mail_target(model_name, res_id, user, 'write')
+            if err:
+                return err
+
+            # Re-check that the caller actually owns/can-read every
+            # attachment they're trying to glue to the message. Without
+            # this, a user who knows an attachment id from another
+            # tenant record could attach it to a record THEY can write —
+            # effectively leaking content across the ACL boundary.
+            if attachment_ids:
+                attachments = request.env['ir.attachment'].search(
+                    [('id', 'in', attachment_ids)],
+                )
+                if len(attachments) != len(set(attachment_ids)):
+                    return self._error_response(
+                        "One or more attachments not found or not accessible",
+                        404, "ATTACHMENT_NOT_FOUND",
+                    )
+
+            # mt_note = internal note (not a comment that emails followers).
+            message = record.message_post(
+                body=body,
+                attachment_ids=list(attachment_ids),
+                message_type='comment',
+                subtype_xmlid='mail.mt_note',
+            )
+
+            return self._json_response(
+                data={
+                    'message': {
+                        'id': message.id,
+                        'body': message.body or '',
+                        'date': fields.Datetime.to_string(message.date) if message.date else None,
+                        'author': (
+                            [message.author_id.id, message.author_id.display_name]
+                            if message.author_id else None
+                        ),
+                        'attachments': [
+                            self._serialize_attachment(a) for a in message.attachment_ids
+                        ],
+                    },
+                },
+                message="Note posted",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "MESSAGE_POST_ERROR")
+        except Exception as e:
+            _logger.error("Error posting message: %s", str(e))
+            return self._error_response("Error posting message", 500, "MESSAGE_POST_ERROR")
+
+    @http.route('/api/v2/attachment/upload', type='http', auth='none',
+                methods=['POST'], csrf=False, readonly=False)
+    def upload_attachment(self):
+        """Upload a file as an ir.attachment bound to a target record.
+
+        Multipart form fields:
+        - ``model`` — target res_model (e.g. ``crm.lead``)
+        - ``res_id`` — target res_id (positive integer)
+        - ``file`` — the file part
+
+        Caller must hold WRITE access on the target record. The created
+        attachment's ``res_model`` / ``res_id`` are set to the target so
+        Odoo's standard ACL ("read this attachment if you can read its
+        parent record") covers downloads automatically.
+
+        Returns the attachment metadata (no body). The id is then
+        passed to ``/api/v2/message_post`` as part of ``attachment_ids``.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            form = request.httprequest.form
+            files = request.httprequest.files
+            model_name = (form.get('model') or '').strip()
+            try:
+                res_id = int(form.get('res_id') or 0)
+            except (TypeError, ValueError):
+                res_id = 0
+            uploaded = files.get('file')
+
+            if not model_name or res_id <= 0:
+                return self._error_response(
+                    "Form fields 'model' and 'res_id' are required",
+                    400, "INVALID_PARAMS",
+                )
+            if uploaded is None or not uploaded.filename:
+                return self._error_response(
+                    "Form field 'file' is required", 400, "FILE_REQUIRED",
+                )
+
+            # Stream-aware size guard. ``content_length`` is the
+            # multipart-claimed size (cheap pre-check); we still
+            # measure the actual bytes after read() so a lying client
+            # can't bypass the limit.
+            claimed = uploaded.content_length or 0
+            if claimed and claimed > self._ATTACHMENT_MAX_BYTES:
+                return self._error_response(
+                    f"File exceeds {self._ATTACHMENT_MAX_BYTES} bytes",
+                    413, "FILE_TOO_LARGE",
+                )
+
+            record, err = self._resolve_mail_target(model_name, res_id, user, 'write')
+            if err:
+                return err
+
+            raw = uploaded.read()
+            if len(raw) > self._ATTACHMENT_MAX_BYTES:
+                return self._error_response(
+                    f"File exceeds {self._ATTACHMENT_MAX_BYTES} bytes",
+                    413, "FILE_TOO_LARGE",
+                )
+            if not raw:
+                return self._error_response("File is empty", 400, "FILE_EMPTY")
+
+            import base64
+            attachment = request.env['ir.attachment'].create({
+                'name': uploaded.filename,
+                'datas': base64.b64encode(raw),
+                'res_model': model_name,
+                'res_id': record.id,
+                'mimetype': uploaded.mimetype or 'application/octet-stream',
+            })
+
+            return self._json_response(
+                data={'attachment': self._serialize_attachment(attachment)},
+                message="Attachment uploaded",
+                status_code=201,
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "UPLOAD_ERROR")
+        except Exception as e:
+            _logger.error("Error uploading attachment: %s", str(e))
+            return self._error_response("Error uploading attachment", 500, "UPLOAD_ERROR")
+
+    @http.route('/api/v2/attachments', type='http', auth='none',
+                methods=['GET'], csrf=False)
+    def list_attachments(self):
+        """Bulk metadata lookup for attachments referenced by messages.
+
+        ``?ids=1,2,3`` — returns the subset the caller can read. Silent
+        on missing/forbidden ids (no 404) so partial visibility doesn't
+        break the notes UI when a single attachment is restricted.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        raw_ids = (request.httprequest.args.get('ids') or '').strip()
+        if not raw_ids:
+            return self._json_response(data={'records': []}, message="OK")
+        try:
+            ids = [int(x) for x in raw_ids.split(',') if x.strip()]
+        except ValueError:
+            return self._error_response("Invalid ids", 400, "INVALID_PARAMS")
+        if not ids:
+            return self._json_response(data={'records': []}, message="OK")
+        if len(ids) > self.MAX_PAGE_LIMIT:
+            return self._error_response(
+                f"Too many ids (max {self.MAX_PAGE_LIMIT})",
+                400, "INVALID_PARAMS",
+            )
+
+        # ir.attachment's record rules already gate by parent-record
+        # readability, so .search() returns only what the user is
+        # allowed to see. No need to re-check per record.
+        attachments = request.env['ir.attachment'].search([('id', 'in', ids)])
+        return self._json_response(
+            data={'records': [self._serialize_attachment(a) for a in attachments]},
+            message="OK",
+        )
+
+    @http.route('/api/v2/attachment/<int:attachment_id>', type='http',
+                auth='none', methods=['GET'], csrf=False)
+    def download_attachment(self, attachment_id):
+        """Stream an attachment's binary body with the correct mimetype.
+
+        Read access on the parent record is sufficient (ir.attachment's
+        own record rules enforce this). 404 covers both "doesn't exist"
+        and "exists but you can't see it" to avoid existence-probe
+        leaks.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        attachment = request.env['ir.attachment'].search(
+            [('id', '=', attachment_id)], limit=1,
+        )
+        if not attachment:
+            return self._error_response(
+                "Attachment not found", 404, "ATTACHMENT_NOT_FOUND",
+            )
+        try:
+            raw = attachment.raw
+        except AccessError:
+            return self._error_response(
+                "Attachment not found", 404, "ATTACHMENT_NOT_FOUND",
+            )
+        if raw is None:
+            return self._error_response(
+                "Attachment not found", 404, "ATTACHMENT_NOT_FOUND",
+            )
+
+        # Quote the filename for the Content-Disposition header so
+        # commas / spaces / Unicode characters don't break parsing.
+        from urllib.parse import quote
+        filename = attachment.name or 'attachment'
+        response = request.make_response(
+            raw,
+            headers=[
+                ('Content-Type', attachment.mimetype or 'application/octet-stream'),
+                ('Content-Length', str(len(raw))),
+                ('Content-Disposition', f"inline; filename*=UTF-8''{quote(filename)}"),
+                ('Cache-Control', 'private, max-age=0'),
+            ],
+        )
+        return self._finalize_response(response, 200)
+
     # ===== SALE → INVOICE =====
 
     @http.route('/api/v2/sales/<int:order_id>/create-invoice', type='http',
