@@ -41,23 +41,27 @@ class ResPartner(models.Model):
              "exact-match lookups from payment webhooks and SMS gateways.",
     )
 
-    @api.depends('phone', 'mobile', 'country_id', 'company_id')
+    # Odoo 19 consolidated res.partner.mobile into phone; only phone
+    # remains. If a future addon re-introduces mobile (some HR or
+    # account-related modules historically did), getattr-style access
+    # in _best_e164 keeps this robust without an @api.depends
+    # registration on a possibly-absent field.
+    @api.depends('phone', 'country_id', 'company_id')
     def _compute_phone_e164(self):
         for partner in self:
             partner.phone_e164 = partner._best_e164() or False
 
     def _best_e164(self):
-        """Return the first parseable E.164 from (mobile, phone), else None.
-
-        Mobile is tried first because mobile-money lookups always want
-        the mobile number, and any partner who entered both meant the
-        mobile one to be the SMS-reachable line.
-        """
+        """Return the first parseable E.164 from the partner's phone
+        fields, else None. Tries `mobile` before `phone` so that on
+        Odoo versions or addons that re-introduce a mobile column the
+        SMS-reachable line wins."""
         self.ensure_one()
         if phonenumbers is None:
             return None
         region = self._e164_region_hint()
-        for raw in (self.mobile, self.phone):
+        candidates = (getattr(self, 'mobile', None), self.phone)
+        for raw in candidates:
             normalized = _to_e164(raw, region)
             if normalized:
                 return normalized

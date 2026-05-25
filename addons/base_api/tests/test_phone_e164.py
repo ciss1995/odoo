@@ -44,22 +44,12 @@ class TestPhoneE164(TransactionCase):
         p = self._partner(phone='221771234567', country_id=self.country_sn.id)
         self.assertEqual(p.phone_e164, '+221771234567')
 
-    def test_mobile_wins_over_phone(self):
-        """When both phone and mobile are set, mobile is the canonical
-        SMS-reachable line — mobile-money lookups want it."""
-        p = self._partner(
-            phone='338888888',  # local landline
-            mobile='771234567',
-            country_id=self.country_sn.id,
-        )
-        self.assertEqual(p.phone_e164, '+221771234567')
-
     def test_garbage_phone_returns_false_not_error(self):
         """Phone is user input — we must not raise on bad data."""
         p = self._partner(phone='not a phone number', country_id=self.country_sn.id)
         self.assertFalse(p.phone_e164)
 
-    def test_no_phone_no_mobile_is_empty(self):
+    def test_no_phone_is_empty(self):
         p = self._partner(country_id=self.country_sn.id)
         self.assertFalse(p.phone_e164)
 
