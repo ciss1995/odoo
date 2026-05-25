@@ -23,3 +23,4 @@ from . import test_user_seat_limit
 from . import test_billing_change_plan
 from . import test_phone_e164
 from . import test_mail_endpoints
+from . import test_payment_register

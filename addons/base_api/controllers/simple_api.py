@@ -3250,6 +3250,194 @@ class SimpleApiController(http.Controller):
         )
         return self._finalize_response(response, 200)
 
+    @http.route('/api/v2/account_move/<int:move_id>/register_payment',
+                type='http', auth='none',
+                methods=['POST'], csrf=False, readonly=False)
+    def register_payment_for_move(self, move_id):
+        """Register a payment against a posted invoice or vendor bill.
+
+        Uses Odoo's ``account.payment.register`` wizard — the only
+        reliable path to create + post + reconcile a payment in one
+        atomic call. Direct ``account.payment`` creation with
+        ``reconciled_invoice_ids`` is fragile in Odoo 19 (the M2M is
+        a computed depends field, not writable at create time); the
+        wizard, in contrast, derives partner / partner_type /
+        payment_type from the move, picks a default journal +
+        method-line if not provided, posts the payment, and reconciles
+        it with the move's open AR/AP lines.
+
+        Body (JSON):
+        - ``amount`` (number, optional) — defaults to the move's
+          residual. Pass a smaller number for a partial payment.
+        - ``date`` (YYYY-MM-DD, optional) — defaults to today.
+        - ``journal_id`` (int, optional) — bank/cash journal id.
+          Wizard picks the company's first valid journal if absent.
+        - ``payment_method_line_id`` (int, optional) — the specific
+          method line within the journal (cheque / mobile money /
+          generic manual). Wizard picks the journal default if absent.
+        - ``ref`` (str, optional) — proof-of-payment reference (Wave
+          TX id, bank slip number, MoMo ref). Stored on
+          ``account.payment.ref``.
+
+        Returns the created payment + the move's refreshed
+        payment_state / amount_residual so the SPA can update the
+        UI without a separate fetch.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        if not self._check_model_access('account.move', 'write'):
+            return self._error_response(
+                "Access denied for account.move", 403, "ACCESS_DENIED",
+            )
+        module_error = self._enforce_module_access('account.move')
+        if module_error:
+            return module_error
+
+        # Parse body — empty body is OK (wizard defaults take over).
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+            if not isinstance(data, dict):
+                return self._error_response(
+                    "Body must be a JSON object", 400, "INVALID_BODY",
+                )
+        except Exception:
+            data = {}
+
+        # Resolve target move under the user's scope so a salesperson
+        # can't register payment against a bill they can't see.
+        scope_domain = self._get_record_scope_domain('account.move', user)
+        move = request.env['account.move'].search(
+            [('id', '=', move_id)] + scope_domain, limit=1,
+        )
+        if not move:
+            return self._error_response(
+                f"Invoice {move_id} not found", 404, "MOVE_NOT_FOUND",
+            )
+        if move.state != 'posted':
+            return self._error_response(
+                "Invoice must be posted before payment can be registered",
+                400, "INVALID_MOVE_STATE",
+            )
+        if move.move_type not in (
+            'out_invoice', 'out_refund', 'in_invoice', 'in_refund',
+        ):
+            return self._error_response(
+                "Only invoices and bills can have payments registered",
+                400, "INVALID_MOVE_TYPE",
+            )
+
+        # Build wizard payload. The wizard's amount field defaults to
+        # the move residual; we only set it when the SPA wants a
+        # partial payment.
+        wizard_vals = {}
+        if 'amount' in data and data['amount'] is not None:
+            try:
+                wizard_vals['amount'] = float(data['amount'])
+            except (TypeError, ValueError):
+                return self._error_response(
+                    "'amount' must be a number", 400, "INVALID_PARAMS",
+                )
+            if wizard_vals['amount'] <= 0:
+                return self._error_response(
+                    "'amount' must be positive", 400, "INVALID_PARAMS",
+                )
+        if data.get('date'):
+            wizard_vals['payment_date'] = data['date']
+        if data.get('journal_id'):
+            try:
+                wizard_vals['journal_id'] = int(data['journal_id'])
+            except (TypeError, ValueError):
+                return self._error_response(
+                    "'journal_id' must be an integer",
+                    400, "INVALID_PARAMS",
+                )
+        if data.get('payment_method_line_id'):
+            try:
+                wizard_vals['payment_method_line_id'] = int(
+                    data['payment_method_line_id'],
+                )
+            except (TypeError, ValueError):
+                return self._error_response(
+                    "'payment_method_line_id' must be an integer",
+                    400, "INVALID_PARAMS",
+                )
+        if data.get('ref'):
+            # The wizard's "communication" field becomes the payment's
+            # memo + the bank statement narration on reconciliation.
+            wizard_vals['communication'] = str(data['ref'])[:200]
+
+        try:
+            ctx = {
+                'active_model': 'account.move',
+                'active_ids': move.ids,
+                'active_id': move.id,
+            }
+            wizard = request.env['account.payment.register'] \
+                .with_context(**ctx).create(wizard_vals)
+            wizard.action_create_payments()
+
+            # Refresh move + locate the freshly-created payment. The
+            # wizard records the payment(s) on move.matched_payment_ids;
+            # we read the most recent one for the response.
+            move.invalidate_recordset()
+            payment = request.env['account.payment']
+            if move.matched_payment_ids:
+                payment = move.matched_payment_ids.sorted('id')[-1]
+
+            payment_data = None
+            if payment:
+                # Resolve journal + method line into [id, name] tuples
+                # so the SPA can render them without a second fetch.
+                payment_data = {
+                    'id': payment.id,
+                    'name': payment.name or '',
+                    'amount': payment.amount,
+                    'date': fields.Date.to_string(payment.date) if payment.date else None,
+                    'state': payment.state,
+                    'ref': payment.ref or '',
+                    'partner_id': [payment.partner_id.id, payment.partner_id.display_name] if payment.partner_id else False,
+                    'journal_id': [payment.journal_id.id, payment.journal_id.display_name] if payment.journal_id else False,
+                    'payment_method_line_id': [
+                        payment.payment_method_line_id.id,
+                        payment.payment_method_line_id.display_name,
+                    ] if payment.payment_method_line_id else False,
+                }
+            move_data = {
+                'id': move.id,
+                'name': move.name,
+                'state': move.state,
+                'payment_state': move.payment_state,
+                'amount_residual': move.amount_residual,
+                'matched_payment_ids': move.matched_payment_ids.ids,
+            }
+            return self._json_response(
+                data={'payment': payment_data, 'move': move_data},
+                message="Payment registered",
+                status_code=201,
+            )
+        except (AccessError, UserError, ValidationError) as e:
+            return self._error_response(
+                self._safe_exc_message(e), 400, "PAYMENT_REGISTER_ERROR",
+            )
+        except Exception as e:
+            _logger.error(
+                "Error registering payment for move %d: %s", move_id, str(e),
+            )
+            return self._error_response(
+                "Error registering payment", 500, "PAYMENT_REGISTER_ERROR",
+            )
+
     @http.route('/api/v2/record_attachments', type='http', auth='none',
                 methods=['GET'], csrf=False)
     def list_record_attachments(self):
