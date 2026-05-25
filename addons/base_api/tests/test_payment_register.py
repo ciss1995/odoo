@@ -111,7 +111,9 @@ class TestPaymentRegister(HttpCase):
         pay = payload['data']['payment']
         self.assertEqual(pay['state'], 'posted')
         self.assertEqual(pay['amount'], 100.0)
-        self.assertEqual(pay['ref'], 'Bank slip #42')
+        # The wizard's ``communication`` carries through to the
+        # payment's ``memo`` field (Odoo 19 renamed away from "ref").
+        self.assertEqual(pay['memo'], 'Bank slip #42')
 
         bill.invalidate_recordset()
         self.assertIn(bill.payment_state, ('paid', 'in_payment'))

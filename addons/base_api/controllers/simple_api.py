@@ -3399,13 +3399,16 @@ class SimpleApiController(http.Controller):
             if payment:
                 # Resolve journal + method line into [id, name] tuples
                 # so the SPA can render them without a second fetch.
+                # In Odoo 19 the payment's free-text note lives on
+                # ``memo`` (the legacy ``ref`` field was removed); we
+                # expose it as ``memo`` to the SPA.
                 payment_data = {
                     'id': payment.id,
                     'name': payment.name or '',
                     'amount': payment.amount,
                     'date': fields.Date.to_string(payment.date) if payment.date else None,
                     'state': payment.state,
-                    'ref': payment.ref or '',
+                    'memo': payment.memo or '',
                     'partner_id': [payment.partner_id.id, payment.partner_id.display_name] if payment.partner_id else False,
                     'journal_id': [payment.journal_id.id, payment.journal_id.display_name] if payment.journal_id else False,
                     'payment_method_line_id': [
