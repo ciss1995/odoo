@@ -19,3 +19,4 @@ from . import test_fiscal_position_autoapply
 from . import test_lettrage
 from . import test_bank_reconciliation
 from . import test_ohada_reports
+from . import test_user_seat_limit

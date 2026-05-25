@@ -188,7 +188,14 @@ class SubscriptionEnforcer:
 
         if current_active_user_count >= max_users:
             return False, {
-                'message': f'User limit reached ({max_users} users). Upgrade your plan to add more users.',
+                # Message mirrors the SPA's `settings.userLimitReached`
+                # translation; either side is shown to operators depending
+                # on which surface raised the block.
+                'message': (
+                    f'User limit reached ({current_active_user_count}/{max_users} users). '
+                    f'Deactivate or remove an existing user before adding a new one, '
+                    f'or upgrade your plan for more seats.'
+                ),
                 'code': 'USER_LIMIT_REACHED',
                 'status_code': 403,
             }
