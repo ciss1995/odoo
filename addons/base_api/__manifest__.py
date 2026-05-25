@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Base REST API',
-    'version': '19.0.7.1.0',
+    'version': '19.0.7.2.0',
     'license': 'LGPL-3',
     'category': 'API',
     'summary': 'Headless REST API module for Odoo',

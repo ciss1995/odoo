@@ -5002,6 +5002,20 @@ class SimpleApiController(http.Controller):
             'timezone': params['timezone'],
         }
 
+    def _read_group_count(self, row, group_field):
+        """Pull the row count from a read_group result row.
+
+        Odoo 19 lazy read_group with a single groupby renames the
+        count key from ``__count`` to ``<groupfield>_count`` (see
+        odoo/orm/models.py:2812). Older code paths still emit
+        ``__count``. Check both so behavior is stable across modes.
+        """
+        key_basename = group_field.split(':')[0] if group_field else None
+        candidate = f'{key_basename}_count' if key_basename else None
+        if candidate and candidate in row:
+            return row.get(candidate, 0) or 0
+        return row.get('__count', 0) or 0
+
     def _chart_series(self, rg_data, date_key, value_field=None):
         """Convert read_group results into {labels, series} for charting."""
         chart = {'labels': [], 'series': [{'label': 'Count', 'data': []}]}
@@ -5009,20 +5023,44 @@ class SimpleApiController(http.Controller):
             chart['series'].append({'label': value_field, 'data': []})
         for row in rg_data:
             chart['labels'].append(row.get(date_key, ''))
-            chart['series'][0]['data'].append(row.get('__count', 0))
+            chart['series'][0]['data'].append(self._read_group_count(row, date_key))
             if value_field:
                 chart['series'][1]['data'].append(row.get(value_field, 0) or 0)
         return chart
 
-    def _breakdown(self, rg_data, group_field, value_field=None):
-        """Convert read_group results into a list of breakdown buckets."""
+    def _breakdown(self, rg_data, group_field, value_field=None, model=None):
+        """Convert read_group results into a list of breakdown buckets.
+
+        When ``model`` is provided and ``group_field`` is a Selection
+        field, labels are looked up via ``fields_get`` so they appear
+        translated in the user's lang (e.g. ``draft`` → ``Brouillon``
+        for a fr_FR user). Without ``model``, selection rows fall
+        back to the raw technical key, which is never translated.
+        """
+        selection_labels = None
+        if model is not None and group_field:
+            try:
+                field_info = model.fields_get([group_field]).get(group_field) or {}
+                if field_info.get('type') == 'selection':
+                    selection_labels = dict(field_info.get('selection') or [])
+            except Exception:
+                selection_labels = None
+
         buckets = []
         for row in rg_data:
             g = row.get(group_field)
+            if isinstance(g, (list, tuple)):
+                bucket_id, bucket_label = g[0], g[1]
+            else:
+                bucket_id = g
+                if selection_labels is not None and g in selection_labels:
+                    bucket_label = selection_labels[g]
+                else:
+                    bucket_label = str(g) if g else 'Undefined'
             buckets.append({
-                'id': g[0] if isinstance(g, (list, tuple)) else g,
-                'label': g[1] if isinstance(g, (list, tuple)) else str(g or 'Undefined'),
-                'count': row.get('__count', 0),
+                'id': bucket_id,
+                'label': bucket_label,
+                'count': self._read_group_count(row, group_field),
                 'value': (row.get(value_field, 0) or 0) if value_field else 0,
             })
         return buckets
@@ -5607,7 +5645,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_stage': self._breakdown(stage_rg, 'stage_id', 'expected_revenue')},
+                'breakdowns': {'by_stage': self._breakdown(stage_rg, 'stage_id', 'expected_revenue', model=Lead)},
                 'chart': self._chart_series(chart_rg, 'create_date:month', 'expected_revenue'),
                 'alerts': alerts,
                 'meta': self._analytics_meta(params),
@@ -5675,7 +5713,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total')},
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total', model=SO)},
                 'chart': self._chart_series(chart_rg, 'date_order:month', 'amount_total'),
                 'alerts': alerts,
                 'meta': self._analytics_meta(params),
@@ -5742,7 +5780,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_payment_state': self._breakdown(state_rg, 'payment_state', 'amount_total')},
+                'breakdowns': {'by_payment_state': self._breakdown(state_rg, 'payment_state', 'amount_total', model=Move)},
                 'chart': self._chart_series(chart_rg, 'invoice_date:month', 'amount_total'),
                 'alerts': alerts,
                 'meta': self._analytics_meta(params),
@@ -5808,7 +5846,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_state': self._breakdown(state_rg, 'state')},
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', model=Pick)},
                 'chart': self._chart_series(chart_rg, 'scheduled_date:month'),
                 'alerts': alerts,
                 'meta': self._analytics_meta(params),
@@ -5868,7 +5906,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total')},
+                'breakdowns': {'by_state': self._breakdown(state_rg, 'state', 'amount_total', model=PO)},
                 'chart': self._chart_series(chart_rg, 'date_order:month', 'amount_total'),
                 'alerts': alerts,
                 'meta': self._analytics_meta(params),
@@ -5927,7 +5965,7 @@ class SimpleApiController(http.Controller):
 
             return self._json_response(data={
                 'kpis': kpis,
-                'breakdowns': {'by_department': self._breakdown(dept_rg, 'department_id')},
+                'breakdowns': {'by_department': self._breakdown(dept_rg, 'department_id', model=Emp)},
                 'chart': self._chart_series(chart_rg, 'create_date:month'),
                 'alerts': [],
                 'meta': self._analytics_meta(params),
@@ -5994,8 +6032,8 @@ class SimpleApiController(http.Controller):
             return self._json_response(data={
                 'kpis': kpis,
                 'breakdowns': {
-                    'by_stage': self._breakdown(stage_rg, 'stage_id'),
-                    'by_project': self._breakdown(project_rg, 'project_id'),
+                    'by_stage': self._breakdown(stage_rg, 'stage_id', model=Task),
+                    'by_project': self._breakdown(project_rg, 'project_id', model=Task),
                 },
                 'chart': self._chart_series(chart_rg, 'create_date:month'),
                 'alerts': alerts,

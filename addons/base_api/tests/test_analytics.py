@@ -212,6 +212,90 @@ class TestAnalyticsEndpoints(HttpCase):
                           ['ACCESS_DENIED', 'MODULE_NOT_FOUND'],
                           "Unexpected error for purchases")
 
+    def test_purchases_breakdown_counts_match_records(self):
+        """Pipeline Breakdown count must reflect actual record count.
+
+        Odoo 19 read_group(lazy=True) renames the count key from
+        ``__count`` to ``<groupby>_count`` (e.g. ``state_count``).
+        The original ``_breakdown`` only checked ``__count`` so
+        every bucket silently reported count=0 even when amounts
+        populated. This regression test creates a draft PO and
+        asserts the resulting bucket count is non-zero.
+        """
+        if 'purchase.order' not in self.env:
+            self.skipTest("purchase module not installed")
+        vendor = self.env['res.partner'].sudo().create({'name': 'Pipeline Test Vendor'})
+        product = self.env['product.product'].sudo().search([], limit=1)
+        if not product:
+            self.skipTest("no product available for PO line")
+        self.env['purchase.order'].sudo().create({
+            'partner_id': vendor.id,
+            'date_order': '2026-05-20 10:00:00',
+            'order_line': [(0, 0, {
+                'product_id': product.id,
+                'name': product.display_name,
+                'product_qty': 1,
+                'price_unit': 1000.0,
+            })],
+        })
+
+        token = self._login()
+        body = self._get('/analytics/purchases/overview', token, {
+            'from': '2026-01-01', 'to': '2026-12-31',
+        })
+        if not body.get('success'):
+            self.skipTest(f"purchases endpoint not accessible: {body.get('error')}")
+        buckets = body['data']['breakdowns']['by_state']
+        draft_bucket = next((b for b in buckets if b['id'] == 'draft'), None)
+        self.assertIsNotNone(draft_bucket, f"No draft bucket found in {buckets!r}")
+        self.assertGreater(
+            draft_bucket['count'], 0,
+            "Pipeline Breakdown count=0 despite a draft PO existing — "
+            "read_group count-key fallback regression",
+        )
+
+    def test_purchases_breakdown_labels_use_translated_selection(self):
+        """Selection-field labels must use fields_get (translated),
+        not the raw technical key.
+
+        For a fr_FR user, ``state == 'draft'`` should surface as
+        ``Brouillon`` (or whatever Odoo's account/purchase
+        translation says), NOT the raw English key ``draft``.
+        """
+        if 'purchase.order' not in self.env:
+            self.skipTest("purchase module not installed")
+        product = self.env['product.product'].sudo().search([], limit=1)
+        if not product:
+            self.skipTest("no product available for PO line")
+        vendor = self.env['res.partner'].sudo().create({'name': 'Label Test Vendor'})
+        self.env['purchase.order'].sudo().create({
+            'partner_id': vendor.id,
+            'date_order': '2026-05-20 10:00:00',
+            'order_line': [(0, 0, {
+                'product_id': product.id,
+                'name': product.display_name,
+                'product_qty': 1,
+                'price_unit': 1000.0,
+            })],
+        })
+
+        token = self._login()
+        body = self._get('/analytics/purchases/overview', token, {
+            'from': '2026-01-01', 'to': '2026-12-31',
+        })
+        if not body.get('success'):
+            self.skipTest(f"purchases endpoint not accessible: {body.get('error')}")
+        buckets = body['data']['breakdowns']['by_state']
+        draft_bucket = next((b for b in buckets if b['id'] == 'draft'), None)
+        self.assertIsNotNone(draft_bucket, f"No draft bucket found in {buckets!r}")
+        # label must be derived from the selection definition — for the
+        # default en_US user, that's "RFQ", never the raw key.
+        self.assertNotEqual(
+            draft_bucket['label'], 'draft',
+            "Pipeline Breakdown label leaked the raw technical key — "
+            "selection-field translation regression",
+        )
+
     # --- HR Overview ---
 
     def test_hr_overview_success(self):
