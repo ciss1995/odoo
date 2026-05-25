@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Base REST API',
-    'version': '19.0.7.0.0',
+    'version': '19.0.7.1.0',
     'license': 'LGPL-3',
     'category': 'API',
     'summary': 'Headless REST API module for Odoo',
@@ -15,6 +15,9 @@
     'author': 'Your Company',
     'website': 'https://www.yourcompany.com',
     'depends': ['base', 'web', 'sale', 'sale_stock', 'purchase', 'purchase_stock', 'account', 'hr', 'crm'],
+    'external_dependencies': {
+        'python': ['phonenumbers'],
+    },
     'data': [
         'security/ir.model.access.csv',
         'views/res_users_views.xml',

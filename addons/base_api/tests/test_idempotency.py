@@ -116,3 +116,56 @@ class TestIdempotencyKey(HttpCase):
         token = self._login()
         r = self._post(token, {'name': 'X'}, idempotency_key='a' * 65)
         self.assertEqual(r.status_code, 400)
+
+    def test_sale_confirm_endpoint_honors_idempotency_key(self):
+        """Smoke test that the Idempotency-Key wiring landed on
+        /api/v2/sales/{id}/confirm — one of the money-mutating endpoints
+        wrapped alongside /api/v2/create/*.
+
+        We don't need to re-prove the cache mechanism (covered above on
+        /create/res.partner). The check here is that the route calls
+        _idempotency_lookup + _idempotency_store, evidenced by an
+        api.idempotency row materializing with a non-empty cached body.
+        """
+        token = self._login()
+        partner = self.env['res.partner'].sudo().create({
+            'name': 'Idem Confirm Customer',
+        })
+        product = self.env['product.product'].sudo().create({
+            'name': 'Idem Confirm Product',
+            'list_price': 100.0,
+            'type': 'consu',
+        })
+        so = self.env['sale.order'].sudo().create({
+            'partner_id': partner.id,
+            'order_line': [(0, 0, {
+                'product_id': product.id,
+                'product_uom_qty': 1,
+                'price_unit': 100.0,
+            })],
+        })
+        self.env.cr.commit()
+
+        key = 'idem-conf-' + secrets.token_hex(8)
+        url = f'/api/v2/sales/{so.id}/confirm'
+        headers = {
+            'session-token': token,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': key,
+        }
+
+        r1 = self.url_open(url, data='{}', headers=headers)
+        r2 = self.url_open(url, data='{}', headers=headers)
+
+        self.assertEqual(r1.status_code, 200, r1.text)
+        self.assertEqual(r2.status_code, 200, r2.text)
+        # Replay must be byte-equivalent — proves the second call
+        # returned the cached response rather than re-running confirm.
+        self.assertEqual(r1.json(), r2.json())
+
+        # And exactly one api.idempotency row exists for this key,
+        # with the response actually cached (non-zero status, non-empty body).
+        rows = self.env['api.idempotency'].sudo().search([('key', '=', key)])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows.response_status, 200)
+        self.assertTrue(rows.response_json)

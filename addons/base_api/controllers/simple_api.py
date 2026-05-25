@@ -2889,6 +2889,10 @@ class SimpleApiController(http.Controller):
         if quota_error:
             return quota_error
 
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         try:
             # --- access checks ---
             if 'sale.order' not in request.env:
@@ -2975,11 +2979,12 @@ class SimpleApiController(http.Controller):
                 'invoice_origin', 'invoice_line_ids',
             ])[0]
 
-            return self._json_response(
+            response = self._json_response(
                 data={'invoice': inv_data},
                 message="Invoice created from sale order",
                 status_code=201,
             )
+            return self._idempotency_store(idem, response)
 
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
@@ -3024,6 +3029,10 @@ class SimpleApiController(http.Controller):
         if quota_error:
             return quota_error
 
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         try:
             if 'sale.order' not in request.env:
                 return self._error_response("Sales module not installed", 404, "MODULE_NOT_FOUND")
@@ -3045,10 +3054,11 @@ class SimpleApiController(http.Controller):
                 order.action_confirm()
 
             data = order.read(['id', 'name', 'state', 'opportunity_id'])[0]
-            return self._json_response(
+            response = self._json_response(
                 data={'order': data},
                 message=f"Sale order {order_id} confirmed",
             )
+            return self._idempotency_store(idem, response)
 
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
@@ -3103,6 +3113,13 @@ class SimpleApiController(http.Controller):
         quota_error = self._enforce_api_quota()
         if quota_error:
             return quota_error
+
+        # Critical: this endpoint mutates SO + invoice + payment + stock
+        # in one call. A retried double-click without idempotency = double
+        # sale, double payment, double stock decrement.
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
 
         try:
             # --- parse body ---
@@ -3342,7 +3359,7 @@ class SimpleApiController(http.Controller):
                     'reference': move.reference,
                 })
 
-            return self._json_response(
+            response = self._json_response(
                 data={
                     'sale_order': order_data,
                     'invoice': inv_data,
@@ -3353,6 +3370,7 @@ class SimpleApiController(http.Controller):
                 message="In-store purchase completed: SO confirmed, delivered, invoiced, and paid",
                 status_code=201,
             )
+            return self._idempotency_store(idem, response)
 
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
@@ -3828,6 +3846,10 @@ class SimpleApiController(http.Controller):
         if quota_error:
             return quota_error
 
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         try:
             if 'purchase.order' not in request.env:
                 return self._error_response(
@@ -3914,11 +3936,12 @@ class SimpleApiController(http.Controller):
                     "consumable (storable) products generate receipts."
                 )
 
-            return self._json_response(
+            response = self._json_response(
                 data={'purchase_order': order_data},
                 message=message,
                 status_code=200,
             )
+            return self._idempotency_store(idem, response)
 
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
@@ -6962,6 +6985,10 @@ class SimpleApiController(http.Controller):
         if acc_error:
             return acc_error
 
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         content_type = request.httprequest.headers.get('Content-Type', '')
         if 'application/json' not in content_type:
             return self._error_response("Content-Type must be application/json",
@@ -7005,12 +7032,13 @@ class SimpleApiController(http.Controller):
 
             lines.reconcile()
             full = lines.mapped('full_reconcile_id')[:1]
-            return self._json_response(data={
+            response = self._json_response(data={
                 'full_reconcile_id': full.id if full else None,
                 'lettrage_code': getattr(full, 'lettrage_code', None) if full else None,
                 'partial': not bool(full),
                 'line_ids': lines.ids,
             }, message="Lines reconciled")
+            return self._idempotency_store(idem, response)
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
@@ -7037,6 +7065,10 @@ class SimpleApiController(http.Controller):
         acc_error = self._lettrage_check_access(user, write=True)
         if acc_error:
             return acc_error
+
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
 
         content_type = request.httprequest.headers.get('Content-Type', '')
         if 'application/json' not in content_type:
@@ -7072,9 +7104,10 @@ class SimpleApiController(http.Controller):
                 return self._error_response("Nothing to unreconcile", 400, "INVALID_PARAMS")
 
             target_lines.remove_move_reconcile()
-            return self._json_response(data={
+            response = self._json_response(data={
                 'unreconciled_line_ids': target_lines.ids,
             }, message="Lines unreconciled")
+            return self._idempotency_store(idem, response)
         except AccessError:
             return self._error_response("Access denied", 403, "ACCESS_DENIED")
         except UserError as e:
@@ -8225,6 +8258,16 @@ class SimpleApiController(http.Controller):
                 403, "PLAN_NOT_SELF_SERVICE",
             )
 
+        # Idempotency: the CP plan-change call can take up to 600s (it
+        # runs an Odoo module install). A user double-clicking the
+        # confirm button — or a network blip that triggers a retry —
+        # must not start a second concurrent install. The cached
+        # response replays on retry; same key + different new_plan_slug
+        # → 409 via the request-hash mismatch path.
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         tenant_id = os.environ.get('TENANT_ID', '').strip()
         cp_url = os.environ.get('CONTROL_PLANE_URL', '').strip().rstrip('/')
         cp_token = os.environ.get('CONTROL_PLANE_TOKEN', '').strip()
@@ -8251,10 +8294,11 @@ class SimpleApiController(http.Controller):
         try:
             with urllib.request.urlopen(req, timeout=600) as resp:
                 body = resp.read().decode('utf-8')
-            return self._json_response(
+            response = self._json_response(
                 data=json.loads(body),
                 message="Plan changed",
             )
+            return self._idempotency_store(idem, response)
         except urllib.error.HTTPError as exc:
             try:
                 cp_body = exc.read().decode('utf-8')
