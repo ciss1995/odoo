@@ -20,3 +20,4 @@ from . import test_lettrage
 from . import test_bank_reconciliation
 from . import test_ohada_reports
 from . import test_user_seat_limit
+from . import test_billing_change_plan

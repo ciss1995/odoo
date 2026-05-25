@@ -8149,9 +8149,15 @@ class SimpleApiController(http.Controller):
         is_valid, user = self._authenticate_session()
         if not is_valid:
             return user
-        sub_error = self._enforce_subscription()
-        if sub_error:
-            return sub_error
+
+        # NOTE: we deliberately skip the generic _enforce_subscription()
+        # gate here. Billing endpoints have to stay reachable even when
+        # the rest of the API is blocked (overdue payment, expired grace
+        # period, etc.) — otherwise the customer can never act on the
+        # problem they're being shown. The per-state messaging below
+        # gives them a concrete next action (pay invoice / contact sales)
+        # instead of the generic "service unavailable" they'd otherwise
+        # get from _enforce_subscription.
 
         # Admin-only — non-admins can't change their own plan even
         # for downgrades; the operation is billable.
@@ -8160,6 +8166,47 @@ class SimpleApiController(http.Controller):
                 "Only administrators can change the subscription plan.",
                 403, "ADMIN_ONLY",
             )
+
+        # Per-state gate: refuse with a billing-aware message instead
+        # of the generic subscription block.
+        enforcer = self._get_enforcer()
+        if enforcer is not None:
+            try:
+                info = enforcer.get_tenant_info() or {}
+            except RuntimeError:
+                return self._error_response(
+                    "Could not verify subscription status. Try again in a moment.",
+                    503, "CP_UNREACHABLE",
+                )
+            status = (info.get('status') or '').lower()
+            payment_status = (info.get('payment_status') or '').lower()
+
+            if status == 'suspended':
+                return self._error_response(
+                    "Your tenant is suspended. Contact sales@toomde.com to reactivate.",
+                    403, "TENANT_SUSPENDED",
+                )
+            if status in ('cancelled', 'deleted'):
+                return self._error_response(
+                    "Your subscription has ended. Contact sales@toomde.com to restart it.",
+                    403, "TENANT_CANCELLED",
+                )
+            if status == 'provisioning':
+                return self._error_response(
+                    "Your tenant is still being set up. Try again in a few minutes.",
+                    409, "TENANT_PROVISIONING",
+                )
+            # Overdue with no grace days left: block with HTTP 402
+            # Payment Required + actionable message.
+            if payment_status == 'overdue':
+                grace = info.get('grace_days_remaining')
+                if grace is None or grace <= 0:
+                    return self._error_response(
+                        "Your last invoice is unpaid. Please settle it on your "
+                        "billing portal, or contact sales@toomde.com for help, "
+                        "before changing your plan.",
+                        402, "PAYMENT_OVERDUE",
+                    )
 
         content_type = request.httprequest.headers.get('Content-Type', '')
         if 'application/json' not in content_type:
