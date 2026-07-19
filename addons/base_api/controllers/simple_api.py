@@ -3250,6 +3250,64 @@ class SimpleApiController(http.Controller):
         )
         return self._finalize_response(response, 200)
 
+    @http.route('/api/v2/attachment/<int:attachment_id>', type='http',
+                auth='none', methods=['DELETE'], csrf=False, readonly=False)
+    def delete_attachment(self, attachment_id):
+        """Delete an attachment. Authorization is rooted in the parent record:
+        the caller must hold WRITE access on the ``res_model``/``res_id`` the
+        attachment is bound to (same rule that lets them upload it). Attachments
+        not bound to a writable parent record are refused.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            attachment = request.env['ir.attachment'].search(
+                [('id', '=', attachment_id)], limit=1,
+            )
+            if not attachment:
+                return self._error_response(
+                    "Attachment not found", 404, "ATTACHMENT_NOT_FOUND",
+                )
+
+            if not attachment.res_model or not attachment.res_id:
+                return self._error_response(
+                    "Cannot delete an attachment not linked to a record",
+                    403, "ACCESS_DENIED",
+                )
+
+            # Require write access on the parent record.
+            _record, err = self._resolve_mail_target(
+                attachment.res_model, attachment.res_id, user, 'write',
+            )
+            if err:
+                return err
+
+            # Authorized via parent-write; unlink with sudo so ir.attachment's
+            # own (stricter) ACL doesn't block a legitimate delete.
+            attachment.sudo().unlink()
+            return self._json_response(
+                data={'id': attachment_id}, message="Attachment deleted",
+            )
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "DELETE_ERROR")
+        except Exception as e:
+            _logger.error("Error deleting attachment %s: %s", attachment_id, str(e))
+            return self._error_response("Error deleting attachment", 500, "DELETE_ERROR")
+
     @http.route('/api/v2/account_move/<int:move_id>/register_payment',
                 type='http', auth='none',
                 methods=['POST'], csrf=False, readonly=False)
