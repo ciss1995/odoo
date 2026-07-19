@@ -3856,8 +3856,13 @@ class SimpleApiController(http.Controller):
         We use Odoo's canonical ``account.move._reverse_moves()`` (the same
         engine the "Add Credit Note" / "Reverse" wizard uses) rather than a
         raw ``create({'move_type': 'out_refund'})``, so the reversal is
-        properly linked and its lines mirror the source. The credit note is
-        left in ``draft`` for review before posting.
+        properly linked and its lines mirror the source.
+
+        Optional JSON body ``{"post": true}`` performs a full "reverse &
+        reconcile": the credit note is posted and reconciled against the
+        source, so the invoice's balance/status immediately reflects it
+        (payment_state becomes ``reversed``). Default (``post`` false /
+        absent) leaves the credit note in ``draft`` for review.
         """
         is_valid, user = self._authenticate_session()
         if not is_valid:
@@ -3895,10 +3900,19 @@ class SimpleApiController(http.Controller):
                     "Only a posted invoice can have a credit note.", 400, "INVALID_STATE",
                 )
 
+            # Optional body: {"post": true} → reverse-and-reconcile (posts the
+            # credit note and reconciles it against the invoice). Body is
+            # optional, so tolerate a missing/invalid one.
+            try:
+                body = request.httprequest.get_json(force=True, silent=True) or {}
+            except Exception:
+                body = {}
+            do_post = bool(body.get('post'))
+
             reverse = move._reverse_moves([{
                 'ref': f"Reversal of: {move.name or ''}",
                 'invoice_date': move.invoice_date,
-            }])
+            }], cancel=do_post)
 
             data = reverse.read(['id', 'name', 'move_type', 'state', 'reversed_entry_id'])[0]
             response = self._json_response(
