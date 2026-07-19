@@ -1139,6 +1139,200 @@ class SimpleApiController(http.Controller):
             _logger.error("Error creating product category: %s", str(e))
             return self._error_response("Error creating product category", 500, "CREATE_ERROR")
 
+    @http.route('/api/v2/read_group/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
+    def read_group_model(self, model):
+        """Aggregate (GROUP BY) records via Odoo's read_group in one query.
+
+        Query params:
+        - ``group_by`` — JSON list or comma string of groupby fields, e.g.
+          ``["partner_id"]`` or ``date_order:month``. (required)
+        - ``measures`` — JSON list of "field:agg" (sum/avg/min/max) to compute,
+          e.g. ``["amount_total:sum"]``. ``__count`` is always returned.
+        - ``domain`` — JSON Odoo domain (optional).
+        - ``limit`` (default 50, max 200), ``order`` (e.g. ``amount_total desc``).
+
+        Powers analytical questions (top customers, salesperson leaderboard,
+        unpaid-by-customer, sales-by-month) without fetching raw records or
+        looping. Same auth/ACL/scope rules as /search.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if model not in request.env:
+                return self._error_response(f"Model '{model}' not found", 404, "MODEL_NOT_FOUND")
+            if self._is_model_blocked(model):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+            module_error = self._enforce_module_access(model)
+            if module_error:
+                return module_error
+            if not self._check_model_access(model, 'read'):
+                return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+
+            args = request.httprequest.args
+
+            # group_by (required) — JSON list or comma-separated string.
+            raw_group = (args.get('group_by') or args.get('groupby') or '').strip()
+            if not raw_group:
+                return self._error_response("'group_by' is required", 400, "INVALID_PARAMS")
+            try:
+                group_by = json.loads(raw_group) if raw_group.startswith('[') else [g.strip() for g in raw_group.split(',') if g.strip()]
+            except (ValueError, TypeError):
+                return self._error_response("Invalid 'group_by'", 400, "INVALID_PARAMS")
+            if not isinstance(group_by, list) or not group_by or len(group_by) > 3:
+                return self._error_response("'group_by' must be a list of 1-3 fields", 400, "INVALID_PARAMS")
+
+            # measures — JSON list of "field:agg". Optional.
+            raw_measures = (args.get('measures') or args.get('fields') or '').strip()
+            measures = []
+            if raw_measures:
+                try:
+                    measures = json.loads(raw_measures) if raw_measures.startswith('[') else [m.strip() for m in raw_measures.split(',') if m.strip()]
+                except (ValueError, TypeError):
+                    return self._error_response("Invalid 'measures'", 400, "INVALID_PARAMS")
+            if not isinstance(measures, list) or len(measures) > 6:
+                return self._error_response("'measures' must be a list of <= 6 items", 400, "INVALID_PARAMS")
+
+            # domain (optional) + user scope.
+            domain = []
+            raw_domain = (args.get('domain') or '').strip()
+            if raw_domain:
+                try:
+                    domain = json.loads(raw_domain)
+                except (ValueError, TypeError):
+                    return self._error_response("Invalid 'domain'", 400, "INVALID_PARAMS")
+                if not isinstance(domain, list):
+                    return self._error_response("'domain' must be a list", 400, "INVALID_PARAMS")
+            domain = domain + self._get_record_scope_domain(model, user)
+
+            try:
+                limit = min(int(args.get('limit', 50)), 200)
+            except (TypeError, ValueError):
+                limit = 50
+            order = args.get('order') or False
+
+            model_obj = request.env[model]
+            rows = model_obj.read_group(
+                domain,
+                fields=measures,
+                groupby=group_by,
+                limit=limit,
+                orderby=order,
+                lazy=False,
+            )
+
+            return self._json_response(
+                data={'groups': rows, 'group_by': group_by, 'measures': measures, 'count': len(rows)},
+                message=f"Aggregated {model} into {len(rows)} group(s)",
+            )
+
+        except AccessError:
+            return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except (MissingError, ValidationError, UserError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "READ_GROUP_ERROR")
+        except Exception as e:
+            _logger.error("Error read_group %s: %s", model, str(e))
+            return self._error_response("Error aggregating records", 400, "READ_GROUP_ERROR")
+
+    @http.route('/api/v2/ai/stock-levels', type='http', auth='none', methods=['GET'], csrf=False)
+    def ai_stock_levels(self):
+        """Stock levels for storable products in one call — for AI queries like
+        'what's out of stock / low on stock'.
+
+        Returns each storable product with on-hand (qty_available), forecast
+        (virtual_available), the reorder minimum, and a status of
+        out_of_stock / low / ok. ``?status=out`` or ``?status=low`` filters.
+        Avoids the agent looping product-by-product (qty_available is a
+        computed field and can't be domain-filtered).
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        try:
+            if 'product.product' not in request.env:
+                return self._error_response("Inventory module not installed", 404, "MODULE_NOT_FOUND")
+            module_error = self._enforce_module_access('product.product')
+            if module_error:
+                return module_error
+            if not self._check_model_access('product.product', 'read'):
+                return self._error_response("Access denied for products", 403, "ACCESS_DENIED")
+
+            args = request.httprequest.args
+            status_filter = (args.get('status') or '').strip().lower()
+            try:
+                limit = min(int(args.get('limit', 200)), 500)
+            except (TypeError, ValueError):
+                limit = 200
+
+            Product = request.env['product.product']
+            # Storable goods only (services/consumables without tracking have no
+            # meaningful on-hand). Field name differs across versions.
+            domain = [('type', '!=', 'service')]
+            products = Product.search(domain, limit=limit)
+
+            out, low, ok = [], [], []
+            for p in products:
+                qty = p.qty_available
+                forecast = p.virtual_available
+                reorder_min = getattr(p, 'reordering_min_qty', 0) or 0
+                row = {
+                    'id': p.id,
+                    'name': p.display_name,
+                    'default_code': p.default_code or '',
+                    'qty_available': qty,
+                    'virtual_available': forecast,
+                    'reordering_min_qty': reorder_min,
+                    'uom': p.uom_id.name if p.uom_id else '',
+                }
+                if qty <= 0:
+                    row['status'] = 'out_of_stock'
+                    out.append(row)
+                elif reorder_min and qty < reorder_min:
+                    row['status'] = 'low'
+                    low.append(row)
+                else:
+                    row['status'] = 'ok'
+                    ok.append(row)
+
+            if status_filter in ('out', 'out_of_stock'):
+                result = {'out_of_stock': out, 'counts': {'out_of_stock': len(out)}}
+            elif status_filter == 'low':
+                result = {'low': low, 'counts': {'low': len(low)}}
+            else:
+                result = {
+                    'out_of_stock': out,
+                    'low': low,
+                    'counts': {'out_of_stock': len(out), 'low': len(low), 'ok': len(ok), 'total': len(products)},
+                }
+
+            return self._json_response(data=result, message="Stock levels")
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except Exception as e:
+            _logger.error("Error ai_stock_levels: %s", str(e))
+            return self._error_response("Error computing stock levels", 400, "STOCK_LEVELS_ERROR")
+
     @http.route('/api/v2/search/<string:model>', type='http', auth='none', methods=['GET'], csrf=False)
     def search_model(self, model):
         """Search any model with authentication and field specification."""
