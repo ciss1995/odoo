@@ -107,6 +107,25 @@ class ImportsController(BaseApiController):
             return False, None, False, result
         return True, result, False, None
 
+    def _require_group(self, user, group_xmlid, label):
+        """Session-path authorization gate for financial/HR imports (F-009).
+
+        The batch runners write through ``sudo()`` (needed for the internal
+        control-plane path, which legitimately runs as superuser), so on the
+        session path ACL would otherwise never fire — any subscribed user
+        could post journal entries, rewrite the chart of accounts, or
+        overwrite stock. Require the appropriate manager group before running.
+        Internal-token callers never reach this (they bypass on is_internal).
+
+        Returns None when allowed, otherwise a 403 error response.
+        """
+        if user and user.has_group(group_xmlid):
+            return None
+        return self._error_response(
+            f"Access denied: {label} import requires elevated rights",
+            403, "ACCESS_DENIED",
+        )
+
     def _read_batch_payload(self, domain):
         """Parse + shallow-validate the batch envelope.
 
@@ -221,7 +240,7 @@ class ImportsController(BaseApiController):
         type='http', auth='none', methods=['POST'], csrf=False, readonly=False,
     )
     def import_chart_of_accounts(self):
-        ok, _user, is_internal, err = self._authenticate_dual()
+        ok, user, is_internal, err = self._authenticate_dual()
         if not ok:
             return err
 
@@ -232,6 +251,9 @@ class ImportsController(BaseApiController):
             quota_err = self._enforce_api_quota()
             if quota_err:
                 return quota_err
+            grp_err = self._require_group(user, 'account.group_account_manager', 'chart of accounts')
+            if grp_err:
+                return grp_err
 
         payload, err = self._read_batch_payload('chart_of_accounts')
         if err:
@@ -270,7 +292,7 @@ class ImportsController(BaseApiController):
         type='http', auth='none', methods=['POST'], csrf=False, readonly=False,
     )
     def import_opening_balances(self):
-        ok, _user, is_internal, err = self._authenticate_dual()
+        ok, user, is_internal, err = self._authenticate_dual()
         if not ok:
             return err
 
@@ -281,6 +303,9 @@ class ImportsController(BaseApiController):
             quota_err = self._enforce_api_quota()
             if quota_err:
                 return quota_err
+            grp_err = self._require_group(user, 'account.group_account_manager', 'opening balances')
+            if grp_err:
+                return grp_err
 
         payload, err = self._read_batch_payload('opening_balances')
         if err:
@@ -319,7 +344,7 @@ class ImportsController(BaseApiController):
         type='http', auth='none', methods=['POST'], csrf=False, readonly=False,
     )
     def import_opening_stock(self):
-        ok, _user, is_internal, err = self._authenticate_dual()
+        ok, user, is_internal, err = self._authenticate_dual()
         if not ok:
             return err
 
@@ -330,6 +355,9 @@ class ImportsController(BaseApiController):
             quota_err = self._enforce_api_quota()
             if quota_err:
                 return quota_err
+            grp_err = self._require_group(user, 'stock.group_stock_manager', 'opening stock')
+            if grp_err:
+                return grp_err
 
         payload, err = self._read_batch_payload('opening_stock')
         if err:
@@ -367,7 +395,7 @@ class ImportsController(BaseApiController):
         type='http', auth='none', methods=['POST'], csrf=False, readonly=False,
     )
     def import_employees(self):
-        ok, _user, is_internal, err = self._authenticate_dual()
+        ok, user, is_internal, err = self._authenticate_dual()
         if not ok:
             return err
 
@@ -378,6 +406,9 @@ class ImportsController(BaseApiController):
             quota_err = self._enforce_api_quota()
             if quota_err:
                 return quota_err
+            grp_err = self._require_group(user, 'hr.group_hr_manager', 'employees')
+            if grp_err:
+                return grp_err
 
         payload, err = self._read_batch_payload('employees')
         if err:

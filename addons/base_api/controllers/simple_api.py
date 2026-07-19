@@ -413,6 +413,152 @@ class SimpleApiController(http.Controller):
             return True  # No group requirement (contacts, products, calendar, debt)
         return user.has_group(required)
 
+    # ------------------------------------------------------------------
+    # User/group privilege-escalation guards (F-010 / F-036)
+    # ------------------------------------------------------------------
+    # Groups whose assignment — or whose presence on a target user — must be
+    # gated on base.group_system. group_erp_manager is the "user manager"
+    # role surfaced as can_manage_users; without these guards a holder could
+    # mint or promote itself into the full-system admin via sudo() writes.
+    PROTECTED_GROUP_XMLIDS = ('base.group_system', 'base.group_erp_manager')
+
+    # Fields a non-system caller may set when creating a user. Everything
+    # else (active, company_id, company_ids, share, …) is dropped so a raw
+    # client dict can't mass-assign its way past ACL/field-groups through the
+    # sudo() create. Group/HR/credential keys are popped separately before
+    # this filter runs.
+    USER_CREATE_WHITELIST = frozenset({
+        'name', 'login', 'email', 'phone', 'mobile', 'lang', 'tz',
+        'password', 'password_is_temporary', 'notification_type',
+        'signature', 'image_1920', 'create_employee', 'create_employee_id',
+    })
+
+    def _privileged_group_ids(self):
+        """Resolve the protected group xml_ids to database ids (skipping any absent)."""
+        ids = set()
+        for xid in self.PROTECTED_GROUP_XMLIDS:
+            g = request.env.ref(xid, raise_if_not_found=False)
+            if g and g._name == 'res.groups':
+                ids.add(g.id)
+        return ids
+
+    def _check_group_assignment(self, caller, resolved_group_ids):
+        """Reject assignment of the protected (admin) groups by non-system callers.
+
+        Returns None when the assignment is permitted, otherwise a 403 error
+        response. System admins may assign any group. Only a system admin may
+        grant base.group_system / base.group_erp_manager — this closes the
+        create/update paths where an erp_manager (the "user manager" role,
+        which legitimately assigns ordinary functional groups it may not itself
+        hold) could grant itself or another user full-system admin. We
+        deliberately do NOT require the assigned groups to be a subset of the
+        caller's own groups: an erp_manager assigning a salesperson/stock group
+        it doesn't personally hold is normal user administration, not
+        escalation.
+        """
+        if caller.has_group('base.group_system'):
+            return None
+        if set(resolved_group_ids or []) & self._privileged_group_ids():
+            return self._error_response(
+                "Access denied: only a system administrator can assign administrator groups",
+                403, "GROUP_ESCALATION_DENIED",
+            )
+        return None
+
+    def _check_target_manageable(self, caller, target_user):
+        """Forbid a non-system caller from acting on a protected (admin) user.
+
+        Returns None when the caller may modify ``target_user``, otherwise a
+        403. Only base.group_system may reset/update/re-password a user who
+        holds a protected group — this is what stops an erp_manager from
+        taking over the full-system admin account.
+        """
+        if caller.has_group('base.group_system'):
+            return None
+        if set(target_user.sudo().group_ids.ids) & self._privileged_group_ids():
+            return self._error_response(
+                "Access denied: only a system administrator can modify this user",
+                403, "PROTECTED_TARGET",
+            )
+        return None
+
+    def _client_ip(self):
+        """Best-effort real client IP for rate-limiting keys (F-014).
+
+        The leftmost X-Forwarded-For entry is fully client-controlled (proxies
+        append, so element[0] is whatever the caller sent) — keying a limiter
+        on it lets an attacker land every attempt in a fresh bucket. We instead:
+
+        1. Trust Cloudflare's ``CF-Connecting-IP`` when ``BASE_API_TRUST_CF`` is
+           set — Cloudflare overwrites this header on every request, so a client
+           cannot forge it (the app sits behind CF for ``*.toomde.com``).
+        2. Otherwise take the Nth-from-rightmost XFF entry, where N =
+           ``BASE_API_TRUSTED_PROXY_HOPS`` (default 1, for Traefik). The
+           rightmost entries are appended by our own trusted proxies, so the
+           client cannot control the hop we read.
+        3. Fall back to ``remote_addr`` when XFF is missing/short.
+
+        The parsing lives in ``services.rate_limiter.derive_client_ip`` so it
+        can be unit-tested without a request context.
+        """
+        from odoo.addons.base_api.services.rate_limiter import derive_client_ip
+        trust_cf = os.environ.get('BASE_API_TRUST_CF', '').lower() in ('1', 'true', 'yes')
+        return derive_client_ip(
+            xff=request.httprequest.environ.get('HTTP_X_FORWARDED_FOR', ''),
+            remote_addr=request.httprequest.remote_addr,
+            cf_connecting_ip=request.httprequest.headers.get('CF-Connecting-IP'),
+            trust_cf=trust_cf,
+            hops=os.environ.get('BASE_API_TRUSTED_PROXY_HOPS', '1'),
+        )
+
+    # Tenant-tunable step-up config (ir.config_parameter). Both default to 0
+    # so step-up is OFF until a tenant opts in — the WhatsApp channel turns it
+    # on with a sensible window/threshold once phone-PIN auth exists.
+    STEP_UP_WINDOW_PARAM = 'base_api.step_up_window_seconds'
+    STEP_UP_THRESHOLD_PARAM = 'base_api.step_up_threshold_xof'
+
+    def _enforce_step_up(self, amount=None):
+        """Require recent re-authentication for high-value money mutations (0.2).
+
+        Mitigates a stolen *session* token (e.g. via localStorage XSS, F-021)
+        being used to drain an account: even a valid session must have
+        re-authenticated — via login or ``POST /api/v2/auth/reauth`` — within a
+        tenant-configured window before a sensitive action.
+
+        Returns None when allowed, otherwise a 403 STEP_UP_REQUIRED. Semantics:
+        - Disabled by default: window <= 0 → always allowed (no behavior change
+          for existing tenants until they opt in).
+        - Only applies to interactive session auth. API-key callers (machine
+          integrations; keys aren't XSS-exfiltratable) are exempt.
+        - When a threshold is set and ``amount`` is below it, the action is not
+          treated as sensitive.
+        """
+        session = getattr(request.httprequest, '_api_session', None)
+        if session is None:
+            return None  # API-key / non-session caller — step-up N/A
+        ICP = request.env['ir.config_parameter'].sudo()
+        try:
+            window = int(ICP.get_param(self.STEP_UP_WINDOW_PARAM, '0') or '0')
+        except (TypeError, ValueError):
+            window = 0
+        if window <= 0:
+            return None  # feature disabled
+        if amount is not None:
+            try:
+                threshold = float(ICP.get_param(self.STEP_UP_THRESHOLD_PARAM, '0') or '0')
+            except (TypeError, ValueError):
+                threshold = 0.0
+            if threshold > 0 and abs(float(amount)) < threshold:
+                return None  # below the sensitive-amount bar
+        last = session.last_reauth_at
+        if last and (fields.Datetime.now() - last).total_seconds() <= window:
+            return None
+        resp = self._error_response(
+            "Re-authentication required for this action", 403, "STEP_UP_REQUIRED",
+        )
+        resp.headers['X-StepUp-Window'] = str(window)
+        return resp
+
     def _get_enforcer(self):
         """Get the SubscriptionEnforcer singleton. Returns None if enforcement is disabled."""
         from odoo.addons.base_api.services.subscription_enforcer import SubscriptionEnforcer
@@ -1669,13 +1815,10 @@ class SimpleApiController(http.Controller):
     def user_login(self):
         """Authenticate user with username/password and create session."""
         try:
-            # Per-IP login rate limiting
+            # Per-IP login rate limiting. Key on the trusted-proxy-derived
+            # client IP, not the spoofable leftmost X-Forwarded-For (F-014).
             from odoo.addons.base_api.services.rate_limiter import check_login_rate_limit
-            client_ip = request.httprequest.environ.get(
-                'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
-            )
-            if client_ip and ',' in client_ip:
-                client_ip = client_ip.split(',')[0].strip()
+            client_ip = self._client_ip()
             allowed, retry_after = check_login_rate_limit(client_ip or 'unknown')
             if not allowed:
                 response = self._error_response(
@@ -1836,6 +1979,51 @@ class SimpleApiController(http.Controller):
             _logger.error("Logout error: %s", str(e))
             return self._error_response("Logout failed", 500, "LOGOUT_ERROR")
 
+    @http.route('/api/v2/auth/reauth', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def reauth(self):
+        """Re-verify the caller's password to satisfy a step-up challenge (0.2).
+
+        Bumps the current session's ``last_reauth_at`` so subsequent
+        high-value money mutations pass ``_enforce_step_up`` within the
+        tenant-configured window. Session auth only — there is no session to
+        stamp for API-key callers (and step-up doesn't apply to them).
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+
+        session = getattr(request.httprequest, '_api_session', None)
+        if session is None:
+            return self._error_response(
+                "An interactive session is required for re-authentication",
+                400, "SESSION_REQUIRED",
+            )
+
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            data = {}
+        password = data.get('password')
+        if not password:
+            return self._error_response("password is required", 400, "MISSING_PASSWORD")
+
+        # Verify the password without minting a new session (same credential
+        # check the self-service password change uses).
+        try:
+            request.session.authenticate(
+                request.env,
+                {'login': user.login, 'password': password, 'type': 'password'},
+            )
+        except Exception:
+            return self._error_response("Invalid password", 401, "INVALID_PASSWORD")
+
+        now = fields.Datetime.now()
+        session.sudo().write({'last_reauth_at': now})
+        return self._json_response(
+            data={'reauthenticated_at': now.isoformat()},
+            message="Re-authentication successful",
+        )
+
     @http.route('/api/v2/auth/forgot-password', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def forgot_password(self):
         """Send a password-reset email for the given login.
@@ -1856,11 +2044,7 @@ class SimpleApiController(http.Controller):
             # Per-IP rate limiting (reuse the login limiter — same risk
             # profile: anonymous, email-typed input, server-side action).
             from odoo.addons.base_api.services.rate_limiter import check_login_rate_limit
-            client_ip = request.httprequest.environ.get(
-                'HTTP_X_FORWARDED_FOR', request.httprequest.remote_addr
-            )
-            if client_ip and ',' in client_ip:
-                client_ip = client_ip.split(',')[0].strip()
+            client_ip = self._client_ip()
             allowed, retry_after = check_login_rate_limit(client_ip or 'unknown')
             if not allowed:
                 response = self._error_response(
@@ -1897,18 +2081,54 @@ class SimpleApiController(http.Controller):
                     400, "RESET_DISABLED",
                 )
 
-            # Best-effort: call Odoo's reset_password. It raises on
-            # unknown login — we swallow that so we don't leak whether
-            # the email exists. Log it server-side for support.
-            try:
-                request.env['res.users'].sudo().reset_password(login)
-                _logger.info("Password reset email sent for <%s>", login)
-            except Exception as exc:
-                # Don't leak: same response shape either way.
-                _logger.info(
-                    "Password reset attempted for unknown/invalid login <%s>: %s",
-                    login, exc,
-                )
+            # Resolve the user WITHOUT leaking existence. We must distinguish
+            # three cases that the old code collapsed into one benign INFO log:
+            #   (a) unknown login  → expected, log INFO, no send attempted;
+            #   (b) known user, send FAILED (SMTP relay down) → log ERROR so a
+            #       broken relay is visible/alertable instead of masked;
+            #   (c) known user, send OK → log INFO success (only after confirm).
+            # In every case the client still gets the same generic 200
+            # (anti-enumeration). Fixes the confirmed prod incident where a
+            # dead mail server silently returned "instructions sent".
+            User = request.env['res.users'].sudo()
+            user = User.search([('login', '=', login)], limit=1)
+            if not user:
+                user = User.search([('email', '=', login)], limit=1)
+
+            if not user:
+                # (a) Benign — do NOT log at ERROR; this is not a delivery fault.
+                _logger.info("Password reset requested for unknown login <%s>", login)
+            else:
+                Mail = request.env['mail.mail'].sudo()
+                # High-water mark so we only inspect mail this call produced
+                # (force_send may swallow an SMTP error into an 'exception'
+                # mail.mail state rather than raising).
+                last_mail = Mail.search([], order='id desc', limit=1)
+                last_mail_id = last_mail.id if last_mail else 0
+                send_failed = False
+                try:
+                    User.reset_password(login)
+                except Exception as exc:
+                    send_failed = True
+                    _logger.error(
+                        "Password reset email FAILED to send for user id=%s <%s>: %s",
+                        user.id, login, exc,
+                    )
+                if not send_failed:
+                    bad = Mail.search([
+                        ('id', '>', last_mail_id),
+                        ('model', '=', 'res.users'),
+                        ('res_id', '=', user.id),
+                        ('state', '=', 'exception'),
+                    ], order='id desc', limit=1)
+                    if bad:
+                        _logger.error(
+                            "Password reset email in EXCEPTION state for user id=%s "
+                            "<%s>: %s",
+                            user.id, login, bad.failure_reason or 'unknown',
+                        )
+                    else:
+                        _logger.info("Password reset email sent for user id=%s <%s>", user.id, login)
 
             return self._json_response(
                 message="If an account with that email exists, password reset instructions have been sent.",
@@ -2145,7 +2365,7 @@ class SimpleApiController(http.Controller):
 
             # Special handling for user creation with groups
             if model == 'res.users':
-                return self._create_user_with_groups(data)
+                return self._create_user_with_groups(data, user)
 
             # Special handling for employee creation with job/department
             if model == 'hr.employee':
@@ -2203,7 +2423,7 @@ class SimpleApiController(http.Controller):
             _logger.error("Error creating %s: %s", model, str(e))
             return self._error_response("Error creating record", 500, "CREATE_ERROR")
 
-    def _create_user_with_groups(self, data):
+    def _create_user_with_groups(self, data, caller):
         """Create a user with groups and optionally set up employee info.
 
         Accepts employee convenience fields alongside user fields:
@@ -2274,8 +2494,32 @@ class SimpleApiController(http.Controller):
                 if default_group:
                     resolved_group_ids = [default_group.id]
 
+            # Group-escalation guard (F-036): a non-system caller must not be
+            # able to mint a user into base.group_system / erp_manager, nor
+            # into any group the caller does not itself hold. Runs before the
+            # sudo() create, which would otherwise bypass Odoo's own checks.
+            group_error = self._check_group_assignment(caller, resolved_group_ids)
+            if group_error:
+                return group_error
+
             if resolved_group_ids:
                 data['group_ids'] = [(6, 0, resolved_group_ids)]
+
+            # Mass-assignment guard (F-036): a raw client dict flows straight
+            # into sudo().create, so for non-system callers drop any field
+            # outside the whitelist (active, company_ids, share, …) that would
+            # otherwise escalate privilege or cross company boundaries. System
+            # admins are trusted to set the full field set.
+            if not caller.has_group('base.group_system'):
+                allowed = self.USER_CREATE_WHITELIST | {'group_ids'}
+                dropped = [k for k in data if k not in allowed]
+                if dropped:
+                    _logger.warning(
+                        "create user: dropping non-whitelisted fields %s for non-system caller %s",
+                        dropped, caller.login,
+                    )
+                    for k in dropped:
+                        data.pop(k, None)
 
             # Odoo 19's hr.res_users.create only auto-creates the linked
             # hr.employee when create_employee=True (or create_employee_id
@@ -2518,9 +2762,17 @@ class SimpleApiController(http.Controller):
             # Check permissions
             is_own_password = current_user.id == user_id
             is_admin = current_user.has_group('base.group_system') or current_user.has_group('base.group_erp_manager')
-            
+
             if not is_own_password and not is_admin:
                 return self._error_response("Access denied: Can only change own password or need admin rights", 403, "ACCESS_DENIED")
+
+            # Protected-target guard (F-010): an erp_manager must not be able to
+            # re-password a system/erp_manager account (instant takeover). Own
+            # password change is always allowed.
+            if not is_own_password:
+                target_error = self._check_target_manageable(current_user, target_user)
+                if target_error:
+                    return target_error
 
             # For own password change, verify old password
             if is_own_password and not is_admin:
@@ -2546,7 +2798,14 @@ class SimpleApiController(http.Controller):
             if is_own_password:
                 writes['password_is_temporary'] = False
             target_user.sudo().write(writes)
-            
+
+            # Revoke the target's other sessions (F-018): a stolen token must
+            # not survive a password change. On a self-service change we keep
+            # the caller's current session so they aren't logged out mid-flow.
+            current_session = getattr(request.httprequest, '_api_session', None)
+            keep_id = current_session.id if (is_own_password and current_session) else None
+            request.env['api.session'].revoke_user_sessions(user_id, keep_id=keep_id)
+
             return self._json_response(
                 data={
                     'user_id': user_id,
@@ -2602,6 +2861,14 @@ class SimpleApiController(http.Controller):
             if not target_user.exists():
                 return self._error_response("User not found", 404, "USER_NOT_FOUND")
 
+            # Protected-target guard (F-010): a non-system caller must not be
+            # able to edit a system/erp_manager account (e.g. flip its groups
+            # or deactivate it). Editing own profile stays allowed.
+            if not is_own_profile:
+                target_error = self._check_target_manageable(current_user, target_user)
+                if target_error:
+                    return target_error
+
             # Fields that users can update about themselves
             user_editable_fields = ['name', 'email', 'phone', 'signature', 'lang', 'tz']
             
@@ -2645,6 +2912,16 @@ class SimpleApiController(http.Controller):
 
             if not update_data:
                 return self._error_response("No valid fields to update", 400, "NO_VALID_FIELDS")
+
+            # Group-escalation guard (F-010): a (6,0,ids) group write replaces
+            # the whole set, so validate the requested ids against the caller's
+            # own privilege before the sudo() write — an erp_manager cannot
+            # grant base.group_system to anyone (including itself).
+            if 'group_ids' in update_data:
+                requested_ids = update_data['group_ids'][0][2]
+                group_error = self._check_group_assignment(current_user, requested_ids)
+                if group_error:
+                    return group_error
 
             # Update user
             target_user.sudo().write(update_data)
@@ -2773,6 +3050,14 @@ class SimpleApiController(http.Controller):
             if not target_user.exists():
                 return self._error_response("User not found", 404, "USER_NOT_FOUND")
 
+            # Protected-target guard (F-010): the reset returns the new temp
+            # password in the response body, so an erp_manager resetting a
+            # system/erp_manager account would instantly take it over. Only a
+            # system admin may reset a protected user.
+            target_error = self._check_target_manageable(current_user, target_user)
+            if target_error:
+                return target_error
+
             # Generate temporary password
             temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
 
@@ -2781,7 +3066,12 @@ class SimpleApiController(http.Controller):
                 'password': temp_password,
                 'password_is_temporary': True,
             })
-            
+
+            # Revoke all of the target's sessions (F-018): an admin-initiated
+            # reset is an account-recovery action, so any existing token
+            # (including a hijacker's) must be invalidated immediately.
+            request.env['api.session'].revoke_user_sessions(user_id)
+
             return self._json_response_sensitive(
                 data={
                     'user_id': user_id,
@@ -3556,6 +3846,15 @@ class SimpleApiController(http.Controller):
         if module_error:
             return module_error
 
+        # Idempotency (F-019): a lost-response retry over flaky 3G must not
+        # create + reconcile a second account.payment against the same move
+        # (double payment). Mirrors the guard on every other money mutation
+        # (create_record, in-store purchase, credit-note). No-op without the
+        # Idempotency-Key header.
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
         # Parse body — empty body is OK (wizard defaults take over).
         try:
             data = request.httprequest.get_json(force=True) or {}
@@ -3565,6 +3864,13 @@ class SimpleApiController(http.Controller):
                 )
         except Exception:
             data = {}
+
+        # Step-up (0.2): registering a payment moves money — require recent
+        # re-auth when the tenant has enabled step-up for amounts at/above the
+        # threshold (no-op when disabled or for API-key callers).
+        step_up_error = self._enforce_step_up(amount=data.get('amount'))
+        if step_up_error:
+            return step_up_error
 
         # Resolve target move under the user's scope so a salesperson
         # can't register payment against a bill they can't see.
@@ -3676,11 +3982,12 @@ class SimpleApiController(http.Controller):
                 'amount_residual': move.amount_residual,
                 'matched_payment_ids': move.matched_payment_ids.ids,
             }
-            return self._json_response(
+            response = self._json_response(
                 data={'payment': payment_data, 'move': move_data},
                 message="Payment registered",
                 status_code=201,
             )
+            return self._idempotency_store(idem, response)
         except (AccessError, UserError, ValidationError) as e:
             return self._error_response(
                 self._safe_exc_message(e), 400, "PAYMENT_REGISTER_ERROR",
@@ -4133,6 +4440,12 @@ class SimpleApiController(http.Controller):
         if replay is not None:
             return replay
 
+        # Step-up (0.2): a credit note reverses a posted invoice — always a
+        # sensitive money action, so require recent re-auth when step-up is on.
+        step_up_error = self._enforce_step_up()
+        if step_up_error:
+            return step_up_error
+
         try:
             if 'account.move' not in request.env:
                 return self._error_response("Accounting module not installed", 404, "MODULE_NOT_FOUND")
@@ -4235,8 +4548,14 @@ class SimpleApiController(http.Controller):
         if replay is not None:
             return replay
 
+        # Step-up (0.2): collects payment at the counter — sensitive money
+        # action, gated on recent re-auth when the tenant enables step-up.
+        step_up_error = self._enforce_step_up()
+        if step_up_error:
+            return step_up_error
+
         try:
-            # --- parse body ---
+            # --- parse body (HTTP concern) ---
             content_type = request.httprequest.headers.get('Content-Type', '')
             if 'application/json' not in content_type:
                 return self._error_response(
@@ -4249,238 +4568,29 @@ class SimpleApiController(http.Controller):
             except Exception:
                 return self._error_response("Invalid JSON", 400, "INVALID_JSON")
 
-            # --- validate required fields ---
-            order_lines = body.get('order_lines')
-            if not order_lines or not isinstance(order_lines, list):
-                return self._error_response(
-                    "'order_lines' is required and must be a non-empty list", 400, "MISSING_PARAM")
-
-            # --- resolve customer partner ---
-            # If partner_id is provided and is a real customer, use it.
-            # Otherwise fall back to a default "Walk-In Store Customer".
-            partner_id = body.get('partner_id')
-            company_partner_id = request.env.company.partner_id.id
-
-            if partner_id and partner_id != company_partner_id:
-                partner = request.env['res.partner'].browse(partner_id)
-                if not partner.exists():
-                    return self._error_response(
-                        f"Partner {partner_id} not found", 404, "NOT_FOUND")
-            else:
-                # Use or create a default walk-in customer
-                partner = request.env['res.partner'].sudo().search([
-                    ('name', '=', 'Walk-In Store Customer'),
-                    ('company_id', 'in', [request.env.company.id, False]),
-                ], limit=1)
-                if not partner:
-                    partner = request.env['res.partner'].sudo().create({
-                        'name': 'Walk-In Store Customer',
-                        'company_id': request.env.company.id,
-                        'customer_rank': 1,
-                    })
-                partner_id = partner.id
-
-            # --- validate products ---
-            sol_vals = []
-            for idx, line in enumerate(order_lines):
-                pid = line.get('product_id')
-                if not pid:
-                    return self._error_response(
-                        f"order_lines[{idx}]: 'product_id' is required",
-                        400, "MISSING_PARAM")
-
-                product = request.env['product.product'].browse(pid)
-                if not product.exists():
-                    return self._error_response(
-                        f"Product {pid} not found", 404, "NOT_FOUND")
-
-                qty = line.get('quantity', 1)
-                if qty <= 0:
-                    return self._error_response(
-                        f"order_lines[{idx}]: 'quantity' must be > 0",
-                        400, "INVALID_PARAM")
-
-                sol_vals.append((0, 0, {
-                    'product_id': pid,
-                    'product_uom_qty': qty,
-                    'price_unit': line.get('price_unit', product.list_price),
-                }))
-
-            # =============================================================
-            # Step 1 – Resolve a one-step warehouse for instant delivery
-            # =============================================================
-            Warehouse = request.env['stock.warehouse']
-            company_id = request.env.company.id
-
-            if body.get('warehouse_id'):
-                warehouse = Warehouse.browse(body['warehouse_id'])
-                if not warehouse.exists():
-                    return self._error_response(
-                        f"Warehouse {body['warehouse_id']} not found", 404, "NOT_FOUND")
-                if warehouse.delivery_steps != 'ship_only':
-                    return self._error_response(
-                        f"Warehouse '{warehouse.name}' uses multi-step delivery "
-                        f"({warehouse.delivery_steps}). In-store purchases require "
-                        "a warehouse with one-step delivery (ship_only).",
-                        400, "INVALID_WAREHOUSE")
-            else:
-                # Prefer the first ship_only warehouse for this company
-                warehouse = Warehouse.search([
-                    ('company_id', '=', company_id),
-                    ('delivery_steps', '=', 'ship_only'),
-                ], limit=1)
-                if not warehouse:
-                    # Fall back: take the default warehouse and temporarily
-                    # won't work if none exists at all.
-                    warehouse = Warehouse.search([
-                        ('company_id', '=', company_id),
-                    ], limit=1)
-                    if not warehouse:
-                        return self._error_response(
-                            "No warehouse found for the current company.",
-                            400, "NO_WAREHOUSE")
-                    if warehouse.delivery_steps != 'ship_only':
-                        # Switch it to one-step for a clean in-store flow
-                        warehouse.sudo().write({'delivery_steps': 'ship_only'})
-
-            # =============================================================
-            # Step 2 – Create & confirm the sale order
-            # =============================================================
-            order = request.env['sale.order'].create({
-                'partner_id': partner_id,
-                'warehouse_id': warehouse.id,
-                'order_line': sol_vals,
-            })
-
-            # Clear any routes on order lines so procurement does not
-            # try to use multi-step routes configured on the line.
-            order.order_line.write({'route_ids': [(5, 0, 0)]})
-
-            # Procurement also reads routes directly from the product
-            # and its category (stock_rule.py _get_rule line ~608).
-            # Temporarily strip product & category routes so the
-            # warehouse's simple ship_only route is used instead.
-            products = order.order_line.mapped('product_id')
-            saved_product_routes = {p.id: p.route_ids for p in products}
-            saved_categ_routes = {}
-            categs = products.mapped('categ_id')
-            for categ in categs:
-                saved_categ_routes[categ.id] = categ.route_ids
-                categ.sudo().write({'route_ids': [(5, 0, 0)]})
-            products.sudo().write({'route_ids': [(5, 0, 0)]})
-
+            # --- delegate the SO→confirm→deliver→invoice→post→pay orchestration
+            # to the shared sales service so a second channel (WhatsApp worker)
+            # runs the identical code path (0.3). Business-validation failures
+            # come back as SalesServiceError and map to the same error envelope
+            # this endpoint used before extraction.
+            from odoo.addons.base_api.services.sales import (
+                record_in_store_sale, SalesServiceError,
+            )
             try:
-                order.action_confirm()
-            finally:
-                # Restore original routes on products and categories
-                for p in products:
-                    if saved_product_routes.get(p.id):
-                        p.sudo().write({'route_ids': [(6, 0, saved_product_routes[p.id].ids)]})
-                for categ in categs:
-                    if saved_categ_routes.get(categ.id):
-                        categ.sudo().write({'route_ids': [(6, 0, saved_categ_routes[categ.id].ids)]})
-
-            # =============================================================
-            # Step 3 – Instant delivery: validate all pickings
-            # =============================================================
-            pickings_data = []
-            for picking in order.picking_ids.filtered(lambda p: p.state not in ('done', 'cancel')):
-                for move in picking.move_ids:
-                    move.write({'quantity': move.product_uom_qty, 'picked': True})
-                picking.button_validate()
-                pickings_data.append({
-                    'id': picking.id,
-                    'name': picking.name,
-                    'state': picking.state,
-                })
-
-            # =============================================================
-            # Step 4 – Create & post the invoice
-            # =============================================================
-            invoices = order._create_invoices()
-            if not invoices:
-                return self._error_response(
-                    "No invoice could be created. Check product invoice policies.",
-                    400, "NOTHING_TO_INVOICE")
-
-            invoice = invoices[0] if len(invoices) > 1 else invoices
-
-            date_vals = {}
-            if body.get('invoice_date'):
-                date_vals['invoice_date'] = body['invoice_date']
-            if date_vals:
-                invoice.write(date_vals)
-
-            invoice.action_post()
-
-            # =============================================================
-            # Step 5 – Register payment (instant, full amount)
-            # =============================================================
-            ctx = {
-                'active_model': 'account.move',
-                'active_ids': invoice.ids,
-            }
-            wizard_vals = {}
-            if body.get('journal_id'):
-                wizard_vals['journal_id'] = body['journal_id']
-            if body.get('payment_date'):
-                wizard_vals['payment_date'] = body['payment_date']
-
-            pay_wizard = request.env['account.payment.register'] \
-                .with_context(**ctx).create(wizard_vals)
-            pay_wizard.action_create_payments()
-
-            invoice.invalidate_recordset()
-            order.invalidate_recordset()
-
-            # --- read payment record ---
-            payment = request.env['account.payment'].search([
-                ('reconciled_invoice_ids', 'in', invoice.ids),
-            ], limit=1, order='id desc')
-
-            # =============================================================
-            # Build response
-            # =============================================================
-            inv_data = invoice.read([
-                'id', 'name', 'state', 'move_type',
-                'partner_id', 'invoice_date', 'invoice_date_due',
-                'amount_untaxed', 'amount_tax', 'amount_total',
-                'amount_residual', 'payment_state', 'currency_id',
-                'invoice_origin',
-            ])[0]
-
-            order_data = order.read([
-                'id', 'name', 'state', 'partner_id',
-                'amount_untaxed', 'amount_tax', 'amount_total',
-                'invoice_status',
-            ])[0]
-
-            payment_data = {}
-            if payment:
-                payment_data = payment.read([
-                    'id', 'name', 'state', 'amount',
-                    'payment_type', 'journal_id', 'date',
-                ])[0]
-
-            stock_moves = []
-            for move in order.picking_ids.move_ids:
-                stock_moves.append({
-                    'id': move.id,
-                    'product_id': move.product_id.id,
-                    'product_name': move.product_id.display_name,
-                    'quantity': move.quantity,
-                    'state': move.state,
-                    'reference': move.reference,
-                })
+                result = record_in_store_sale(
+                    request.env,
+                    order_lines=body.get('order_lines'),
+                    partner_id=body.get('partner_id'),
+                    warehouse_id=body.get('warehouse_id'),
+                    journal_id=body.get('journal_id'),
+                    payment_date=body.get('payment_date'),
+                    invoice_date=body.get('invoice_date'),
+                )
+            except SalesServiceError as e:
+                return self._error_response(e.message, e.status, e.code)
 
             response = self._json_response(
-                data={
-                    'sale_order': order_data,
-                    'invoice': inv_data,
-                    'payment': payment_data,
-                    'pickings': pickings_data,
-                    'stock_moves': stock_moves,
-                },
+                data=result,
                 message="In-store purchase completed: SO confirmed, delivered, invoiced, and paid",
                 status_code=201,
             )
@@ -4588,6 +4698,22 @@ class SimpleApiController(http.Controller):
         quota_error = self._enforce_api_quota()
         if quota_error:
             return quota_error
+
+        # Authorization (F-035): setting absolute on-hand quantity is a
+        # stock-manager operation. The endpoint runs its mechanics via
+        # sudo(), so we must gate on the caller's own rights first — module
+        # must be in the plan, and the caller must hold write access on
+        # stock.quant (record rules / ACL). Without this any authenticated
+        # user (e.g. a salesperson with no stock rights) could rewrite
+        # on-hand stock for any product/location.
+        module_error = self._enforce_module_access('stock.picking')
+        if module_error:
+            return module_error
+        if not self._check_model_access('stock.quant', 'write'):
+            return self._error_response(
+                "Access denied: inventory adjustment requires stock management rights",
+                403, "ACCESS_DENIED",
+            )
 
         try:
             content_type = request.httprequest.headers.get('Content-Type', '')
@@ -4756,6 +4882,19 @@ class SimpleApiController(http.Controller):
         quota_error = self._enforce_api_quota()
         if quota_error:
             return quota_error
+
+        # Authorization (F-035): decrement creates and validates a picking via
+        # sudo(). Gate on the caller's own stock rights first — module in plan
+        # plus write access on stock.picking — so a user with no inventory
+        # rights can't drive arbitrary stock negative through this endpoint.
+        module_error = self._enforce_module_access('stock.picking')
+        if module_error:
+            return module_error
+        if not self._check_model_access('stock.picking', 'write'):
+            return self._error_response(
+                "Access denied: inventory movement requires stock rights",
+                403, "ACCESS_DENIED",
+            )
 
         try:
             content_type = request.httprequest.headers.get('Content-Type', '')

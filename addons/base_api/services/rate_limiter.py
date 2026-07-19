@@ -40,6 +40,35 @@ LOGIN_WINDOW_SECONDS = 300  # 5 minutes
 LOGIN_LOCKOUT_SECONDS = 900  # 15 minutes after exceeding limit
 
 
+def derive_client_ip(xff, remote_addr, cf_connecting_ip=None, trust_cf=False, hops=1):
+    """Resolve the real client IP for rate-limit keys (F-014).
+
+    Pure function so it can be unit-tested without an HTTP request. The
+    leftmost X-Forwarded-For entry is attacker-controlled (proxies append, so
+    element[0] is whatever the caller sent); keying a limiter on it lets an
+    attacker rotate it and land every attempt in a fresh bucket.
+
+    Resolution order:
+      1. Cloudflare's ``CF-Connecting-IP`` when ``trust_cf`` — Cloudflare
+         overwrites this on every request, so a client cannot forge it.
+      2. The ``hops``-th-from-rightmost XFF entry. The rightmost entries are
+         appended by our own trusted proxies (Traefik), so the client cannot
+         control the hop we read. Default 1 trusted proxy.
+      3. ``remote_addr`` when XFF is missing or shorter than ``hops``.
+    """
+    if trust_cf and cf_connecting_ip:
+        return cf_connecting_ip.strip()
+    try:
+        hops = max(int(hops or 1), 1)
+    except (TypeError, ValueError):
+        hops = 1
+    if xff:
+        parts = [p.strip() for p in xff.split(',') if p.strip()]
+        if len(parts) >= hops:
+            return parts[-hops]
+    return remote_addr or 'unknown'
+
+
 def check_login_rate_limit(ip_address):
     """Check if the IP is allowed to attempt a login.
 
