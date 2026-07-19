@@ -3723,6 +3723,201 @@ class SimpleApiController(http.Controller):
             _logger.error("Error confirming SO %s: %s", order_id, str(e))
             return self._error_response("Error confirming sale order", 500, "CONFIRM_ERROR")
 
+    @http.route('/api/v2/sales/<int:order_id>/cancel', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def cancel_sale_order(self, order_id):
+        """Cancel a sale order via Odoo's canonical ``action_cancel()``.
+
+        Goes through the action (not a raw ``state='cancel'`` write) so the
+        standard cancellation plumbing runs (cancels pickings, etc.). Needed
+        so a confirmed/sent order can be deleted afterwards — Odoo refuses to
+        unlink a sale order unless it is in ``draft`` or ``cancel``. A clean
+        UserError (e.g. an order with posted invoices) surfaces as a handled
+        400 rather than a 500.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
+        try:
+            if 'sale.order' not in request.env:
+                return self._error_response("Sales module not installed", 404, "MODULE_NOT_FOUND")
+            if not self._check_model_access('sale.order', 'write'):
+                return self._error_response("Access denied for sale.order", 403, "ACCESS_DENIED")
+
+            order = request.env['sale.order'].browse(order_id)
+            if not order.exists():
+                return self._error_response(f"Sale order {order_id} not found", 404, "NOT_FOUND")
+
+            if order.state != 'cancel':
+                order.action_cancel()
+
+            data = order.read(['id', 'name', 'state'])[0]
+            response = self._json_response(
+                data={'order': data},
+                message=f"Sale order {order_id} cancelled",
+            )
+            return self._idempotency_store(idem, response)
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CANCEL_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CANCEL_ERROR")
+        except Exception as e:
+            _logger.error("Error cancelling SO %s: %s", order_id, str(e))
+            return self._error_response("Error cancelling sale order", 500, "CANCEL_ERROR")
+
+    @http.route('/api/v2/sales/<int:order_id>/send', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def send_sale_order(self, order_id):
+        """Mark a quotation as sent (``state='sent'``) via Odoo's
+        ``action_quotation_sent()``.
+
+        This is what populates the "Quotation Sent" pipeline column — nothing
+        in the draft → Confirm flow sets ``sent`` otherwise. We use
+        ``action_quotation_sent`` (state transition only) rather than
+        ``action_quotation_send`` (which returns a mail-composer wizard action
+        that a JSON API can't drive, and which depends on outgoing SMTP).
+        Only draft quotations transition; already-sent/confirmed orders are
+        returned as-is (idempotent).
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
+        try:
+            if 'sale.order' not in request.env:
+                return self._error_response("Sales module not installed", 404, "MODULE_NOT_FOUND")
+            if not self._check_model_access('sale.order', 'write'):
+                return self._error_response("Access denied for sale.order", 403, "ACCESS_DENIED")
+
+            order = request.env['sale.order'].browse(order_id)
+            if not order.exists():
+                return self._error_response(f"Sale order {order_id} not found", 404, "NOT_FOUND")
+
+            if order.state == 'draft':
+                if hasattr(order, 'action_quotation_sent'):
+                    order.action_quotation_sent()
+                else:  # pragma: no cover — defensive for non-standard sale
+                    order.write({'state': 'sent'})
+
+            data = order.read(['id', 'name', 'state'])[0]
+            response = self._json_response(
+                data={'order': data},
+                message=f"Sale order {order_id} marked as sent",
+            )
+            return self._idempotency_store(idem, response)
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "SEND_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "SEND_ERROR")
+        except Exception as e:
+            _logger.error("Error sending SO %s: %s", order_id, str(e))
+            return self._error_response("Error sending sale order", 500, "SEND_ERROR")
+
+    @http.route('/api/v2/invoices/<int:invoice_id>/credit-note', type='http',
+                auth='none', methods=['POST'], csrf=False, readonly=False)
+    def create_credit_note(self, invoice_id):
+        """Create a credit note (reversal) for a customer invoice.
+
+        A credit note is structurally a reversing ``account.move`` of type
+        ``out_refund`` linked back to the original via ``reversed_entry_id``.
+        We use Odoo's canonical ``account.move._reverse_moves()`` (the same
+        engine the "Add Credit Note" / "Reverse" wizard uses) rather than a
+        raw ``create({'move_type': 'out_refund'})``, so the reversal is
+        properly linked and its lines mirror the source. The credit note is
+        left in ``draft`` for review before posting.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            is_valid, user = self._authenticate()
+            if not is_valid:
+                return user
+
+        sub_error = self._enforce_subscription()
+        if sub_error:
+            return sub_error
+        quota_error = self._enforce_api_quota()
+        if quota_error:
+            return quota_error
+
+        replay, idem = self._idempotency_lookup(user)
+        if replay is not None:
+            return replay
+
+        try:
+            if 'account.move' not in request.env:
+                return self._error_response("Accounting module not installed", 404, "MODULE_NOT_FOUND")
+            if not self._check_model_access('account.move', 'create'):
+                return self._error_response("Access denied for account.move", 403, "ACCESS_DENIED")
+
+            move = request.env['account.move'].browse(invoice_id)
+            if not move.exists():
+                return self._error_response(f"Invoice {invoice_id} not found", 404, "NOT_FOUND")
+
+            if move.move_type not in ('out_invoice', 'in_invoice'):
+                return self._error_response(
+                    "Only invoices can be credited/reversed.", 400, "INVALID_MOVE_TYPE",
+                )
+            if move.state != 'posted':
+                return self._error_response(
+                    "Only a posted invoice can have a credit note.", 400, "INVALID_STATE",
+                )
+
+            reverse = move._reverse_moves([{
+                'ref': f"Reversal of: {move.name or ''}",
+                'invoice_date': move.invoice_date,
+            }])
+
+            data = reverse.read(['id', 'name', 'move_type', 'state', 'reversed_entry_id'])[0]
+            response = self._json_response(
+                data={'credit_note': data},
+                message=f"Credit note created for invoice {invoice_id}",
+                status_code=201,
+            )
+            return self._idempotency_store(idem, response)
+
+        except AccessError:
+            return self._error_response("Access denied", 403, "ACCESS_DENIED")
+        except UserError as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CREDIT_NOTE_ERROR")
+        except (MissingError, ValidationError) as e:
+            return self._error_response(self._safe_exc_message(e), 400, "CREDIT_NOTE_ERROR")
+        except Exception as e:
+            _logger.error("Error creating credit note for %s: %s", invoice_id, str(e))
+            return self._error_response("Error creating credit note", 500, "CREDIT_NOTE_ERROR")
+
     # ===== IN-STORE PURCHASE (one-shot) =====
 
     @http.route('/api/v2/sales/in-store-purchase', type='http',
@@ -5488,6 +5683,11 @@ class SimpleApiController(http.Controller):
 
         except AccessError:
             return self._error_response(f"Access denied for model '{model}'", 403, "ACCESS_DENIED")
+        except UserError as e:
+            # A model's unlink guard (e.g. sale.order refuses to delete a sent
+            # quotation / confirmed order) raises UserError. Surface it as a
+            # clean, handled 409 with the real message instead of an opaque 500.
+            return self._error_response(self._safe_exc_message(e), 409, "DELETE_BLOCKED")
         except (MissingError, ValidationError) as e:
             return self._error_response(self._safe_exc_message(e), 400, "DELETE_ERROR")
         except Exception as e:
