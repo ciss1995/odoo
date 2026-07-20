@@ -3,6 +3,7 @@
 from . import res_users
 from . import res_partner
 from . import api_session
+from . import phone_identity
 from . import api_idempotency
 from . import api_notification_dismissal
 from . import cors

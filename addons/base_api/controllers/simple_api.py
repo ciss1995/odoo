@@ -2024,6 +2024,209 @@ class SimpleApiController(http.Controller):
             message="Re-authentication successful",
         )
 
+    # ------------------------------------------------------------------
+    # Phone + PIN identity (WhatsApp entry point, Phase 2)
+    # ------------------------------------------------------------------
+    def _normalize_phone_e164(self, raw):
+        """Best-effort normalize caller-supplied phone to +<digits> E.164.
+
+        WhatsApp/the resolver send a full international number (the sender
+        ``wa_id`` is international digits without a ``+``). We accept ``+221…``,
+        ``221…``, and ``00221…`` and validate via ``phonenumbers`` when
+        available, falling back to a shape check so the endpoint still works in
+        environments without the lib. Returns None when it can't be made into a
+        plausible E.164 — the caller then treats it as invalid credentials
+        (generic, so a malformed phone can't be told from a wrong PIN).
+        """
+        if not raw or not isinstance(raw, str):
+            return None
+        cleaned = raw.strip().replace(' ', '').replace('-', '')
+        if cleaned.startswith('00'):
+            cleaned = '+' + cleaned[2:]
+        elif not cleaned.startswith('+'):
+            cleaned = '+' + cleaned
+        try:
+            from odoo.addons.base_api.models.res_partner import _to_e164
+            normalized = _to_e164(cleaned, None)
+            if normalized:
+                return normalized
+        except Exception:  # noqa: BLE001 — phonenumbers optional / parse failure
+            pass
+        digits = cleaned[1:]
+        if digits.isdigit() and 8 <= len(digits) <= 15:
+            return '+' + digits
+        return None
+
+    @http.route('/api/v2/auth/phone-login', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def phone_login(self):
+        """Authenticate a phone + PIN and mint an api.session (WhatsApp login).
+
+        Rate-limited per IP (shared login limiter) and per phone (durable
+        lockout on ``api.phone_identity``). Anti-enumeration: unknown phone and
+        wrong PIN both return the same generic 401; only a phone the caller has
+        already battered returns 429 PHONE_LOCKED.
+        """
+        try:
+            from odoo.addons.base_api.services.rate_limiter import check_login_rate_limit
+            from odoo.addons.base_api.models.phone_identity import AUTH_OK, AUTH_LOCKED
+
+            client_ip = self._client_ip()
+            allowed, retry_after = check_login_rate_limit(client_ip or 'unknown')
+            if not allowed:
+                response = self._error_response(
+                    f"Too many attempts. Try again in {retry_after} seconds.",
+                    429, "RATE_LIMITED",
+                )
+                response.headers['Retry-After'] = str(retry_after)
+                return response
+
+            content_type = request.httprequest.headers.get('Content-Type', '')
+            if 'application/json' not in content_type:
+                return self._error_response("Content-Type must be application/json", 400, "INVALID_CONTENT_TYPE")
+            try:
+                data = request.httprequest.get_json(force=True)
+            except Exception:
+                return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+            if not data:
+                return self._error_response("No data provided", 400, "NO_DATA")
+
+            raw_phone = data.get('phone_e164') or data.get('phone')
+            pin = data.get('pin')
+            wa_id = data.get('wa_id')
+            if not raw_phone or not pin:
+                return self._error_response("Phone and PIN required", 400, "MISSING_CREDENTIALS")
+
+            phone_e164 = self._normalize_phone_e164(raw_phone)
+            if not phone_e164:
+                # Malformed phone — same generic failure as a wrong PIN.
+                return self._error_response("Invalid phone or PIN", 401, "INVALID_PHONE_CREDENTIALS")
+
+            Identity = request.env['api.phone_identity'].sudo()
+            result, identity = Identity.authenticate_phone(phone_e164, pin)
+
+            if result == AUTH_LOCKED:
+                retry = identity._lock_retry_after() if identity else 900
+                response = self._error_response(
+                    "Account temporarily locked due to failed attempts", 429, "PHONE_LOCKED",
+                )
+                response.headers['Retry-After'] = str(retry or 900)
+                return response
+            if result != AUTH_OK:
+                return self._error_response("Invalid phone or PIN", 401, "INVALID_PHONE_CREDENTIALS")
+
+            user = identity.user_id
+            if not user.exists() or not user.active:
+                return self._error_response("Invalid phone or PIN", 401, "INVALID_PHONE_CREDENTIALS")
+
+            session_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(48))
+            token_hash = request.env['api.session']._hash_token(session_token)
+            now = datetime.now()
+            expires_at = now + timedelta(hours=24)
+            request.env['api.session'].sudo().create({
+                'user_id': user.id,
+                'token': token_hash,
+                'expires_at': expires_at,
+                'created_at': now,
+                'last_activity': now,
+                'last_reauth_at': now,
+                'active': True,
+                'wa_id': wa_id or identity.wa_id or False,
+            })
+            return self._json_response_sensitive(
+                data={
+                    'session_token': session_token,
+                    'expires_at': expires_at.isoformat(),
+                    'user': {
+                        'id': user.id,
+                        'name': user.name,
+                        'login': user.login,
+                        'groups': sorted(xid for xid in user.group_ids.get_external_id().values() if xid),
+                    },
+                },
+                message="Phone login successful",
+            )
+        except Exception as e:
+            _logger.error("Phone login error: %s", str(e))
+            return self._error_response("Phone login failed", 500, "PHONE_LOGIN_ERROR")
+
+    @http.route('/api/v2/auth/phone-enroll', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
+    def phone_enroll(self):
+        """Bind a phone to a user and set its login PIN (manager-gated).
+
+        Only base.group_erp_manager / base.group_system may enroll, and — via
+        ``_check_target_manageable`` — a non-system manager cannot enroll a phone
+        for a protected (admin) user. That guard is critical: without it an
+        erp_manager could set a PIN on the system-admin account and then
+        phone-login as full admin.
+        """
+        is_valid, user = self._authenticate_session()
+        if not is_valid:
+            return user
+        if not (user.has_group('base.group_erp_manager') or user.has_group('base.group_system')):
+            return self._error_response(
+                "Only a user manager can enroll phone logins", 403, "FORBIDDEN",
+            )
+        try:
+            data = request.httprequest.get_json(force=True) or {}
+        except Exception:
+            return self._error_response("Invalid JSON", 400, "INVALID_JSON")
+
+        raw_phone = data.get('phone_e164') or data.get('phone')
+        pin = data.get('pin')
+        wa_id = data.get('wa_id')
+        target_user_id = data.get('user_id')
+        login = data.get('login')
+        if not raw_phone or not pin:
+            return self._error_response("Phone and PIN required", 400, "MISSING_FIELDS")
+
+        Users = request.env['res.users'].sudo()
+        if target_user_id:
+            try:
+                target = Users.browse(int(target_user_id)).exists()
+            except (TypeError, ValueError):
+                target = Users.browse()
+        elif login:
+            target = Users.search([('login', '=', login)], limit=1)
+        else:
+            return self._error_response("user_id or login required", 400, "MISSING_TARGET")
+        if not target:
+            return self._error_response("User not found", 404, "USER_NOT_FOUND")
+
+        # Prevent a non-system manager from enrolling a phone for an admin user.
+        blocked = self._check_target_manageable(user, target)
+        if blocked:
+            return blocked
+
+        phone_e164 = self._normalize_phone_e164(raw_phone)
+        if not phone_e164:
+            return self._error_response("Invalid phone number", 400, "INVALID_PHONE")
+
+        try:
+            identity = request.env['api.phone_identity'].sudo().enroll(
+                target.id, phone_e164, pin, wa_id=wa_id,
+            )
+        except ValueError as e:
+            return self._error_response(str(e), 400, "WEAK_PIN")
+
+        # Best-effort: register this number in the control-plane phone→tenant
+        # index so the shared ai-agent can resolve inbound WhatsApp messages.
+        # Non-fatal — login works locally regardless (see phone_directory_client).
+        try:
+            from odoo.addons.base_api.services.phone_directory_client import push_enrollment
+            push_enrollment(phone_e164, target.id, wa_id=wa_id)
+        except Exception:  # noqa: BLE001 — index push must never break enroll
+            _logger.exception("Phone-directory push raised unexpectedly")
+
+        return self._json_response(
+            data={
+                'id': identity.id,
+                'phone_e164': identity.phone_e164,
+                'user_id': target.id,
+                'verified_at': identity.verified_at.isoformat() if identity.verified_at else None,
+            },
+            message="Phone enrolled",
+        )
+
     @http.route('/api/v2/auth/forgot-password', type='http', auth='none', methods=['POST'], csrf=False, readonly=False)
     def forgot_password(self):
         """Send a password-reset email for the given login.
