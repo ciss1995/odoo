@@ -4,6 +4,21 @@
 # Odoo image, and runs `odoo-bin -i base_api --test-enable --stop-after-init`
 # scoped via --test-tags to a curated allowlist of stable test classes.
 #
+# Country-gating note (read before touching the install steps):
+#   l10n_toomde_ohada_overlay has a pre_init_hook that REFUSES to install
+#   unless at least one res.company sits in an OHADA member state — a
+#   deliberate production guard against applying SYSCOHADA controls to a
+#   non-OHADA chart. A fresh CI DB's default "My Company" has no country,
+#   so a naive `-i base_api,l10n_toomde_ohada_overlay` aborts at load time.
+#   We therefore replicate control-plane/provisioning_service ordering:
+#     1. bootstrap the DB with `base` (creates the default company),
+#     2. set that company's country to Burkina Faso (an OHADA member),
+#     3. install base_api + l10n_bf + the overlay and run the tests.
+#   Step 2 is also what makes l10n_bf auto-load its SYSCOHADA chart
+#   (`countries: ['bf']` matches only a BF company), so the overlay's
+#   post_init has real sale journals/taxes to configure — which is what
+#   TestOhadaOverlayPostInit asserts on.
+#
 # Scope note (read this before adding tests):
 #   The full --test-tags=/base_api suite currently has 26 pre-existing
 #   failures in test_imports / test_in_store_purchase / test_sale_invoice
@@ -96,7 +111,49 @@ jobs:
       - name: Adjust addon perms for the Odoo container
         run: chmod -R a+rX addons
 
-      - name: Run base_api test suite
+      # Phase 1 — bootstrap the DB with base only. This creates the default
+      # "My Company" (still without a country) but does NOT touch the
+      # country-gated overlay, so nothing aborts. The DB lives in the `pg`
+      # container, so it survives this --rm odoo run into the later phases.
+      - name: Bootstrap test DB (base only)
+        run: |
+          set -o pipefail
+          docker run --rm --name odoo-bootstrap --network base-api-test-net \
+            -v "$PWD/addons:/mnt/extra-addons:ro" \
+            -e HOST=pg \
+            -e USER=odoo \
+            -e PASSWORD=odoo \
+            odoo:19.0 \
+              --addons-path=/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons \
+              --db_host=pg --db_user=odoo --db_password=odoo \
+              --database=base_api_test \
+              --init=base \
+              --stop-after-init \
+              --without-demo=all \
+              --no-http \
+              --log-level=warn
+
+      # Phase 2 — set the company country to Burkina Faso (an OHADA member),
+      # on both res_company and its partner. Mirrors provisioning_service
+      # step 7. This satisfies the overlay's pre_init guard AND makes l10n_bf
+      # (countries: ['bf']) auto-load its SYSCOHADA chart in phase 3.
+      - name: Set company country to Burkina Faso (OHADA member)
+        run: |
+          docker exec pg psql -U odoo -d base_api_test -v ON_ERROR_STOP=1 -c "
+            UPDATE res_company
+               SET country_id = (SELECT id FROM res_country WHERE code = 'BF')
+             WHERE id = 1;
+            UPDATE res_partner
+               SET country_id = (SELECT id FROM res_country WHERE code = 'BF')
+             WHERE id = (SELECT partner_id FROM res_company WHERE id = 1);
+          "
+
+      # Phase 3 — install base_api + the BF localization + the overlay and run
+      # the curated test suite. l10n_bf loads the SYSCOHADA chart onto the BF
+      # company; the overlay's pre_init now passes and its post_init has real
+      # journals/taxes to configure. All three modules install fresh here, so
+      # --test-tags picks up every allowlisted class in one run.
+      - name: Run base_api + OHADA overlay test suite
         id: run_tests
         run: |
           set -o pipefail
@@ -115,7 +172,7 @@ jobs:
               --addons-path=/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons \
               --db_host=pg --db_user=odoo --db_password=odoo \
               --database=base_api_test \
-              --init=base_api,l10n_toomde_ohada_overlay \
+              --init=base_api,l10n_bf,l10n_toomde_ohada_overlay \
               --test-enable \
               --test-tags="$TAGS" \
               --stop-after-init \
@@ -148,5 +205,5 @@ jobs:
       - name: Teardown
         if: always()
         run: |
-          docker rm -f pg odoo-test 2>/dev/null || true
+          docker rm -f pg odoo-bootstrap odoo-test 2>/dev/null || true
           docker network rm base-api-test-net 2>/dev/null || true
