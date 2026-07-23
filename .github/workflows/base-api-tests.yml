@@ -133,16 +133,17 @@ jobs:
               --no-http \
               --log-level=warn
 
-      # Phase 2 — set the company country to Burkina Faso (an OHADA member),
-      # on both res_company and its partner. Mirrors provisioning_service
-      # step 7. This satisfies the overlay's pre_init guard AND makes l10n_bf
-      # (countries: ['bf']) auto-load its SYSCOHADA chart in phase 3.
+      # Phase 2 — set the company country to Burkina Faso (an OHADA member).
+      # In Odoo 19 `res.company.country_id` is a NON-stored computed field
+      # (compute='_compute_address' proxying partner_id.country_id, no
+      # store=True), so res_company has no country_id column — writing it
+      # directly errors. Set the country on the company's PARTNER instead;
+      # company.country_id then reads through to it. That satisfies the
+      # overlay's pre_init guard AND makes l10n_bf (countries: ['bf'])
+      # load its SYSCOHADA chart in phase 3.
       - name: Set company country to Burkina Faso (OHADA member)
         run: |
           docker exec pg psql -U odoo -d base_api_test -v ON_ERROR_STOP=1 -c "
-            UPDATE res_company
-               SET country_id = (SELECT id FROM res_country WHERE code = 'BF')
-             WHERE id = 1;
             UPDATE res_partner
                SET country_id = (SELECT id FROM res_country WHERE code = 'BF')
              WHERE id = (SELECT partner_id FROM res_company WHERE id = 1);
